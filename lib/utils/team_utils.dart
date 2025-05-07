@@ -9,25 +9,12 @@ class TeamUtils {
     
     // Check for specific team names and return appropriate logo
     if (name.contains('waxers') || name == 'your team') {
-      // Use the Waxers logo image
-      return Container(
+      // Use the Waxers logo image with transparent background
+      return Image.asset(
+        'assets/logos/waxers_logo.png',
         width: size,
         height: size,
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 5,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Image.asset(
-          'assets/logos/waxers_logo.png',
-          width: size,
-          height: size,
-          fit: BoxFit.contain,
-        ),
+        fit: BoxFit.contain,
       );
     } else {
       // Generic opponent logo (red circle with first letter of team name)
