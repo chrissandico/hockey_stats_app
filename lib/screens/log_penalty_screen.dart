@@ -6,8 +6,13 @@ import 'package:uuid/uuid.dart';
 
 class LogPenaltyScreen extends StatefulWidget {
   final String gameId;
+  final int period; // Add period parameter
 
-  const LogPenaltyScreen({super.key, required this.gameId});
+  const LogPenaltyScreen({
+    super.key, 
+    required this.gameId,
+    required this.period,
+  });
 
   @override
   _LogPenaltyScreenState createState() => _LogPenaltyScreenState();
@@ -83,7 +88,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       id: uuid.v4(),
       gameId: widget.gameId,
       timestamp: DateTime.now(),
-      period: 1, // Assuming period 1 for now, add period selection later
+      period: widget.period, // Use the period passed to the widget
       eventType: 'Penalty',
       team: 'Your Team', // Penalties are only for 'Your Team'
       primaryPlayerId: _selectedPlayer!.id,
@@ -104,6 +109,12 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       _penaltyType = null;
       _penaltyDuration = null;
     });
+    
+    // Return to previous screen after a short delay to show the confirmation
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      // Return the current period to the previous screen
+      Navigator.pop(context, widget.period);
+    });
   }
 
   @override
@@ -112,6 +123,20 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       appBar: AppBar(
         title: const Text('Log Penalty'),
         actions: [
+          // Period indicator in AppBar
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: Chip(
+              label: Text(
+                'P${widget.period == 4 ? "OT" : widget.period}',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).primaryColor,
+                ),
+              ),
+              backgroundColor: Theme.of(context).primaryColorLight,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
             onPressed: () {
@@ -129,6 +154,48 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+            // Period indicator at the top of the form with period change buttons
+            Container(
+              padding: const EdgeInsets.all(12.0),
+              margin: const EdgeInsets.only(bottom: 16.0),
+              decoration: BoxDecoration(
+                color: Colors.amber.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8.0),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.timer, color: Colors.amber[800]),
+                  const SizedBox(width: 8.0),
+                  Text(
+                    'Period ${widget.period == 4 ? "OT" : widget.period}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.amber[800],
+                    ),
+                  ),
+                  const Spacer(),
+                  // Period change buttons
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        color: Colors.amber[800],
+                        onPressed: widget.period > 1 ? _decrementPeriod : null,
+                        tooltip: 'Previous Period',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        color: Colors.amber[800],
+                        onPressed: widget.period < 4 ? _incrementPeriod : null,
+                        tooltip: 'Next Period',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
             // Player Selection
             DropdownButtonFormField<Player>(
               decoration: const InputDecoration(labelText: 'Penalized Player'),
@@ -194,5 +261,37 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
         ),
       ),
     );
+  }
+  
+  // Function to decrement the period
+  void _decrementPeriod() {
+    if (widget.period > 1) {
+      // Create a new instance of LogPenaltyScreen with the decremented period
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LogPenaltyScreen(
+            gameId: widget.gameId,
+            period: widget.period - 1,
+          ),
+        ),
+      );
+    }
+  }
+  
+  // Function to increment the period
+  void _incrementPeriod() {
+    if (widget.period < 4) {
+      // Create a new instance of LogPenaltyScreen with the incremented period
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LogPenaltyScreen(
+            gameId: widget.gameId,
+            period: widget.period + 1,
+          ),
+        ),
+      );
+    }
   }
 }

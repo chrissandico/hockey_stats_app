@@ -3,6 +3,7 @@ import 'package:hive/hive.dart'; // Import Hive
 import 'package:hockey_stats_app/models/data_models.dart'; // Import your data models
 import 'package:hockey_stats_app/screens/view_stats_screen.dart'; // Import the ViewStatsScreen
 import 'package:uuid/uuid.dart'; // Package for generating unique IDs
+import 'package:hockey_stats_app/utils/team_utils.dart'; // Import team utils for logos
 
 // We'll need a way to select players. For simplicity, we'll use dummy data for now.
 // In a real app, this would come from your LocalDatabase 'players' box.
@@ -11,8 +12,13 @@ import 'package:uuid/uuid.dart'; // Package for generating unique IDs
 
 class LogShotScreen extends StatefulWidget {
   final String gameId; // Accept the gameId
+  final int period; // Accept the period
 
-  const LogShotScreen({super.key, required this.gameId}); // Require gameId in constructor
+  const LogShotScreen({
+    super.key, 
+    required this.gameId,
+    required this.period,
+  }); // Require gameId and period in constructor
 
   @override
   _LogShotScreenState createState() => _LogShotScreenState();
@@ -34,6 +40,20 @@ class _LogShotScreenState extends State<LogShotScreen> {
       appBar: AppBar(
         title: const Text('Log Shot'),
         actions: [
+          // Period indicator in AppBar
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: Chip(
+              label: Text(
+                'P${widget.period == 4 ? "OT" : widget.period}',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).primaryColor,
+                ),
+              ),
+              backgroundColor: Theme.of(context).primaryColorLight,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
             onPressed: () {
@@ -51,34 +71,159 @@ class _LogShotScreenState extends State<LogShotScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-            // Team Selection
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Which team?', style: const TextStyle(fontSize: 16), textAlign: TextAlign.center,),
-                Radio<String>(
-                  value: 'Your Team',
-                  groupValue: _selectedTeam,
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedTeam = value!;
-                      _filterPlayersByTeam();
-                    });
-                  },
-                ),
-                Text('Waxers', style: const TextStyle(fontSize: 16), textAlign: TextAlign.center,),
-                Radio<String>(
-                  value: 'Opponent',
-                  groupValue: _selectedTeam,
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedTeam = value!;
-                      _filterPlayersByTeam();
-                    });
-                  },
-                ),
-                Text('Opponent', style: const TextStyle(fontSize: 16), textAlign: TextAlign.center,),
-              ],
+            // Period indicator at the top of the form with period change buttons
+            Container(
+              padding: const EdgeInsets.all(12.0),
+              margin: const EdgeInsets.only(bottom: 16.0),
+              decoration: BoxDecoration(
+                color: Colors.amber.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8.0),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.timer, color: Colors.amber[800]),
+                  const SizedBox(width: 8.0),
+                  Text(
+                    'Period ${widget.period == 4 ? "OT" : widget.period}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.amber[800],
+                    ),
+                  ),
+                  const Spacer(),
+                  // Period change buttons
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline),
+                        color: Colors.amber[800],
+                        onPressed: widget.period > 1 ? _decrementPeriod : null,
+                        tooltip: 'Previous Period',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline),
+                        color: Colors.amber[800],
+                        onPressed: widget.period < 4 ? _incrementPeriod : null,
+                        tooltip: 'Next Period',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            // Team Selection with logos
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Which team?',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      // Your Team option
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedTeam = 'Your Team';
+                              _filterPlayersByTeam();
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(8.0),
+                            decoration: BoxDecoration(
+                              color: _selectedTeam == 'Your Team' 
+                                  ? Colors.blue.withOpacity(0.2) 
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8.0),
+                              border: Border.all(
+                                color: _selectedTeam == 'Your Team' 
+                                    ? Colors.blue 
+                                    : Colors.grey,
+                                width: 2.0,
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                TeamUtils.getTeamLogo('Waxers', size: 40),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Waxers',
+                                  style: TextStyle(fontSize: 14),
+                                ),
+                                Radio<String>(
+                                  value: 'Your Team',
+                                  groupValue: _selectedTeam,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedTeam = value!;
+                                      _filterPlayersByTeam();
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      // Opponent option
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedTeam = 'Opponent';
+                              _filterPlayersByTeam();
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(8.0),
+                            decoration: BoxDecoration(
+                              color: _selectedTeam == 'Opponent' 
+                                  ? Colors.red.withOpacity(0.2) 
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8.0),
+                              border: Border.all(
+                                color: _selectedTeam == 'Opponent' 
+                                    ? Colors.red 
+                                    : Colors.grey,
+                                width: 2.0,
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                TeamUtils.getTeamLogo('Opponent', size: 40),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Opponent',
+                                  style: TextStyle(fontSize: 14),
+                                ),
+                                Radio<String>(
+                                  value: 'Opponent',
+                                  groupValue: _selectedTeam,
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedTeam = value!;
+                                      _filterPlayersByTeam();
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
             // Is Goal Checkbox
             CheckboxListTile(
@@ -223,7 +368,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
       id: uuid.v4(), // Generate a unique ID for the event
       gameId: widget.gameId, // Use the gameId passed to the widget
       timestamp: DateTime.now(), // Record the current time
-      period: 1, // Assuming period 1 for now, add period selection later (in LogStatsScreen)
+      period: widget.period, // Use the period passed to the widget
       eventType: 'Shot', // Set the event type
       team: _selectedTeam, // Set the team
       primaryPlayerId: _selectedTeam == 'Your Team' ? _selectedShooter?.id ?? '' : '', // Link to the shooter's Player ID
@@ -242,7 +387,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
       SnackBar(content: Text('Shot logged for ${(_selectedTeam == 'Your Team') ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}')),
     );
 
-    // Optional: Clear the form or navigate back
+    // Clear the form
     setState(() {
       _isGoal = false;
       _selectedTeam = 'Your Team';
@@ -250,6 +395,12 @@ class _LogShotScreenState extends State<LogShotScreen> {
       _selectedShooter = null;
       _selectedAssist1 = null;
       _selectedYourTeamPlayersOnIce = []; // Clear the selected players on ice
+    });
+    
+    // Return to previous screen after a short delay to show the confirmation
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      // Return the current period to the previous screen
+      Navigator.pop(context, widget.period);
     });
   }
 
@@ -324,6 +475,38 @@ class _LogShotScreenState extends State<LogShotScreen> {
     final opponentPlayers = playersBox.values.where((player) => player.teamId != 'your_team').toList();
     for (var player in opponentPlayers) {
       player.delete();
+    }
+  }
+  
+  // Function to decrement the period
+  void _decrementPeriod() {
+    if (widget.period > 1) {
+      // Create a new instance of LogShotScreen with the decremented period
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LogShotScreen(
+            gameId: widget.gameId,
+            period: widget.period - 1,
+          ),
+        ),
+      );
+    }
+  }
+  
+  // Function to increment the period
+  void _incrementPeriod() {
+    if (widget.period < 4) {
+      // Create a new instance of LogShotScreen with the incremented period
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LogShotScreen(
+            gameId: widget.gameId,
+            period: widget.period + 1,
+          ),
+        ),
+      );
     }
   }
 }
