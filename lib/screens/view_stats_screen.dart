@@ -158,27 +158,27 @@ class ViewStatsScreen extends StatelessWidget {
 }
 
 int calculatePlusMinus(Player player, List<GameEvent> gameEvents, String gameId) {
-  int plus = 0;
-  int minus = 0;
+  int plusMinus = 0;
 
-  // Calculate plus for when the player is on the ice when your team scores
+  // Calculate plus/minus for when the player is on the ice when a goal is scored
   for (var event in gameEvents) {
     if (event.eventType == 'Shot' && event.isGoal == true && event.gameId == gameId) {
-      if (event.team == 'Your Team') {
-        if (event.yourTeamPlayersOnIceIds != null && event.yourTeamPlayersOnIceIds!.contains(player.id)) {
-          plus++;
+      // Only consider events where we have players on ice data
+      if (event.yourTeamPlayersOnIceIds != null && event.yourTeamPlayersOnIceIds!.isNotEmpty) {
+        // Check if the player was on ice
+        if (event.yourTeamPlayersOnIceIds!.contains(player.id)) {
+          // If your team scored, add +1
+          if (event.team == 'Your Team') {
+            plusMinus++;
+          } 
+          // If opponent scored, subtract 1
+          else if (event.team == 'Opponent') {
+            plusMinus--;
+          }
         }
-      } else if (event.team == 'Opponent' && event.yourTeamPlayersOnIceIds != null && event.yourTeamPlayersOnIceIds!.contains(player.id)) {
-        minus--; // Decrement minus instead of incrementing
       }
     }
   }
 
-  //If the player is on the opponent's team, return 0
-  // Assuming teamId is null or empty for opponent players
-  if(player.teamId != null && player.teamId!.isNotEmpty){
-    return plus - minus;
-  } else {
-    return 0;
-  }
+  return plusMinus;
 }

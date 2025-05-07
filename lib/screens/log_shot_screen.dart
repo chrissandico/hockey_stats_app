@@ -123,6 +123,19 @@ class _LogShotScreenState extends State<LogShotScreen> {
                   });
                 },
               ),
+            // Players on Ice Button (Conditional - show when it's a goal)
+            if (_isGoal)
+              Padding(
+                padding: const EdgeInsets.only(top: 16.0),
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.people),
+                  label: Text(
+                    'Select Players On Ice (${_selectedYourTeamPlayersOnIce.length})',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  onPressed: _selectPlayersOnIce,
+                ),
+              ),
             const SizedBox(height: 16.0), // Add spacing
             // Log Shot Button
             ElevatedButton(
@@ -216,7 +229,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
       assistPlayer2Id: null, // No assist 2
       isGoal: _isGoal, // Set if it was a goal
       isSynced: false, // Mark as unsynced initially
-      yourTeamPlayersOnIceIds: null, // No players on ice
+      yourTeamPlayersOnIceIds: _isGoal ? _getPlayersOnIceIds() : null, // Include players on ice if it's a goal
     );
 
     // Save the event to the Hive Box
@@ -234,15 +247,73 @@ class _LogShotScreenState extends State<LogShotScreen> {
       _filterPlayersByTeam(); // Re-filter players for the default team
       _selectedShooter = null;
       _selectedAssist1 = null;
+      _selectedYourTeamPlayersOnIce = []; // Clear the selected players on ice
     });
   }
 
+  // Function to get the IDs of players on ice
   List<String> _getPlayersOnIceIds() {
-    return [];
+    return _selectedYourTeamPlayersOnIce.map((player) => player.id).toList();
   }
 
   // Function to show a dialog for selecting players on ice
   void _selectPlayersOnIce() async {
+    // Create a temporary list to track selections
+    List<Player> tempSelectedPlayers = List.from(_selectedYourTeamPlayersOnIce);
+    
+    // Show a dialog with checkboxes for each player
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Select Players On Ice'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _yourTeamPlayers.map((player) {
+                    return CheckboxListTile(
+                      title: Text('#${player.jerseyNumber}'),
+                      value: tempSelectedPlayers.contains(player),
+                      onChanged: (bool? value) {
+                        setState(() {
+                          if (value == true) {
+                            if (!tempSelectedPlayers.contains(player)) {
+                              tempSelectedPlayers.add(player);
+                            }
+                          } else {
+                            tempSelectedPlayers.remove(player);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: const Text('Cancel'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+                TextButton(
+                  child: const Text('OK'),
+                  onPressed: () {
+                    // Update the main state with the selected players
+                    this.setState(() {
+                      _selectedYourTeamPlayersOnIce = tempSelectedPlayers;
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   // Function to remove opponent players from the Hive box
