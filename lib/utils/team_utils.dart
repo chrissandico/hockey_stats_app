@@ -9,13 +9,11 @@ class TeamUtils {
     
     // Check for specific team names and return appropriate logo
     if (name.contains('waxers') || name == 'your team') {
-      // Your team logo (blue circle with "W")
+      // Use the Waxers logo image
       return Container(
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: Colors.blue,
-          shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.2),
@@ -24,15 +22,11 @@ class TeamUtils {
             ),
           ],
         ),
-        child: Center(
-          child: Text(
-            'W',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: size * 0.5,
-            ),
-          ),
+        child: Image.asset(
+          'assets/logos/waxers_logo.png',
+          width: size,
+          height: size,
+          fit: BoxFit.contain,
         ),
       );
     } else {
