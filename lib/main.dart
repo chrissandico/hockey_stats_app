@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/screens/game_selection_screen.dart'; // Import the new Game Selection screen
+import 'package:hockey_stats_app/utils/team_utils.dart'; // Import TeamUtils
 // Removed imports for log_shot_screen and log_penalty_screen as we navigate via GameSelectionScreen now
 
 // Define the dummyGameId here to be used across files (still needed for dummy data creation)
@@ -47,6 +48,9 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Initialize TeamUtils when the app starts
+    TeamUtils.initialize(context);
+    
     return MaterialApp(
       title: 'Hockey Stats App',
       theme: ThemeData(

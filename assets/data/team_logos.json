@@ -1,0 +1,44 @@
+{
+  "teams": [
+    {
+      "id": "waxers",
+      "name": "Waxers",
+      "logoPath": "assets/logos/waxers_logo.png",
+      "primaryColor": "#1E88E5",
+      "secondaryColor": "#FFFFFF"
+    },
+    {
+      "id": "chiefs",
+      "name": "Chiefs",
+      "logoPath": "assets/logos/chiefs_logo.png",
+      "primaryColor": "#D32F2F",
+      "secondaryColor": "#FFFFFF"
+    },
+    {
+      "id": "rivals",
+      "name": "Rivals",
+      "logoPath": "assets/logos/rivals_logo.png",
+      "primaryColor": "#4CAF50",
+      "secondaryColor": "#FFFFFF"
+    },
+    {
+      "id": "eagles",
+      "name": "Eagles",
+      "logoPath": "assets/logos/eagles_logo.png",
+      "primaryColor": "#FFC107",
+      "secondaryColor": "#212121"
+    },
+    {
+      "id": "sharks",
+      "name": "Sharks",
+      "logoPath": "assets/logos/sharks_logo.png",
+      "primaryColor": "#0097A7",
+      "secondaryColor": "#FFFFFF"
+    }
+  ],
+  "default": {
+    "logoPath": "assets/logos/generic_logo.png",
+    "primaryColor": "#757575",
+    "secondaryColor": "#FFFFFF"
+  }
+}

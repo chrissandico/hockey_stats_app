@@ -4,13 +4,46 @@ This document explains how to add custom team logos to the Hockey Stats App.
 
 ## Current Implementation
 
-The app currently uses programmatically generated logos based on team names:
-- Your team (Waxers) is represented by a blue circle with "W"
-- Opponent teams are represented by a red circle with the first letter of the opponent's name
+The app now uses a JSON-based team logo database:
+- Team logos are defined in `assets/data/team_logos.json`
+- Each team has an ID, name, logo path, and team colors
+- The app will automatically use the appropriate logo based on team name
+- For teams without a specific logo, a fallback is generated based on the team name
 
-## Adding Custom Logo Images
+## Team Logo Database
 
-To replace these with custom images, follow these steps:
+The app now uses a JSON-based team logo database located at `assets/data/team_logos.json`. This file contains:
+
+```json
+{
+  "teams": [
+    {
+      "id": "waxers",
+      "name": "Waxers",
+      "logoPath": "assets/logos/waxers_logo.png",
+      "primaryColor": "#1E88E5",
+      "secondaryColor": "#FFFFFF"
+    },
+    {
+      "id": "chiefs",
+      "name": "Chiefs",
+      "logoPath": "assets/logos/chiefs_logo.png",
+      "primaryColor": "#D32F2F",
+      "secondaryColor": "#FFFFFF"
+    },
+    ...
+  ],
+  "default": {
+    "logoPath": "assets/logos/generic_logo.png",
+    "primaryColor": "#757575",
+    "secondaryColor": "#FFFFFF"
+  }
+}
+```
+
+## Adding Custom Team Logos
+
+To add or update team logos:
 
 ### 1. Prepare Your Logo Files
 
@@ -26,94 +59,70 @@ To replace these with custom images, follow these steps:
    flutter:
      assets:
        - assets/logos/
+       - assets/data/
    ```
 3. Run `flutter pub get` to update the asset references
 
-### 3. Modify the TeamUtils Class
+### 3. Update the Team Logo Database
 
-Edit the `lib/utils/team_utils.dart` file to use your custom logo files instead of the generated ones:
+Edit the `assets/data/team_logos.json` file to add your new team:
 
-```dart
-static Widget getTeamLogo(String teamName, {double size = 40.0}) {
-  // Convert team name to lowercase for case-insensitive comparison
-  final name = teamName.toLowerCase();
-  
-  // Check for specific team names and return appropriate logo
-  if (name.contains('waxers') || name == 'your team') {
-    // Use custom Waxers logo
-    return Image.asset(
-      'assets/logos/waxers_logo.png',
-      width: size,
-      height: size,
-    );
-  } else if (name.contains('chiefs')) {
-    // Use custom Chiefs logo
-    return Image.asset(
-      'assets/logos/chiefs_logo.png',
-      width: size,
-      height: size,
-    );
-  } else {
-    // For other teams, you can either:
-    // 1. Add more specific cases for other teams
-    // 2. Use a generic opponent logo
-    // 3. Keep the current dynamic logo generation
-    
-    // Example of a generic opponent logo:
-    return Image.asset(
-      'assets/logos/generic_opponent.png',
-      width: size,
-      height: size,
-    );
-    
-    // Or keep the current dynamic generation:
-    /*
-    final firstLetter = teamName.isNotEmpty ? teamName[0].toUpperCase() : 'O';
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.red,
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Text(
-          firstLetter,
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: size * 0.5,
-          ),
-        ),
-      ),
-    );
-    */
+```json
+{
+  "teams": [
+    {
+      "id": "waxers",
+      "name": "Waxers",
+      "logoPath": "assets/logos/waxers_logo.png",
+      "primaryColor": "#1E88E5",
+      "secondaryColor": "#FFFFFF"
+    },
+    {
+      "id": "new_team",
+      "name": "New Team",
+      "logoPath": "assets/logos/new_team_logo.png",
+      "primaryColor": "#9C27B0",
+      "secondaryColor": "#FFFFFF"
+    }
+  ],
+  "default": {
+    "logoPath": "assets/logos/generic_logo.png",
+    "primaryColor": "#757575",
+    "secondaryColor": "#FFFFFF"
   }
 }
 ```
 
-### 4. Advanced: Creating a Team Logo Database
+## Using Team Colors
 
-For a more scalable solution with many teams:
+The app now supports team colors for UI elements. You can use these colors in your custom UI components:
 
-1. Create a JSON file in `assets/data/team_logos.json`:
-   ```json
-   {
-     "waxers": "assets/logos/waxers_logo.png",
-     "chiefs": "assets/logos/chiefs_logo.png",
-     "rivals": "assets/logos/rivals_logo.png",
-     "default": "assets/logos/generic_logo.png"
-   }
-   ```
+```dart
+// Get team colors
+final primaryColor = TeamUtils.getPrimaryColor(teamName, context: context);
+final secondaryColor = TeamUtils.getSecondaryColor(teamName, context: context);
 
-2. Update the TeamUtils class to load this JSON file and use it to map team names to logo files.
+// Use colors in UI elements
+Container(
+  decoration: BoxDecoration(
+    color: primaryColor.withOpacity(0.1),
+    border: Border.all(color: primaryColor),
+    borderRadius: BorderRadius.circular(8),
+  ),
+  child: Text(
+    teamName,
+    style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
+  ),
+)
+```
 
 ## Tips for Logo Design
 
 - Use transparent backgrounds (PNG format)
-- Keep logos simple and recognizable at small sizes
+- Keep logos simple and recognizable at small sizes (200x200 pixels recommended)
 - Maintain consistent dimensions for all logos
-- Consider creating both light and dark versions for different themes
+- Choose contrasting primary and secondary colors for good visibility
+- Test your logos at different sizes to ensure they remain recognizable
 
 ## Example Logo Sources
 
@@ -121,3 +130,4 @@ For a more scalable solution with many teams:
 - Sports clip art libraries
 - Custom designs from graphic designers
 - Vector graphics that you can resize and export as PNG
+- Online logo generators

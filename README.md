@@ -28,6 +28,7 @@ To enable users to easily record hockey game events (Shots and Penalties) on a m
 *   **Initial Data Sync:** On first launch or user request, synchronize Roster and Game data from Google Sheets to the local database.
 *   **Robust Synchronization Service:** Implement logic for monitoring network connectivity, identifying unsynced data, formatting data for Google Sheets, handling API errors, retries, and updating sync status.
 *   **Detailed Data Model:** Implementation of data models for Players, Games, and GameEvents to manage structured data locally and for synchronization.
+*   **Enhanced Plus/Minus Tracking:** Improve the user interface for selecting players on ice, add line combination presets, and provide visual analytics for plus/minus statistics.
 
 ## Getting Started
 

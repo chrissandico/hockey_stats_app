@@ -36,6 +36,17 @@ Key implementations:
 - Enhanced the team selection UI in the LogShotScreen with logos
 - Created a LOGO_INSTRUCTIONS.md file with detailed instructions on how to add custom logo images
 
+### 4. Team Logo Database with JSON Configuration
+
+Implemented a flexible and scalable team logo system using a JSON configuration file.
+
+Key implementations:
+- Created a JSON-based team logo database in `assets/data/team_logos.json`
+- Developed a Team model class to represent team data including logos and colors
+- Enhanced the TeamUtils class to load and use the JSON configuration
+- Added support for team colors in the UI
+- Updated the LOGO_INSTRUCTIONS.md with details on how to use the new system
+
 ## Technical Details
 
 ### Files Modified
@@ -59,19 +70,35 @@ Key implementations:
 1. `lib/utils/team_utils.dart`
    - Utility class for generating team logos
    - Methods for getting individual team logos and game logos
+   - Enhanced to support JSON-based team configuration
 
-2. `LOGO_INSTRUCTIONS.md`
+2. `lib/models/team_model.dart`
+   - Model class for team data
+   - Support for JSON serialization/deserialization
+   - Color conversion utilities
+
+3. `assets/data/team_logos.json`
+   - JSON configuration file for team logos and colors
+   - Includes multiple teams and a default fallback
+
+4. `LOGO_INSTRUCTIONS.md`
    - Detailed instructions for adding custom team logos
+   - Updated with information about the JSON configuration
 
 ### Configuration Changes
 
 1. `pubspec.yaml`
    - Added assets configuration for the logos directory
+   - Added assets configuration for the data directory
+
+2. `lib/main.dart`
+   - Added initialization for the TeamUtils class
 
 ## Future Enhancements
 
 Potential future enhancements could include:
-- Adding custom logo images for teams
-- Implementing a team logo database with JSON configuration
-- Adding team colors to the UI based on the selected team
 - Enhancing the period selection with period duration tracking
+- Implementing a remote team logo database
+- Adding more advanced team statistics
+- Creating a team management interface
+- Enhanced Plus/Minus User Experience: Implement a visual rink diagram for player selection, add line combination presets, and improve the visualization of plus/minus statistics in the app
