@@ -125,9 +125,10 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
             // Player Selection
             DropdownButtonFormField<Player>(
               decoration: const InputDecoration(labelText: 'Penalized Player'),
@@ -188,7 +189,8 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
               ),
               child: const Text('Log Penalty', style: TextStyle(fontSize: 16)),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );

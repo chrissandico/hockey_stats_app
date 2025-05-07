@@ -29,126 +29,112 @@ class ViewStatsScreen extends StatelessWidget {
           children: <Widget>[
             const Text('Individual Player Stats', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16.0),
-            DataTable(
-              columns: const <DataColumn>[
-                DataColumn(
-                  label: Expanded(
-                    child: Text(
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const <DataColumn>[
+                  DataColumn(
+                    label: Text(
                       'Jersey #',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
-                ),
-                DataColumn(
-                  label: Expanded(
-                    child: Text(
+                  DataColumn(
+                    label: Text(
                       'Goals',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
-                ),
-                DataColumn(
-                  label: Expanded(
-                    child: Text(
+                  DataColumn(
+                    label: Text(
                       'Shots on Goal',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
-                ),
-                DataColumn(
-                  label: Expanded(
-                    child: Text(
+                  DataColumn(
+                    label: Text(
                       'Assists',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
-                ),
-                DataColumn(
-                  label: Expanded(
-                    child: Text(
+                  DataColumn(
+                    label: Text(
                       'Points',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
-                ),
-                DataColumn(
-                  label: Expanded(
-                    child: Text(
+                  DataColumn(
+                    label: Text(
                       'Penalty Minutes',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
-                ),
-                DataColumn(
-                  label: Expanded(
-                    child: Text(
+                  DataColumn(
+                    label: Text(
                       'Plus/Minus',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
-                ),
-              ],
-              rows: <DataRow>[
-                for (var player in players)
-                  DataRow(
-                    cells: <DataCell>[
-                      DataCell(Text('${player.jerseyNumber}')),
-                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.primaryPlayerId == player.id).length}')),
-                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.primaryPlayerId == player.id).length}')),
-                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)).length}')),
-                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.primaryPlayerId == player.id).length + gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)).length}')),
-                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id).map((event) => event.penaltyDuration).fold(0, (a, b) => a! + b!)}')),
-                      DataCell(Text('${calculatePlusMinus(player, gameEvents, gameId!)}')),
-                    ],
-                  ),
-              ],
+                ],
+                rows: <DataRow>[
+                  for (var player in players)
+                    DataRow(
+                      cells: <DataCell>[
+                        DataCell(Text('${player.jerseyNumber}')),
+                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.primaryPlayerId == player.id).length}')),
+                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.primaryPlayerId == player.id).length}')),
+                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)).length}')),
+                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.primaryPlayerId == player.id).length + gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)).length}')),
+                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id).map((event) => event.penaltyDuration).fold(0, (a, b) => a! + b!)}')),
+                        DataCell(Text('${calculatePlusMinus(player, gameEvents, gameId!)}')),
+                      ],
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 32.0),
             const Text('Game Stats', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16.0),
-            DataTable(
-              columns: const <DataColumn>[
-                DataColumn(
-                  label: Expanded(
-                    child: Text(
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const <DataColumn>[
+                  DataColumn(
+                    label: Text(
                       'Stat',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
-                ),
-                DataColumn(
-                  label: Expanded(
-                    child: Text(
+                  DataColumn(
+                    label: Text(
                       'Your Team',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
-                ),
-                DataColumn(
-                  label: Expanded(
-                    child: Text(
+                  DataColumn(
+                    label: Text(
                       'Opponent',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
-                ),
-              ],
-              rows: <DataRow>[
-                DataRow(
-                  cells: <DataCell>[
-                    const DataCell(Text('Game Score')),
-                    DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == 'Your Team').length}')),
-                    DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == 'Opponent').length}')),
-                  ],
-                ),
-                DataRow(
-                  cells: <DataCell>[
-                    const DataCell(Text('Shots on Goal')),
-                    DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.team == 'Your Team').length}')),
-                    DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.team == 'Opponent').length}')),
-                  ],
-                ),
-              ],
+                ],
+                rows: <DataRow>[
+                  DataRow(
+                    cells: <DataCell>[
+                      const DataCell(Text('Game Score')),
+                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == 'Your Team').length}')),
+                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == 'Opponent').length}')),
+                    ],
+                  ),
+                  DataRow(
+                    cells: <DataCell>[
+                      const DataCell(Text('Shots on Goal')),
+                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.team == 'Your Team').length}')),
+                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.team == 'Opponent').length}')),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),

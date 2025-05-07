@@ -47,9 +47,10 @@ class _LogShotScreenState extends State<LogShotScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             // Team Selection
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -142,7 +143,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
               onPressed: _logShot,
               child: const Text('Log Shot', style: TextStyle(fontSize: 16),),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );

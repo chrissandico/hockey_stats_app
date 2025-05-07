@@ -31,9 +31,10 @@ class LogStatsScreen extends StatelessWidget {
         ],
       ),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
             // TODO: Display selected game details here
             const Text(
               'Logging Stats For:',
@@ -68,7 +69,8 @@ class LogStatsScreen extends StatelessWidget {
             ),
             // TODO: Add button for View Local Stats (UF-5)
             // TODO: Add button for Sync Data (UF-4)
-          ],
+            ],
+          ),
         ),
       ),
     );

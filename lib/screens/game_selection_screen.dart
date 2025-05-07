@@ -65,9 +65,10 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch, // Stretch elements horizontally
-          children: <Widget>[
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, // Stretch elements horizontally
+            children: <Widget>[
             const Text(
               'Choose a game to track stats for:',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -110,7 +111,8 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
             //   },
             //   child: const Text('Add New Game'),
             // ),
-          ],
+            ],
+          ),
         ),
       ),
     );
