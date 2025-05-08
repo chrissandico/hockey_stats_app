@@ -123,20 +123,6 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       appBar: AppBar(
         title: const Text('Log Penalty'),
         actions: [
-          // Period indicator in AppBar
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: Chip(
-              label: Text(
-                'P${widget.period == 4 ? "OT" : widget.period}',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).primaryColor,
-                ),
-              ),
-              backgroundColor: Theme.of(context).primaryColorLight,
-            ),
-          ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
             onPressed: () {

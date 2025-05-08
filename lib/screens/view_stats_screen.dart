@@ -41,37 +41,31 @@ class ViewStatsScreen extends StatelessWidget {
                   ),
                   DataColumn(
                     label: Text(
-                      'Goals',
+                      'G',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
                   DataColumn(
                     label: Text(
-                      'Shots on Goal',
+                      'A',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
                   DataColumn(
                     label: Text(
-                      'Assists',
+                      '+/-',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
                   DataColumn(
                     label: Text(
-                      'Points',
+                      'PIM',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
                   DataColumn(
                     label: Text(
-                      'Penalty Minutes',
-                      style: TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Plus/Minus',
+                      'SOG',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
@@ -82,11 +76,10 @@ class ViewStatsScreen extends StatelessWidget {
                       cells: <DataCell>[
                         DataCell(Text('${player.jerseyNumber}')),
                         DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.primaryPlayerId == player.id).length}')),
-                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.primaryPlayerId == player.id).length}')),
                         DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)).length}')),
-                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.primaryPlayerId == player.id).length + gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)).length}')),
-                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id).map((event) => event.penaltyDuration).fold(0, (a, b) => a! + b!)}')),
                         DataCell(Text('${calculatePlusMinus(player, gameEvents, gameId!)}')),
+                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id).map((event) => event.penaltyDuration).fold(0, (a, b) => a! + b!)}')),
+                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.primaryPlayerId == player.id).length}')),
                       ],
                     ),
                 ],

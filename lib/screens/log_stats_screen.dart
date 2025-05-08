@@ -190,20 +190,6 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
       appBar: AppBar(
         title: const Text('Track Stats'), // Title indicating tracking mode
         actions: [
-          // Period indicator in AppBar
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: Chip(
-              label: Text(
-                'P${_selectedPeriod == 4 ? "OT" : _selectedPeriod}',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).primaryColor,
-                ),
-              ),
-              backgroundColor: Theme.of(context).primaryColorLight,
-            ),
-          ),
           IconButton(
             icon: const Icon(Icons.bar_chart),
             onPressed: () {
