@@ -4,6 +4,7 @@ import 'package:hockey_stats_app/models/data_models.dart'; // Import your data m
 import 'package:hockey_stats_app/screens/view_stats_screen.dart'; // Import the ViewStatsScreen
 import 'package:uuid/uuid.dart'; // Package for generating unique IDs
 import 'package:hockey_stats_app/utils/team_utils.dart'; // Import team utils for logos
+import 'package:hockey_stats_app/services/sheets_service.dart'; // Import the SheetsService
 
 // We'll need a way to select players. For simplicity, we'll use dummy data for now.
 // In a real app, this would come from your LocalDatabase 'players' box.
@@ -284,6 +285,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
 
   // Hive Box for GameEvents
   late Box<GameEvent> gameEventsBox;
+  // Service for Google Sheets interaction
+  late SheetsService _sheetsService; // Add service instance
 
   // Uuid generator for unique IDs
   final uuid = Uuid();
@@ -299,6 +302,9 @@ class _LogShotScreenState extends State<LogShotScreen> {
     // Open the GameEvents box. It should already be open from main,
     // but it's good practice to get a reference here.
     gameEventsBox = Hive.box<GameEvent>('gameEvents');
+    // Initialize SheetsService (assuming it doesn't need context or async init)
+    // If SheetsService needed async init, we'd handle it differently.
+    _sheetsService = SheetsService(); 
 
     // --- Load players from Hive instead of dummy data ---
     // In a real app, you'd filter players based on the selected game's teams.
@@ -338,8 +344,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
   }
 
 
- // Function to save the shot event to Hive
- void _logShot() {
+ // Function to save the shot event to Hive and attempt immediate sync
+ Future<void> _logShot() async { // Mark method as async
     // Basic validation
     if (_selectedTeam == 'Your Team' && _selectedShooter == null && _isGoal == true) {
       // Show an error message (e.g., using a SnackBar)
@@ -366,9 +372,25 @@ class _LogShotScreenState extends State<LogShotScreen> {
     );
 
     // Save the event to the Hive Box
-    gameEventsBox.add(newShotEvent); // Use add() to let Hive manage the key, or put(newShotEvent.id, newShotEvent)
+    await gameEventsBox.add(newShotEvent); // Use await for async add
 
-    // Optional: Show a confirmation message
+    // Attempt to sync the newly added event immediately
+    // We don't necessarily need to wait for this or block UI, 
+    // but we might want to show feedback later based on sync status.
+    // We pass the same newShotEvent object which will be updated by syncGameEvent if successful.
+    _sheetsService.syncGameEvent(newShotEvent).then((syncSuccess) {
+      if (syncSuccess) {
+        print("Event ${newShotEvent.id} synced immediately.");
+        // Optionally show different feedback if sync worked instantly
+      } else {
+        print("Event ${newShotEvent.id} saved locally, pending sync.");
+        // The event is saved locally anyway, syncPendingEvents will catch it later
+      }
+    });
+
+
+    // Optional: Show a confirmation message (indicates local save success)
+    if (!mounted) return; // Check mounted before showing SnackBar
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Shot logged for ${(_selectedTeam == 'Your Team') ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}')),
     );

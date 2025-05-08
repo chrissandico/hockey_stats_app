@@ -32,7 +32,7 @@ class TeamUtils {
       _defaultTeam = Team(
         id: 'default',
         name: 'Default',
-        logoPath: 'assets/logos/generic_logo.png',
+        logoPath: 'assets/logos/generic_logo.svg',
         primaryColor: Colors.grey,
         secondaryColor: Colors.white,
       );
@@ -81,7 +81,7 @@ class TeamUtils {
     return Team(
       id: teamIdentifier.toLowerCase().replaceAll(' ', '_'),
       name: teamIdentifier,
-      logoPath: 'assets/logos/generic_logo.png',
+      logoPath: 'assets/logos/generic_logo.svg',
       primaryColor: isYourTeam ? Colors.blue : Colors.red,
       secondaryColor: Colors.white,
     );

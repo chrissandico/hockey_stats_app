@@ -3,6 +3,7 @@ import 'package:hive/hive.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/screens/view_stats_screen.dart';
 import 'package:uuid/uuid.dart';
+import 'package:hockey_stats_app/services/sheets_service.dart'; // Import the service
 
 class LogPenaltyScreen extends StatefulWidget {
   final String gameId;
@@ -28,6 +29,8 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
   late Box<GameEvent> gameEventsBox;
   // Hive Box for Players
   late Box<Player> playersBox;
+  // Service for Google Sheets interaction
+  late SheetsService _sheetsService; // Add service instance
 
   // Uuid generator for unique IDs
   final uuid = Uuid();
@@ -63,6 +66,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
     super.initState();
     gameEventsBox = Hive.box<GameEvent>('gameEvents');
     playersBox = Hive.box<Player>('players');
+    _sheetsService = SheetsService(); // Initialize service
     _loadPlayers();
   }
 
@@ -73,10 +77,10 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       // Optionally set a default selected player or leave it null
       // _selectedPlayer = _yourTeamPlayers.first;
     }
-    setState(() {}); // Update the UI after loading players
+     setState(() {}); // Update the UI after loading players
   }
 
-  void _logPenalty() {
+  Future<void> _logPenalty() async { // Mark method as async
     if (_selectedPlayer == null || _penaltyType == null || _penaltyType!.isEmpty || _penaltyDuration == null || _penaltyDuration! <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill in all penalty details correctly.')),
@@ -97,8 +101,18 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       isSynced: false,
     );
 
-    gameEventsBox.add(newPenaltyEvent);
+    await gameEventsBox.add(newPenaltyEvent); // Use await for async add
 
+    // Attempt to sync the newly added event immediately
+    _sheetsService.syncGameEvent(newPenaltyEvent).then((syncSuccess) {
+      if (syncSuccess) {
+        print("Penalty event ${newPenaltyEvent.id} synced immediately.");
+      } else {
+        print("Penalty event ${newPenaltyEvent.id} saved locally, pending sync.");
+      }
+    });
+
+    if (!mounted) return; // Check mounted before showing SnackBar
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Penalty logged for #${_selectedPlayer!.jerseyNumber}.')),
     );

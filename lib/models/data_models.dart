@@ -72,6 +72,21 @@ class Game extends HiveObject {
     required this.opponent,
     this.location,
   });
+  
+  // Create a copy of this Game with some fields replaced
+  Game copyWith({
+    String? id,
+    DateTime? date,
+    String? opponent,
+    String? location,
+  }) {
+    return Game(
+      id: id ?? this.id,
+      date: date ?? this.date,
+      opponent: opponent ?? this.opponent,
+      location: location ?? this.location,
+    );
+  }
 
   // Optional: Override == and hashCode for Game if needed for comparisons
   // @override

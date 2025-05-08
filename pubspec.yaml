@@ -40,6 +40,11 @@ dependencies:
   hive_flutter: ^1.1.0 # Hive integration for Flutter (initialization, etc.)
   uuid: ^4.1.0
 
+  # Google Sign-In and APIs
+  google_sign_in: ^6.2.1
+  googleapis: ^14.0.0
+  extension_google_sign_in_as_googleapis_auth: ^2.0.13 # Using suggested version
+
 
 dev_dependencies:
   flutter_test:
