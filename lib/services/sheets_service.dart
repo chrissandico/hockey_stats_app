@@ -614,4 +614,122 @@ class SheetsService {
     }
   }
 
+  // --- Season Stats Sync ---
+
+  Future<bool> _ensureSheetExists(sheets.SheetsApi sheetsApi, String sheetName, String spreadsheetId) async {
+    try {
+      final spreadsheet = await sheetsApi.spreadsheets.get(spreadsheetId, includeGridData: false);
+      final existingSheet = spreadsheet.sheets?.firstWhere(
+        (s) => s.properties?.title == sheetName,
+        orElse: () => sheets.Sheet(), // Return a dummy sheet if not found
+      );
+
+      if (existingSheet?.properties?.title == sheetName) {
+        print('Sheet "$sheetName" already exists.');
+        return true; // Sheet already exists
+      }
+
+      print('Sheet "$sheetName" not found, creating it...');
+      final addSheetRequest = sheets.AddSheetRequest(
+        properties: sheets.SheetProperties(title: sheetName),
+      );
+      final batchUpdateRequest = sheets.BatchUpdateSpreadsheetRequest(
+        requests: [sheets.Request(addSheet: addSheetRequest)],
+      );
+      await sheetsApi.spreadsheets.batchUpdate(batchUpdateRequest, spreadsheetId);
+      print('Sheet "$sheetName" created successfully.');
+      return true;
+    } catch (e) {
+      print('Error ensuring sheet "$sheetName" exists: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>> syncSeasonStatsToSheet(List<PlayerSeasonStats> seasonStats) async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      return {'success': false, 'message': 'Authentication failed. Cannot sync season stats.'};
+    }
+
+    final sheetsApi = _getSheetsApi();
+    if (sheetsApi == null) {
+      return {'success': false, 'message': 'Sheets API not available. Cannot sync season stats.'};
+    }
+
+    const String seasonStatsSheetName = 'SeasonStats'; // Name of the sheet for season stats
+
+    try {
+      // 1. Ensure the "SeasonStats" sheet exists
+      bool sheetReady = await _ensureSheetExists(sheetsApi, seasonStatsSheetName, _spreadsheetId);
+      if (!sheetReady) {
+        return {'success': false, 'message': 'Failed to create or find "$seasonStatsSheetName" sheet.'};
+      }
+
+      // 2. Prepare header row
+      final List<Object> headerRow = [
+        'Player Name', 'Jersey', 'POS', 'GP', 'G', 'A', 'P', 'SOG', 'PIM', '+/-'
+      ];
+
+      // 3. Prepare data rows
+      List<List<Object>> dataRows = seasonStats.map((stats) {
+        return [
+          stats.playerName,
+          stats.playerJerseyNumber,
+          stats.playerPosition ?? 'N/A', // Add position
+          stats.gamesPlayed,
+          stats.goals,
+          stats.assists,
+          stats.points,
+          stats.shots,
+          stats.penaltyMinutes,
+          stats.plusMinus,
+        ];
+      }).toList();
+
+      // 4. Clear existing data in the sheet (from A2 downwards to avoid deleting header if it's already there)
+      //    It's safer to clear a wide range to ensure all old data is gone.
+      final clearRange = '$seasonStatsSheetName!A2:Z'; // Clear from row 2 to the end of columns
+      try {
+        await sheetsApi.spreadsheets.values.clear(
+          sheets.ClearValuesRequest(), // Empty request body
+          _spreadsheetId,
+          clearRange,
+        );
+        print('Cleared existing data from $clearRange');
+      } catch (e) {
+        // It's okay if clear fails (e.g., sheet was just created and is empty)
+        print('Could not clear range $clearRange (may be empty): $e');
+      }
+      
+      // 5. Write header row to A1
+      final headerValueRange = sheets.ValueRange()..values = [headerRow];
+      await sheetsApi.spreadsheets.values.update(
+        headerValueRange,
+        _spreadsheetId,
+        '$seasonStatsSheetName!A1',
+        valueInputOption: 'USER_ENTERED',
+      );
+      print('Header row written to $seasonStatsSheetName!A1');
+
+      // 6. Write data rows starting from A2
+      if (dataRows.isNotEmpty) {
+        final dataValueRange = sheets.ValueRange()..values = dataRows;
+        await sheetsApi.spreadsheets.values.update(
+          dataValueRange,
+          _spreadsheetId,
+          '$seasonStatsSheetName!A2',
+          valueInputOption: 'USER_ENTERED',
+        );
+        print('Wrote ${dataRows.length} rows of season stats to $seasonStatsSheetName');
+      } else {
+        print('No season stats data to write.');
+      }
+
+      return {'success': true, 'message': 'Season stats synced to "$seasonStatsSheetName" sheet successfully.'};
+
+    } catch (e) {
+      print('Error syncing season stats to Google Sheet: $e');
+      return {'success': false, 'message': 'Error syncing season stats: ${e.toString()}'};
+    }
+  }
 }

@@ -5,6 +5,7 @@ import 'package:hockey_stats_app/screens/log_stats_screen.dart'; // We'll create
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import SheetsService for syncing
 import 'package:uuid/uuid.dart'; // Import for generating UUIDs
 import 'package:hockey_stats_app/main.dart' as main_logic; // To access functions from main.dart
+import 'package:hockey_stats_app/screens/view_season_stats_screen.dart'; // Import the new screen
 
 // Enum for different screen states
 enum _ScreenState { initialLoading, needsSignIn, signInFailed, syncFailed, dataLoaded, noGamesFound }
@@ -561,14 +562,9 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Select Game'),
+        title: const Text('Home'),
         actions: [
-          if (_screenState == _ScreenState.dataLoaded || _screenState == _ScreenState.syncFailed || _screenState == _ScreenState.noGamesFound)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Refresh/Retry Sync',
-              onPressed: _isPerformingAsyncOperation ? null : _initializeScreen, // Re-run init logic
-            ),
+          // IconButton for refresh and season stats removed from AppBar
         ],
       ),
       body: _buildBody(),
@@ -679,8 +675,33 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
           children: <Widget>[
             if (headerMessage != null) ...[
               Text(headerMessage, style: TextStyle(color: _screenState == _ScreenState.syncFailed ? Colors.orange[700] : Colors.black, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16.0),
+              const SizedBox(height: 10.0),
             ],
+            // New Season Stats Button
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.album), // Using album icon as a puck
+                label: const Text('Season Stats'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 15.0, horizontal: 20.0),
+                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12.0),
+                  ),
+                  elevation: 3,
+                ),
+                onPressed: _isPerformingAsyncOperation
+                    ? null
+                    : () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const ViewSeasonStatsScreen()),
+                        );
+                      },
+              ),
+            ),
+            const SizedBox(height: 16.0),
             const Text(
               'Choose a game to track stats for:',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),

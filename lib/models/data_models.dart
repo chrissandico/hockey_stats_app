@@ -174,3 +174,41 @@ class GameEvent extends HiveObject {
     this.yourTeamPlayersOnIceIds, // Include the new field in the constructor
   });
 }
+
+// --- PlayerSeasonStats Model ---
+// This is not a HiveObject, but a class to hold aggregated season stats for display.
+class PlayerSeasonStats {
+  final String playerId;
+  String playerName;
+  int playerJerseyNumber;
+  String? playerPosition; // Added playerPosition
+  int gamesPlayed;
+  int goals;
+  int assists;
+  int get points => goals + assists; // Calculated property
+  int shots;
+  int penaltyMinutes;
+  int plusMinus;
+
+  PlayerSeasonStats({
+    required this.playerId,
+    this.playerName = '',
+    this.playerJerseyNumber = 0,
+    this.playerPosition, // Added to constructor
+    this.gamesPlayed = 0,
+    this.goals = 0,
+    this.assists = 0,
+    this.shots = 0,
+    this.penaltyMinutes = 0,
+    this.plusMinus = 0,
+  });
+
+  // Optional: Add a method to update from a Player object if needed elsewhere
+  void updatePlayerDetails(Player player) {
+    playerName = player.id; // Assuming player.id is the name for now, or add a name field to Player
+    playerJerseyNumber = player.jerseyNumber;
+    playerPosition = player.position;
+    // If Player model had a 'name' field:
+    // playerName = player.name; 
+  }
+}

@@ -18,7 +18,10 @@ class ViewStatsScreen extends StatelessWidget {
     final gameEvents = gameEventsBox.values.where((event) => event.gameId == gameId).toList();
 
     // Get all players, filter out opponent players
-    final players = playersBox.values.where((player) => player.teamId == 'your_team').toList();
+    List<Player> players = playersBox.values.where((player) => player.teamId == 'your_team').toList();
+
+    // Sort players by jersey number in ascending order
+    players.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
 
     return Scaffold(
       appBar: AppBar(
@@ -98,7 +101,7 @@ class ViewStatsScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 32.0),
+            const SizedBox(height: 8.0), // Further reduced height
             const Text('Game Stats', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16.0),
             SingleChildScrollView(
