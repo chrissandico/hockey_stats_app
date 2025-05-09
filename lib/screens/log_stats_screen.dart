@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hockey_stats_app/screens/log_shot_screen.dart';
 import 'package:hockey_stats_app/screens/log_penalty_screen.dart';
 import 'package:hockey_stats_app/screens/view_stats_screen.dart';
+import 'package:hockey_stats_app/screens/edit_shot_list_screen.dart';
 import 'package:hive/hive.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
@@ -365,12 +366,25 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                ),
              )
           else ...[ // Show normal actions only after load
+            // View Stats Button
             IconButton(
               icon: const Icon(Icons.bar_chart),
+              tooltip: 'View Stats',
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId)),
+                );
+              },
+            ),
+            // Edit Shots Button
+            IconButton(
+              icon: const Icon(Icons.edit),
+              tooltip: 'Edit Logged Shots',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => EditShotListScreen(gameId: widget.gameId)),
                 );
               },
             ),

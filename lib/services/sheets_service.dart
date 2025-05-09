@@ -514,6 +514,104 @@ class SheetsService {
     };
   }
 
-  // TODO: Implement updateEventInSheet() if needed for the edit feature
+  // Update an existing event in the Google Sheet
+  // This method finds the row with the matching event ID and updates it
+  Future<bool> updateEventInSheet(GameEvent event) async {
+    // First ensure we're authenticated
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot update event: Authentication failed.');
+      return false;
+    }
+    
+    // Now get the API instance
+    final sheetsApi = _getSheetsApi();
+    if (sheetsApi == null) {
+      print('Cannot update event: Sheets API not available even after authentication check.');
+      return false;
+    }
+
+    // Define the sheet name
+    const String sheetName = 'Events';
+    
+    try {
+      // First, we need to find the row that contains this event ID
+      // Get all IDs from column A
+      final idRange = await sheetsApi.spreadsheets.values.get(
+        _spreadsheetId,
+        '$sheetName!A:A', // Get all values in column A (Event IDs)
+      );
+      
+      final idValues = idRange.values;
+      if (idValues == null || idValues.isEmpty) {
+        print('No data found in the Events sheet.');
+        return false;
+      }
+      
+      // Find the row index where the ID matches
+      int rowIndex = -1;
+      for (int i = 0; i < idValues.length; i++) {
+        if (idValues[i].isNotEmpty && idValues[i][0] == event.id) {
+          rowIndex = i + 1; // Sheets API uses 1-based indexing
+          break;
+        }
+      }
+      
+      if (rowIndex == -1) {
+        print('Event ID ${event.id} not found in the sheet. Cannot update.');
+        // If the event doesn't exist in the sheet, try to append it instead
+        return await syncGameEvent(event);
+      }
+      
+      // Prepare the data to update
+      final List<Object> values = [
+        event.id, // Column A: Event ID
+        event.gameId, // Column B: Game ID
+        event.timestamp.toIso8601String(), // Column C: Timestamp (ISO 8601 format)
+        event.period, // Column D: Period
+        event.eventType, // Column E: Event Type ("Shot", "Penalty")
+        event.team, // Column F: Team ("Your Team", "Opponent")
+        event.primaryPlayerId, // Column G: Primary Player ID (Shooter/Penalized)
+        event.assistPlayer1Id ?? '', // Column H: Assist 1 ID (Handle null)
+        event.assistPlayer2Id ?? '', // Column I: Assist 2 ID (Handle null)
+        event.isGoal ?? false, // Column J: Is Goal (TRUE/FALSE)
+        event.penaltyType ?? '', // Column K: Penalty Type (Handle null)
+        event.penaltyDuration ?? 0, // Column L: Penalty Duration (Handle null)
+        event.yourTeamPlayersOnIceIds?.join(',') ?? '', // Column M: Players on Ice (comma-separated IDs, handle null)
+      ];
+      
+      // Create the update range (the entire row for this event)
+      final updateRange = '$sheetName!A$rowIndex:M$rowIndex';
+      
+      // Create the ValueRange object
+      final valueRange = sheets.ValueRange()
+        ..values = [values]; // API expects a list of rows
+      
+      // Perform the update
+      final result = await sheetsApi.spreadsheets.values.update(
+        valueRange,
+        _spreadsheetId,
+        updateRange,
+        valueInputOption: 'USER_ENTERED', // How the data should be interpreted by Sheets
+      );
+      
+      // Check the result
+      if (result.updatedCells != null && result.updatedCells! > 0) {
+        print('Successfully updated event ${event.id} in row $rowIndex');
+        // Update the local event's sync status
+        if (event.isInBox) {
+          event.isSynced = true;
+          await event.save();
+        }
+        return true;
+      } else {
+        print('Update API call succeeded but no cells were updated. Result: ${result.toJson()}');
+        return false;
+      }
+    } catch (e) {
+      print('Error updating event ${event.id} in Google Sheets: $e');
+      return false;
+    }
+  }
 
 }
