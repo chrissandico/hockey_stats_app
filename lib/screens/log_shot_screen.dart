@@ -439,11 +439,13 @@ class _LogShotScreenState extends State<LogShotScreen> {
 
     // Return to appropriate screen after a short delay to show the confirmation
     Future.delayed(const Duration(milliseconds: 1500), () {
+      if (!mounted) return; // Ensure widget is still mounted before popping
       if (_isEditMode) {
-        // If we're in edit mode, pop back to the log stats screen (pop twice)
-        Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == '/logStats');
+        // If we're in edit mode, just pop this screen.
+        // EditShotListScreen will handle refreshing its list via the .then() callback.
+        Navigator.pop(context); 
       } else {
-        // If we're in create mode, just pop back to the previous screen
+        // If we're in create mode, pop back to LogStatsScreen and pass the period
         Navigator.pop(context, _selectedPeriod);
       }
     });

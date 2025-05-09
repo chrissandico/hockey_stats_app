@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
+import 'package:data_table_2/data_table_2.dart'; // Import DataTable2
 
 class ViewStatsScreen extends StatelessWidget {
   const ViewStatsScreen({super.key, this.gameId});
@@ -29,9 +30,14 @@ class ViewStatsScreen extends StatelessWidget {
           children: <Widget>[
             const Text('Individual Player Stats', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16.0),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
+            // Replace SingleChildScrollView and DataTable with DataTable2
+            SizedBox( // DataTable2 often needs a defined height or to be in an Expanded widget
+              height: (players.length + 1) * 56.0 + 20, // Estimate height: (num_rows + header_row) * row_height + padding
+              child: DataTable2(
+                columnSpacing: 12,
+                horizontalMargin: 12,
+                minWidth: 600, // Adjust as needed for your content
+                fixedLeftColumns: 1, // Freeze the first column
                 columns: const <DataColumn>[
                   DataColumn(
                     label: Text(

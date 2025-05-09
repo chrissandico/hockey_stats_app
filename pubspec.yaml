@@ -46,6 +46,8 @@ dependencies:
   googleapis: ^14.0.0
   extension_google_sign_in_as_googleapis_auth: ^2.0.13 # Using suggested version
 
+  data_table_2: ^2.5.10 # For advanced data tables with frozen columns/rows
+
 
 dev_dependencies:
   flutter_test:

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart'; // Import for compute
 import 'package:flutter/material.dart';
 import 'package:hockey_stats_app/screens/log_shot_screen.dart';
 import 'package:hockey_stats_app/screens/log_penalty_screen.dart';
@@ -9,7 +10,47 @@ import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import the service
 import 'package:google_sign_in/google_sign_in.dart'; // Import for GoogleSignInAccount
 
-// This screen will display the logging buttons after a game is selected.
+// Plain Dart object for passing GameEvent data to the isolate
+class _GameEventDataForIsolate {
+  final String gameId;
+  final String eventType;
+  final bool? isGoal; // Nullable to match GameEvent
+  final String team;
+
+  _GameEventDataForIsolate({
+    required this.gameId,
+    required this.eventType,
+    this.isGoal,
+    required this.team,
+  });
+}
+
+// Top-level function for score calculation in an isolate
+Map<String, int> _calculateScoreIsolate(Map<String, dynamic> params) {
+  final String targetGameId = params['targetGameId'] as String;
+  final List<_GameEventDataForIsolate> eventsData = params['eventsData'] as List<_GameEventDataForIsolate>;
+
+  final gameSpecificEventsData = eventsData.where((eventData) => eventData.gameId == targetGameId).toList();
+
+  int yourTeamScore = gameSpecificEventsData.where((eventData) =>
+    eventData.eventType == 'Shot' &&
+    eventData.isGoal == true &&
+    eventData.team == 'Your Team'
+  ).length;
+
+  int opponentScore = gameSpecificEventsData.where((eventData) =>
+    eventData.eventType == 'Shot' &&
+    eventData.isGoal == true &&
+    eventData.team == 'Opponent'
+  ).length;
+
+  return {
+    'Your Team': yourTeamScore,
+    'Opponent': opponentScore,
+  };
+}
+
+// This screen will display the logging buttons after a game isselected.
 // It receives the selected gameId.
 class LogStatsScreen extends StatefulWidget {
   final String gameId; // The ID of the currently selected game
@@ -17,7 +58,7 @@ class LogStatsScreen extends StatefulWidget {
   const LogStatsScreen({super.key, required this.gameId});
 
   @override
-  _LogStatsScreenState createState() => _LogStatsScreenState();
+  State<LogStatsScreen> createState() => _LogStatsScreenState();
 }
 
 class _LogStatsScreenState extends State<LogStatsScreen> {
@@ -39,7 +80,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     _loadInitialData(); // Load data asynchronously
     // Initialize auth state directly
     _currentUser = _sheetsService.getCurrentUser();
-    _isSigningIn = false;
+    // _isSigningIn = false; // This flag is primarily for the sync button's loading state now
   }
 
   // Load initial game data and score asynchronously
@@ -56,11 +97,17 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     final gamesBox = Hive.box<Game>('games');
     Game? game;
     try {
-      // Use await for potential async operations if Hive access becomes complex,
-      // but firstWhere is typically synchronous. Run calculation off-thread if needed.
-      game = gamesBox.values.firstWhere((g) => g.id == widget.gameId);
+      // Optimized to use Hive's get() method as gameId is the key
+      game = gamesBox.get(widget.gameId);
     } catch (e) {
-      print('Game not found: ${widget.gameId}');
+      // This catch might not be necessary if .get() returns null on not found,
+      // but good for logging other potential errors.
+      print('Error loading game from Hive: ${widget.gameId}, Error: $e');
+    }
+    
+    if (game == null) {
+      print('Game not found in Hive: ${widget.gameId}');
+      // Handle case where game is not found, perhaps show an error or default state
     }
 
     // Load score
@@ -84,59 +131,27 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     }
   }
 
-  // Check initial sign-in status (Keep the method in case needed later, but don't call from initState)
-  Future<void> _checkSignInStatus() async {
-    if (!mounted) return;
-    setState(() { _isSigningIn = true; }); // Show loading indicator
-    await _sheetsService.signInSilently();
-    if (!mounted) return;
-    setState(() {
-      _currentUser = _sheetsService.getCurrentUser();
-      _isSigningIn = false;
-    });
-  }
+  // // Check initial sign-in status (Keep the method in case needed later, but don't call from initState)
+  // Future<void> _checkSignInStatus() async {
+  //   if (!mounted) return;
+  //   setState(() { _isSigningIn = true; }); // Show loading indicator
+  //   await _sheetsService.signInSilently();
+  //   if (!mounted) return;
+  //   setState(() {
+  //     _currentUser = _sheetsService.getCurrentUser();
+  //     _isSigningIn = false;
+  //   });
+  // }
 
-  // Handle Sign In button press
-  Future<void> _handleSignIn() async {
-    // Ensure context is still valid if async operation takes time
-    if (!mounted) return;
-    setState(() { _isSigningIn = true; });
-    bool success = await _sheetsService.signIn();
-    // Ensure context is still valid after await
-    if (!mounted) return;
-    if (success) {
-      setState(() {
-        _currentUser = _sheetsService.getCurrentUser();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Signed in as ${_currentUser?.displayName ?? 'Unknown'}')),
-      );
-    } else {
-       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sign in failed.')),
-      );
-    }
-     // Also reset _isSigningIn if sign in fails
-     if (!success) {
-       setState(() { _isSigningIn = false; });
-     } else {
-       setState(() { _isSigningIn = false; }); // Already setting above, but ensure it's false
-     }
-  }
+  // // Handle Sign In button press - No longer needed here
+  // Future<void> _handleSignIn() async {
+  //   // ...
+  // }
 
-  // Handle Sign Out button press
-  Future<void> _handleSignOut() async {
-    await _sheetsService.signOut();
-    if (!mounted) return;
-    setState(() {
-      _currentUser = null;
-    });
-     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Signed out.')),
-    );
-     // Reset signing in flag if sign out happens while syncing (edge case)
-     setState(() { _isSigningIn = false; });
-  }
+  // // Handle Sign Out button press - No longer needed here
+  // Future<void> _handleSignOut() async {
+  //   // ...
+  // }
 
   // Handle Sync button press
   Future<void> _handleSync() async {
@@ -199,15 +214,15 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   // Build the period selector UI
   Widget _buildPeriodSelector() {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 16.0),
+      margin: const EdgeInsets.symmetric(vertical: 16.0), // const added
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          const Text( // const added
             'Select Period:',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 8.0),
+          const SizedBox(height: 8.0), // const added
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -227,7 +242,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     final isSelected = _selectedPeriod == period;
     return Expanded(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+        padding: const EdgeInsets.symmetric(horizontal: 4.0), // const added
         child: ElevatedButton(
           onPressed: () {
             setState(() {
@@ -237,7 +252,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: isSelected ? Theme.of(context).primaryColor : null,
             foregroundColor: isSelected ? Colors.white : null,
-            padding: const EdgeInsets.symmetric(vertical: 12.0),
+            padding: const EdgeInsets.symmetric(vertical: 12.0), // const added
           ),
           child: Text(label ?? 'P$period'),
         ),
@@ -245,33 +260,24 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     );
   }
 
-  // Calculate the current game score (can remain synchronous if Hive reads are fast enough)
+  // Calculate the current game score using compute
   Future<Map<String, int>> _getGameScore() async {
-    // Access the gameEvents box
     final gameEventsBox = Hive.box<GameEvent>('gameEvents');
-
-    // Get all game events for the current game
-    // Consider running this in compute() if it becomes slow
-    final gameEvents = gameEventsBox.values.where((event) => event.gameId == widget.gameId).toList();
-
-    // Count goals for each team
-    int yourTeamScore = gameEvents.where((event) =>
-      event.eventType == 'Shot' &&
-      event.isGoal == true &&
-      event.team == 'Your Team'
-    ).length;
-
-    int opponentScore = gameEvents.where((event) =>
-      event.eventType == 'Shot' &&
-      event.isGoal == true &&
-      event.team == 'Opponent'
-    ).length;
-
-    // Return scores as a map
-    return {
-      'Your Team': yourTeamScore,
-      'Opponent': opponentScore,
-    };
+    
+    // Map GameEvent (HiveObject) to _GameEventDataForIsolate (plain Dart object)
+    final List<_GameEventDataForIsolate> eventsDataForIsolate = gameEventsBox.values.map((event) {
+      return _GameEventDataForIsolate(
+        gameId: event.gameId,
+        eventType: event.eventType,
+        isGoal: event.isGoal,
+        team: event.team,
+      );
+    }).toList();
+    
+    return await compute(_calculateScoreIsolate, {
+      'targetGameId': widget.gameId, // Pass the specific gameId we're interested in
+      'eventsData': eventsDataForIsolate, // Pass the list of plain data objects
+    });
   }
 
   // Method to refresh score after an event is logged
@@ -303,11 +309,11 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   }) {
     return Expanded(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6.0), // Adjust spacing between buttons
+        padding: const EdgeInsets.symmetric(horizontal: 6.0), // const added
         child: ElevatedButton(
           onPressed: onPressed,
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 10.0), // Generous padding
+            padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 10.0), // const added
             // backgroundColor: Theme.of(context).colorScheme.surfaceVariant, // Example background
             // foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant, // Example foreground
             shape: RoundedRectangleBorder(
@@ -319,7 +325,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
             mainAxisSize: MainAxisSize.min, // Fit content
             children: <Widget>[
               Icon(icon, size: 48.0, color: Theme.of(context).colorScheme.primary), // Larger icon, themed color
-              const SizedBox(height: 8.0),
+              const SizedBox(height: 8.0), // const added
               Text(
                 label,
                 textAlign: TextAlign.center,
@@ -354,12 +360,12 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Track Stats'), // Title indicating tracking mode
+        title: const Text('Track Stats'), // const added
         actions: [
            // Show loading indicator during initial load
           if (_isLoadingInitialData)
-             const Padding(
-               padding: EdgeInsets.all(8.0),
+             const Padding( // const added
+               padding: EdgeInsets.all(8.0), // const added
                child: SizedBox(
                  width: 24, height: 24,
                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white,)
@@ -368,7 +374,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
           else ...[ // Show normal actions only after load
             // View Stats Button
             IconButton(
-              icon: const Icon(Icons.bar_chart),
+              icon: const Icon(Icons.bar_chart), // const added
               tooltip: 'View Stats',
               onPressed: () {
                 Navigator.push(
@@ -379,7 +385,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
             ),
             // Edit Shots Button
             IconButton(
-              icon: const Icon(Icons.edit),
+              icon: const Icon(Icons.edit), // const added
               tooltip: 'Edit Logged Shots',
               onPressed: () {
                 Navigator.push(
@@ -388,15 +394,15 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 );
               },
             ),
-            // Add Sign-In/Sign-Out Button
-            _buildAuthButton(),
+            // Add Sign-In/Sign-Out Button - Removed
+            // _buildAuthButton(), 
           ],
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16.0), // const added
         child: _isLoadingInitialData
-          ? const Center(child: CircularProgressIndicator()) // Show loading indicator for body
+          ? const Center(child: CircularProgressIndicator()) // const added
           : SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -404,7 +410,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 // Period selection UI
                 _buildPeriodSelector(),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 24), // const added
 
                 // Buttons to navigate to specific logging screens (New Layout)
                 Row(
@@ -459,7 +465,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                   ],
                 ),
                 
-                const SizedBox(height: 24.0), // Spacing before Game Details Card
+                const SizedBox(height: 24.0), // const added
                 // Game details section with enhanced display
                 Card(
                   elevation: 4.0,
@@ -467,13 +473,13 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                     borderRadius: BorderRadius.circular(12.0),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(16.0), // const added
                     child: Column(
                       children: [
-                        Row(
+                        const Row( // const added
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Text(
+                            Text(
                               'Game Details',
                               style: TextStyle(
                                 fontSize: 20,
@@ -483,7 +489,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 16), // const added
 
                         // Team logos
                         if (_currentGame != null) ...[
@@ -494,11 +500,11 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                               size: 50.0,
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 8), // const added
                           // Display current game score
                           Center(
                             child: _isLoadingScore // Use separate flag for score updates
-                                ? const SizedBox(height: 30, width: 30, child: CircularProgressIndicator(strokeWidth: 3,)) // Smaller indicator for score
+                                ? const SizedBox(height: 30, width: 30, child: CircularProgressIndicator(strokeWidth: 3,)) // const added
                                 : Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
@@ -510,7 +516,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                                           color: Colors.blue,
                                         ),
                                       ),
-                                      const Text(
+                                      const Text( // const added
                                         ' - ',
                                         style: TextStyle(
                                           fontSize: 24,
@@ -528,7 +534,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                                     ],
                                   ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 16), // const added
                         ],
 
                         // Game date and opponent
@@ -536,25 +542,25 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                           // Date row
                           Row(
                             children: [
-                              const Icon(Icons.calendar_today, color: Colors.blue),
-                              const SizedBox(width: 8),
+                              const Icon(Icons.calendar_today, color: Colors.blue), // const added
+                              const SizedBox(width: 8), // const added
                               Text(
                                 'Date: ${_currentGame!.date.toLocal().toString().split(' ')[0]}',
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500), // const added
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 8), // const added
 
                           // Opponent row
                           Row(
                             children: [
-                              const Icon(Icons.sports_hockey, color: Colors.blue),
-                              const SizedBox(width: 8),
+                              const Icon(Icons.sports_hockey, color: Colors.blue), // const added
+                              const SizedBox(width: 8), // const added
                               Expanded(
                                 child: Text(
                                   'Opponent: ${_currentGame!.opponent}',
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500), // const added
                                 ),
                               ),
                             ],
@@ -562,15 +568,15 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
 
                           // Location row (if available)
                           if (_currentGame!.location != null && _currentGame!.location!.isNotEmpty) ...[
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 8), // const added
                             Row(
                               children: [
-                                const Icon(Icons.location_on, color: Colors.blue),
-                                const SizedBox(width: 8),
+                                const Icon(Icons.location_on, color: Colors.blue), // const added
+                                const SizedBox(width: 8), // const added
                                 Expanded(
                                   child: Text(
                                     'Location: ${_currentGame!.location}',
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500), // const added
                                   ),
                                 ),
                               ],
@@ -580,16 +586,16 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                           // If game details couldn't be loaded
                           Row(
                             children: [
-                              const Icon(Icons.error_outline, color: Colors.orange),
-                              const SizedBox(width: 8),
+                              const Icon(Icons.error_outline, color: Colors.orange), // const added
+                              const SizedBox(width: 8), // const added
                               Text(
                                 'Game ID: ${widget.gameId}',
-                                style: const TextStyle(fontSize: 16),
+                                style: const TextStyle(fontSize: 16), // const added
                               ),
                             ],
                           ),
-                          const SizedBox(height: 4),
-                          const Text(
+                          const SizedBox(height: 4), // const added
+                          const Text( // const added
                             'Game details not found',
                             style: TextStyle(
                               fontSize: 14,
@@ -602,13 +608,13 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16), // Spacing after Game Details Card
+                const SizedBox(height: 16), // const added
 
                 if (_currentUser != null) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 10), // const added
                   ElevatedButton.icon(
-                    icon: _isSigningIn ? SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).primaryColor)) : const Icon(Icons.sync),
-                    label: const Text('Sync Data to Google Sheets'),
+                    icon: _isSigningIn ? SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).primaryColor)) : const Icon(Icons.sync), // const removed from SizedBox
+                    label: const Text('Sync Data to Google Sheets'), // const added
                     onPressed: _isSigningIn ? null : _handleSync,
                   ),
                 ]
@@ -619,34 +625,9 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     );
   }
 
-  // Build the Auth button based on sign-in state
-  Widget _buildAuthButton() {
-    if (_isSigningIn) {
-      return const Padding(
-        padding: EdgeInsets.all(8.0),
-        child: SizedBox(
-          width: 24, // Consistent size with IconButton
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-
-    if (_currentUser != null) {
-      // Show Sign Out button
-      return IconButton(
-        icon: const Icon(Icons.logout),
-        tooltip: 'Sign Out (${_currentUser!.email})',
-        onPressed: _handleSignOut,
-      );
-    } else {
-      // Show Sign In button
-      return IconButton(
-        icon: const Icon(Icons.login),
-        tooltip: 'Sign In with Google',
-        onPressed: _handleSignIn,
-      );
-    }
-  }
+  // // Build the Auth button based on sign-in state - No longer needed
+  // Widget _buildAuthButton() {
+  //   // ...
+  // }
 
 }

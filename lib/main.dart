@@ -10,9 +10,38 @@ import 'package:hockey_stats_app/services/sheets_service.dart'; // Import Sheets
 String dummyGameId = 'dummy_game_123';
 String dummyGameId2 = 'dummy_game_456'; // Add another dummy game ID
 
+// Function to reset all Hive data
+Future<void> _resetAllHiveData() async {
+  print('Resetting all Hive data...');
+  // Deletes all boxes from disk. This is a full reset.
+  await Hive.deleteFromDisk(); 
+  print('All Hive data has been reset.');
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // --- TEMPORARY RESET LOGIC ---
+  // STEP 1: Set performReset to true to reset data.
+  // STEP 2: Run the app once. You'll see a message in the console.
+  // STEP 3: Stop the app.
+  // STEP 4: Set performReset back to false.
+  // STEP 5: Restart the app for normal operation with fresh data.
+  const bool performReset = false; // CHANGE TO true TO RESET
+
+  if (performReset) {
+    await Hive.initFlutter(); // Initialize Hive to allow deleteFromDisk call
+    await _resetAllHiveData(); // This calls Hive.deleteFromDisk()
+    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    print("!!! HIVE DATA RESET COMPLETE.                                !!!");
+    print("!!! SET performReset back to false in lib/main.dart NOW,   !!!");
+    print("!!! AND THEN RESTART THE APP.                              !!!");
+    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    return; // Exit main early to prevent the rest of the app from running in this reset session.
+  }
+  // --- END TEMPORARY RESET LOGIC ---
+
+  // Normal app initialization starts here for subsequent (non-reset) runs
   await Hive.initFlutter();
 
   Hive.registerAdapter(PlayerAdapter());
@@ -23,52 +52,50 @@ void main() async {
   await Hive.openBox<Game>('games');
   await Hive.openBox<GameEvent>('gameEvents');
 
-  // Try to sync data from Google Sheets on app launch
-  await attemptInitialDataSync();
+  // DO NOT call attemptInitialDataSyncIfSignedIn() or addDummyDataIfNeeded() here anymore.
+  // The GameSelectionScreen (or a new AuthWrapperScreen) will handle this.
 
   runApp(const MyApp());
 }
 
-// Attempt to sync data from Google Sheets on app launch
-Future<void> attemptInitialDataSync() async {
-  print('Attempting initial data sync from Google Sheets...');
-  
-  // Create an instance of SheetsService
+// This function tries to sync if the user is already authenticated.
+// It does NOT fall back to dummy data.
+// The UI layer will decide if dummy data should be added based on the outcome.
+Future<Map<String, dynamic>> attemptInitialDataSyncIfSignedIn() async {
+  print('Attempting initial data sync from Google Sheets if signed in...');
   final sheetsService = SheetsService();
   
-  // Check if the user is already signed in
-  final isSignedIn = await sheetsService.isSignedIn();
-  
-  if (isSignedIn) {
-    print('User is already signed in, attempting silent sign-in...');
-    // Try silent sign-in
-    final success = await sheetsService.signInSilently();
+  // Check if a user session already exists (e.g. from a previous app run)
+  final bool previousSessionExists = await sheetsService.isSignedIn();
+
+  if (previousSessionExists) {
+    print('User has a previous session, attempting silent sign-in to refresh credentials...');
+    final bool silentSignInSuccess = await sheetsService.signInSilently();
     
-    if (success) {
-      print('Silent sign-in successful, syncing data...');
-      // Sync data from Google Sheets
-      final result = await sheetsService.syncDataFromSheets();
+    if (silentSignInSuccess) {
+      print('Silent sign-in successful, proceeding to sync data...');
+      final Map<String, dynamic> syncResult = await sheetsService.syncDataFromSheets();
       
-      if (result['success'] == true) {
-        print('Initial data sync successful: ${result['players']} players and ${result['games']} games synced.');
+      if (syncResult['success'] == true) {
+        print('Initial data sync successful: ${syncResult['players']} players and ${syncResult['games']} games synced.');
+        return {'status': 'sync_success', 'message': 'Sync successful', 'data': syncResult};
       } else {
-        print('Initial data sync failed: ${result['message']}');
-        // Fall back to dummy data if sync fails and boxes are empty
-        addDummyDataIfNeeded();
+        print('Initial data sync failed after successful sign-in: ${syncResult['message']}');
+        return {'status': 'sync_failed', 'message': 'Data sync failed: ${syncResult['message']}'};
       }
     } else {
-      print('Silent sign-in failed, falling back to dummy data if needed.');
-      // Fall back to dummy data if sign-in fails and boxes are empty
-      addDummyDataIfNeeded();
+      print('Silent sign-in failed. User might need to sign in manually.');
+      return {'status': 'signin_needed', 'message': 'Could not refresh session. Please sign in.'};
     }
   } else {
-    print('User is not signed in, falling back to dummy data if needed.');
-    // Fall back to dummy data if user is not signed in and boxes are empty
-    addDummyDataIfNeeded();
+    print('User is not signed in. No sync attempted.');
+    return {'status': 'signin_needed', 'message': 'Please sign in to sync your data.'};
   }
 }
 
-// Add dummy data if the boxes are empty
+// Add dummy data if the boxes are empty.
+// This function should be called explicitly by the UI when appropriate,
+// not automatically on every startup if the user isn't signed in.
 void addDummyDataIfNeeded() {
   print('Checking if dummy data is needed...');
   
@@ -87,8 +114,12 @@ void addDummyDataIfNeeded() {
   var gamesBox = Hive.box<Game>('games');
   if (gamesBox.isEmpty) { // Only add if the box is empty
     print('Adding dummy games data...');
-    gamesBox.add(Game(id: dummyGameId, date: DateTime.now().subtract(Duration(days: 1)), opponent: 'Rivals'));
-    gamesBox.add(Game(id: dummyGameId2, date: DateTime.now(), opponent: 'Chiefs'));
+    // Use put with the game's ID as the key for consistency
+    final game1 = Game(id: dummyGameId, date: DateTime.now().subtract(const Duration(days: 1)), opponent: 'Rivals');
+    gamesBox.put(game1.id, game1);
+    
+    final game2 = Game(id: dummyGameId2, date: DateTime.now(), opponent: 'Chiefs');
+    gamesBox.put(game2.id, game2);
   }
 }
 
