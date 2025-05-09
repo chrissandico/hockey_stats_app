@@ -39,6 +39,12 @@ class ViewStatsScreen extends StatelessWidget {
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
+                  DataColumn( // New column for Position
+                    label: Text(
+                      'POS',
+                      style: TextStyle(fontStyle: FontStyle.italic),
+                    ),
+                  ),
                   DataColumn(
                     label: Text(
                       'G',
@@ -75,6 +81,7 @@ class ViewStatsScreen extends StatelessWidget {
                     DataRow(
                       cells: <DataCell>[
                         DataCell(Text('${player.jerseyNumber}')),
+                        DataCell(Text(player.position?.isNotEmpty == true ? player.position! : 'N/A')), // Display position or N/A
                         DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.primaryPlayerId == player.id).length}')),
                         DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)).length}')),
                         DataCell(Text('${calculatePlusMinus(player, gameEvents, gameId!)}')),

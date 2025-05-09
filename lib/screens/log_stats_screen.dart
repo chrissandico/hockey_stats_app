@@ -244,34 +244,6 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     );
   }
 
-  // Display current period indicator
-  Widget _buildPeriodIndicator() {
-    return Container(
-      padding: const EdgeInsets.all(12.0),
-      margin: const EdgeInsets.only(bottom: 16.0),
-      decoration: BoxDecoration(
-        color: Theme.of(context).primaryColorLight,
-        borderRadius: BorderRadius.circular(8.0),
-        border: Border.all(color: Theme.of(context).primaryColor),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.timer, color: Theme.of(context).primaryColor),
-          const SizedBox(width: 8.0),
-          Text(
-            'Current Period: ${_selectedPeriod == 4 ? 'OT' : _selectedPeriod}',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).primaryColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // Calculate the current game score (can remain synchronous if Hive reads are fast enough)
   Future<Map<String, int>> _getGameScore() async {
     // Access the gameEvents box
@@ -321,6 +293,47 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
      }
   }
 
+  // Helper method to build styled logging buttons
+  Widget _buildLogButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required BuildContext context, // Added context for theme access if needed
+  }) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6.0), // Adjust spacing between buttons
+        child: ElevatedButton(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 20.0, horizontal: 10.0), // Generous padding
+            // backgroundColor: Theme.of(context).colorScheme.surfaceVariant, // Example background
+            // foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant, // Example foreground
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12.0), // Rounded corners
+            ),
+            elevation: 3,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min, // Fit content
+            children: <Widget>[
+              Icon(icon, size: 48.0, color: Theme.of(context).colorScheme.primary), // Larger icon, themed color
+              const SizedBox(height: 8.0),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16.0,
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant, // Themed text color
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -374,6 +387,65 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
+                // Period selection UI
+                _buildPeriodSelector(),
+
+                const SizedBox(height: 24),
+
+                // Buttons to navigate to specific logging screens (New Layout)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: <Widget>[
+                    _buildLogButton(
+                      icon: Icons.sports_hockey, // Hockey stick icon
+                      label: 'Log Shot',
+                      context: context,
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => LogShotScreen(
+                              gameId: widget.gameId,
+                              period: _selectedPeriod,
+                            ),
+                          ),
+                        ).then((value) {
+                          _refreshScore();
+                          if (value != null && value is int) {
+                            setState(() {
+                              _selectedPeriod = value;
+                            });
+                          }
+                        });
+                      },
+                    ),
+                    _buildLogButton(
+                      icon: Icons.sports, // Whistle icon (using a generic sports icon)
+                      label: 'Log Penalty',
+                      context: context,
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => LogPenaltyScreen(
+                              gameId: widget.gameId,
+                              period: _selectedPeriod,
+                            ),
+                          ),
+                        ).then((value) {
+                          _refreshScore();
+                          if (value != null && value is int) {
+                            setState(() {
+                              _selectedPeriod = value;
+                            });
+                          }
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                
+                const SizedBox(height: 24.0), // Spacing before Game Details Card
                 // Game details section with enhanced display
                 Card(
                   elevation: 4.0,
@@ -516,83 +588,14 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16), // Spacing after Game Details Card
 
-                const SizedBox(height: 16),
-
-                // Period selection UI
-                _buildPeriodSelector(),
-
-                // Current period indicator
-                Center(child: _buildPeriodIndicator()),
-
-                const SizedBox(height: 24),
-
-                // Buttons to navigate to specific logging screens
-                ElevatedButton(
-                  onPressed: () {
-                    // Navigate to LogShotScreen, passing the selected gameId
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => LogShotScreen(
-                          gameId: widget.gameId,
-                          period: _selectedPeriod,
-                        ),
-                      ),
-                    ).then((value) {
-                      // Update score when returning from LogShotScreen
-                      _refreshScore(); // Use refresh method
-
-                      // If LogShotScreen returns a period value, update our state
-                      if (value != null && value is int) {
-                        setState(() {
-                          _selectedPeriod = value;
-                        });
-                      }
-                    });
-                  },
-                  child: const Text('Log Shot'),
-                ),
-                const SizedBox(height: 10),
-                ElevatedButton(
-                  onPressed: () {
-                    // Navigate to LogPenaltyScreen, passing the selected gameId
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => LogPenaltyScreen(
-                          gameId: widget.gameId,
-                          period: _selectedPeriod,
-                        ),
-                      ),
-                    ).then((value) {
-                      // Update score when returning from LogPenaltyScreen
-                      _refreshScore(); // Use refresh method
-
-                      // If LogPenaltyScreen returns a period value, update our state
-                      if (value != null && value is int) {
-                        setState(() {
-                          _selectedPeriod = value;
-                        });
-                      }
-                    });
-                  },
-                  child: const Text('Log Penalty'),
-                ),
-                // TODO: Add button for View Local Stats (UF-5)
-                // TODO: Add button for Sync Data (UF-4) - Should be enabled only when signed in
                 if (_currentUser != null) ...[
                   const SizedBox(height: 10),
                   ElevatedButton.icon(
                     icon: _isSigningIn ? SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).primaryColor)) : const Icon(Icons.sync),
                     label: const Text('Sync Data to Google Sheets'),
                     onPressed: _isSigningIn ? null : _handleSync,
-                  ),
-                  const SizedBox(height: 10),
-                  ElevatedButton.icon(
-                    icon: _isSigningIn ? SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).primaryColor)) : const Icon(Icons.download),
-                    label: const Text('Sync Roster & Schedule from Sheets'),
-                    onPressed: _isSigningIn ? null : _handleSyncFromSheets,
                   ),
                 ]
                 ],

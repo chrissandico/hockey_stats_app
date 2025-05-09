@@ -134,7 +134,7 @@ class SheetsService {
     }
 
     // Define the sheet name and range
-    final String range = 'Players!A2:C'; // Columns: ID, Jersey Number, Team ID (starting from row 2)
+    final String range = 'Players!A2:D'; // Columns: ID, Jersey Number, Team ID, Position (starting from row 2)
 
     try {
       print('Fetching players from Google Sheet...');
@@ -164,14 +164,21 @@ class SheetsService {
              
              // Column C: Team ID (String, optional)
              String? teamId = row.length > 2 ? row[2]?.toString() : 'your_team';
+
+             // Column D: Position (String, optional)
+             String? position = row.length > 3 ? row[3]?.toString() : null;
+             if (position != null && position.trim().isEmpty) {
+               position = null; // Treat empty strings as null for 'N/A' display
+             }
              
              if (id.isNotEmpty && jerseyNumber >= 0) {
                 players.add(Player(
                   id: id, 
                   jerseyNumber: jerseyNumber,
                   teamId: teamId,
+                  position: position, // Add position
                 ));
-                print('Parsed player: #$jerseyNumber (ID: $id)');
+                print('Parsed player: #$jerseyNumber (ID: $id, Pos: $position)');
              } else {
                 print('Skipping invalid player row: $row (ID or jersey number invalid)');
              }

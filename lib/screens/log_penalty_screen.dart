@@ -21,6 +21,7 @@ class LogPenaltyScreen extends StatefulWidget {
 
 class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
   // State variables for input values
+  late int _selectedPeriod; // To store the currently selected period
   Player? _selectedPlayer;
   String? _penaltyType;
   int? _penaltyDuration;
@@ -64,6 +65,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedPeriod = widget.period; // Initialize _selectedPeriod
     gameEventsBox = Hive.box<GameEvent>('gameEvents');
     playersBox = Hive.box<Player>('players');
     _sheetsService = SheetsService(); // Initialize service
@@ -92,7 +94,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       id: uuid.v4(),
       gameId: widget.gameId,
       timestamp: DateTime.now(),
-      period: widget.period, // Use the period passed to the widget
+      period: _selectedPeriod, // Use the selected period from the new UI
       eventType: 'Penalty',
       team: 'Your Team', // Penalties are only for 'Your Team'
       primaryPlayerId: _selectedPlayer!.id,
@@ -127,171 +129,157 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
     // Return to previous screen after a short delay to show the confirmation
     Future.delayed(const Duration(milliseconds: 1500), () {
       // Return the current period to the previous screen
-      Navigator.pop(context, widget.period);
+      Navigator.pop(context, _selectedPeriod);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Log Penalty'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.bar_chart),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId)),
-              );
-            },
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pop(context, _selectedPeriod);
+        return false; // We've handled the pop, so prevent default system pop.
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Log Penalty'),
+          // The default back button in AppBar will trigger onWillPop.
+          actions: [ // Ensure actions is part of AppBar
+            IconButton(
+              icon: const Icon(Icons.bar_chart),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId)),
+                );
+              },
+            ),
+          ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // New Period Selector
+                _buildPeriodSelector(),
+                const SizedBox(height: 16.0), // Add some spacing after the period selector
+
+                // Player Selection
+                DropdownButtonFormField<Player>(
+                  decoration: const InputDecoration(labelText: 'Penalized Player'),
+                  value: _selectedPlayer,
+                  items: _yourTeamPlayers.map((player) {
+                    return DropdownMenuItem<Player>(
+                      value: player,
+                      child: Text('#${player.jerseyNumber}', style: const TextStyle(fontSize: 16)),
+                    );
+                  }).toList(),
+                  onChanged: (Player? newValue) {
+                    setState(() {
+                      _selectedPlayer = newValue;
+                    });
+                  },
+                  isExpanded: true,
+                ),
+                const SizedBox(height: 16.0),
+
+                // Penalty Type Selection (Dropdown with common types)
+                DropdownButtonFormField<String>(
+                  decoration: const InputDecoration(labelText: 'Penalty Type'),
+                  value: _penaltyType,
+                  items: _commonPenaltyTypes.map((String type) {
+                    return DropdownMenuItem<String>(
+                      value: type,
+                      child: Text(type, style: const TextStyle(fontSize: 16)),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    setState(() {
+                      _penaltyType = newValue;
+                    });
+                  },
+                  isExpanded: true,
+                ),
+                const SizedBox(height: 16.0),
+
+                // Penalty Duration Input
+                TextFormField(
+                  decoration: const InputDecoration(labelText: 'Penalty Duration (minutes)'),
+                  keyboardType: TextInputType.number,
+                  onChanged: (value) {
+                    setState(() {
+                      _penaltyDuration = int.tryParse(value);
+                    });
+                  },
+                  // Clear the field when the form is cleared
+                  controller: _penaltyDuration == null ? null : TextEditingController(text: _penaltyDuration.toString()),
+                ),
+                const SizedBox(height: 24.0),
+
+                // Log Penalty Button
+                ElevatedButton(
+                  onPressed: _logPenalty,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                  ),
+                  child: const Text('Log Penalty', style: TextStyle(fontSize: 16)),
+                ),
+              ],
+            ),
+          ),
+        ), // This closes the Padding for body
+      ), // This closes the Scaffold
+    ); // This closes the WillPopScope
+  }
+  
+  // --- Copied Period Selector Methods ---
+  Widget _buildPeriodSelector() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Select Period:',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8.0),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildPeriodButton(1),
+              _buildPeriodButton(2),
+              _buildPeriodButton(3),
+              _buildPeriodButton(4, label: 'OT'),
+            ],
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-            // Period indicator at the top of the form with period change buttons
-            Container(
-              padding: const EdgeInsets.all(12.0),
-              margin: const EdgeInsets.only(bottom: 16.0),
-              decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8.0),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.timer, color: Colors.amber[800]),
-                  const SizedBox(width: 8.0),
-                  Text(
-                    'Period ${widget.period == 4 ? "OT" : widget.period}',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.amber[800],
-                    ),
-                  ),
-                  const Spacer(),
-                  // Period change buttons
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove_circle_outline),
-                        color: Colors.amber[800],
-                        onPressed: widget.period > 1 ? _decrementPeriod : null,
-                        tooltip: 'Previous Period',
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline),
-                        color: Colors.amber[800],
-                        onPressed: widget.period < 4 ? _incrementPeriod : null,
-                        tooltip: 'Next Period',
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            // Player Selection
-            DropdownButtonFormField<Player>(
-              decoration: const InputDecoration(labelText: 'Penalized Player'),
-              value: _selectedPlayer,
-              items: _yourTeamPlayers.map((player) {
-                return DropdownMenuItem<Player>(
-                  value: player,
-                  child: Text('#${player.jerseyNumber}', style: const TextStyle(fontSize: 16)),
-                );
-              }).toList(),
-              onChanged: (Player? newValue) {
-                setState(() {
-                  _selectedPlayer = newValue;
-                });
-              },
-              isExpanded: true,
-            ),
-            const SizedBox(height: 16.0),
+    );
+  }
 
-            // Penalty Type Selection (Dropdown with common types)
-            DropdownButtonFormField<String>(
-              decoration: const InputDecoration(labelText: 'Penalty Type'),
-              value: _penaltyType,
-              items: _commonPenaltyTypes.map((String type) {
-                return DropdownMenuItem<String>(
-                  value: type,
-                  child: Text(type, style: const TextStyle(fontSize: 16)),
-                );
-              }).toList(),
-              onChanged: (String? newValue) {
-                setState(() {
-                  _penaltyType = newValue;
-                });
-              },
-              isExpanded: true,
-            ),
-            const SizedBox(height: 16.0),
-
-            // Penalty Duration Input
-            TextFormField(
-              decoration: const InputDecoration(labelText: 'Penalty Duration (minutes)'),
-              keyboardType: TextInputType.number,
-              onChanged: (value) {
-                setState(() {
-                  _penaltyDuration = int.tryParse(value);
-                });
-              },
-              // Clear the field when the form is cleared
-              controller: _penaltyDuration == null ? null : TextEditingController(text: _penaltyDuration.toString()),
-            ),
-            const SizedBox(height: 24.0),
-
-            // Log Penalty Button
-            ElevatedButton(
-              onPressed: _logPenalty,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16.0),
-              ),
-              child: const Text('Log Penalty', style: TextStyle(fontSize: 16)),
-            ),
-            ],
+  Widget _buildPeriodButton(int period, {String? label}) {
+    final isSelected = _selectedPeriod == period;
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+        child: ElevatedButton(
+          onPressed: () {
+            setState(() {
+              _selectedPeriod = period;
+            });
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: isSelected ? Theme.of(context).primaryColor : null,
+            foregroundColor: isSelected ? Colors.white : null,
+            padding: const EdgeInsets.symmetric(vertical: 12.0),
           ),
+          child: Text(label ?? 'P$period'),
         ),
       ),
     );
   }
-  
-  // Function to decrement the period
-  void _decrementPeriod() {
-    if (widget.period > 1) {
-      // Create a new instance of LogPenaltyScreen with the decremented period
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => LogPenaltyScreen(
-            gameId: widget.gameId,
-            period: widget.period - 1,
-          ),
-        ),
-      );
-    }
-  }
-  
-  // Function to increment the period
-  void _incrementPeriod() {
-    if (widget.period < 4) {
-      // Create a new instance of LogPenaltyScreen with the incremented period
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => LogPenaltyScreen(
-            gameId: widget.gameId,
-            period: widget.period + 1,
-          ),
-        ),
-      );
-    }
-  }
+  // --- End Copied Period Selector Methods ---
 }

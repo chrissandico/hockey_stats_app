@@ -20,19 +20,22 @@ class PlayerAdapter extends TypeAdapter<Player> {
       id: fields[0] as String,
       jerseyNumber: fields[1] as int,
       teamId: fields[2] as String?,
+      position: fields[3] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Player obj) {
     writer
-      ..writeByte(3)
+      ..writeByte(4)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
       ..write(obj.jerseyNumber)
       ..writeByte(2)
-      ..write(obj.teamId);
+      ..write(obj.teamId)
+      ..writeByte(3)
+      ..write(obj.position);
   }
 
   @override

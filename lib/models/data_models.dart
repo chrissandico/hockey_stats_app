@@ -21,6 +21,9 @@ class Player extends HiveObject {
   @HiveField(2)
   String? teamId; // Optional: Link to Team Entity ID if multiple teams
 
+  @HiveField(3) // New field for player position
+  String? position;
+
   // We won't store googleSheetRow directly in the Hive object
   // as it's related to sync state, not the core data model.
   // The sync service will manage this mapping separately.
@@ -30,6 +33,7 @@ class Player extends HiveObject {
     required this.id,
     required this.jerseyNumber,
     this.teamId,
+    this.position, // Added position to constructor
   });
 
   // --- Override == and hashCode for correct comparison ---
