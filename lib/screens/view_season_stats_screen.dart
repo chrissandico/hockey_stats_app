@@ -161,36 +161,38 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
                         // "Refresh Stats from Sheets" button removed.
                         if (_seasonStats.isNotEmpty) // Only show table if stats are available
                         Expanded(
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.vertical,
+                          child: Center(
                             child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: DataTable(
-                                columnSpacing: 15.0,
-                                columns: const [
-                                  DataColumn(label: Text('#')), 
-                                  DataColumn(label: Text('POS')), 
-                                  // DataColumn(label: Text('GP'), numeric: true), // GP Column REMOVED
-                                  DataColumn(label: Text('G'), numeric: true),
-                                  DataColumn(label: Text('A'), numeric: true),
-                                  DataColumn(label: Text('P'), numeric: true),
-                                  DataColumn(label: Text('SOG'), numeric: true),
-                                  DataColumn(label: Text('PIM'), numeric: true),
-                                  DataColumn(label: Text('+/-'), numeric: true),
-                                ],
-                                rows: _seasonStats.map((stats) {
-                                  return DataRow(cells: [
-                                    DataCell(Text(stats.playerJerseyNumber.toString())),
-                                    DataCell(Text(stats.playerPosition ?? 'N/A')), 
-                                    // DataCell(Text(stats.gamesPlayed.toString())), // GP Cell REMOVED
-                                    DataCell(Text(stats.goals.toString())),
-                                    DataCell(Text(stats.assists.toString())),
-                                    DataCell(Text(stats.points.toString())),
-                                    DataCell(Text(stats.shots.toString())),
-                                    DataCell(Text(stats.penaltyMinutes.toString())),
-                                    DataCell(Text(stats.plusMinus.toString())),
-                                  ]);
-                                }).toList(),
+                              scrollDirection: Axis.vertical,
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  border: TableBorder.all(color: Colors.grey, width: 1),
+                                  columnSpacing: 15.0,
+                                  headingRowHeight: 40,
+                                  columns: const [
+                                    DataColumn(label: Text('#')),
+                                    DataColumn(label: Text('POS')),
+                                    DataColumn(label: Text('G'), numeric: true),
+                                    DataColumn(label: Text('A'), numeric: true),
+                                    DataColumn(label: Text('P'), numeric: true),
+                                    DataColumn(label: Text('+/-'), numeric: true),
+                                    DataColumn(label: Text('PIM'), numeric: true),
+                                    DataColumn(label: Text('SOG'), numeric: true),
+                                  ],
+                                  rows: _seasonStats.map((stats) {
+                                    return DataRow(cells: [
+                                      DataCell(Text(stats.playerJerseyNumber.toString())),
+                                      DataCell(Text(stats.playerPosition ?? 'N/A')),
+                                      DataCell(Text(stats.goals.toString())),
+                                      DataCell(Text(stats.assists.toString())),
+                                      DataCell(Text(stats.points.toString())),
+                                      DataCell(Text(stats.plusMinus.toString())),
+                                      DataCell(Text(stats.penaltyMinutes.toString())),
+                                      DataCell(Text(stats.shots.toString())),
+                                    ]);
+                                  }).toList(),
+                                ),
                               ),
                             ),
                           ),
