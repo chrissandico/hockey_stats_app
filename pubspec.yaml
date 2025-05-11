@@ -47,6 +47,7 @@ dependencies:
   extension_google_sign_in_as_googleapis_auth: ^2.0.13 # Using suggested version
 
   data_table_2: ^2.5.10 # For advanced data tables with frozen columns/rows
+  flutter_svg: ^2.0.10 # For rendering SVG images
 
 
 dev_dependencies:

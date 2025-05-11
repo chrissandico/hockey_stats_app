@@ -372,17 +372,6 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                ),
              )
           else ...[ // Show normal actions only after load
-            // View Stats Button
-            IconButton(
-              icon: const Icon(Icons.bar_chart), // const added
-              tooltip: 'View Stats',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId)),
-                );
-              },
-            ),
             // Edit Shots Button
             IconButton(
               icon: const Icon(Icons.edit), // const added
@@ -391,6 +380,17 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => EditShotListScreen(gameId: widget.gameId)),
+                );
+              },
+            ),
+            // View Stats Button
+            IconButton(
+              icon: const Icon(Icons.bar_chart), // const added
+              tooltip: 'View Stats',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId)),
                 );
               },
             ),

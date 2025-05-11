@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart'; // Import flutter_svg
 import 'package:hockey_stats_app/models/team_model.dart';
 
 class TeamUtils {
@@ -91,41 +92,61 @@ class TeamUtils {
   static Widget getTeamLogo(String teamName, {double size = 40.0, BuildContext? context}) {
     final team = getTeam(teamName, context: context);
     
-    return Image.asset(
-      team.logoPath,
-      width: size,
-      height: size,
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stackTrace) {
-        // Fallback to the current letter-based logo if image fails to load
-        final firstLetter = teamName.isNotEmpty ? teamName[0].toUpperCase() : 'T';
-        return Container(
+    if (team.logoPath.toLowerCase().endsWith('.svg')) {
+      return SvgPicture.asset(
+        team.logoPath,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        placeholderBuilder: (BuildContext context) => Container( // Fallback for SVG loading issue
           width: size,
           height: size,
           decoration: BoxDecoration(
-            color: team.primaryColor,
+            color: team.primaryColor.withOpacity(0.1), // Lighter fallback color
             shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.2),
-                blurRadius: 5,
-                offset: const Offset(0, 2),
-              ),
-            ],
           ),
           child: Center(
-            child: Text(
-              firstLetter,
-              style: TextStyle(
-                color: team.secondaryColor,
-                fontWeight: FontWeight.bold,
-                fontSize: size * 0.5,
+            child: Icon(Icons.broken_image, size: size * 0.6, color: team.primaryColor),
+          )
+        ),
+      );
+    } else { // This is for non-SVG images like PNG
+      return Image.asset(
+        team.logoPath,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) {
+          // Fallback to the current letter-based logo if image fails to load
+          final firstLetter = teamName.isNotEmpty ? teamName[0].toUpperCase() : 'T';
+          return Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: team.primaryColor,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 5,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                firstLetter,
+                style: TextStyle(
+                  color: team.secondaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: size * 0.5,
+                ),
               ),
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
+    } // This closing brace was missing for the 'else' block of the if-svg condition
   }
 
   /// Returns a widget with both team logos for a game

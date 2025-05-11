@@ -514,6 +514,97 @@ class SheetsService {
     };
   }
 
+  // Fetch PlayerSeasonStats from the "PlayerSeasonStats" sheet
+  Future<List<PlayerSeasonStats>?> fetchPlayerSeasonStatsFromSheets() async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot fetch player season stats: Authentication failed.');
+      return null;
+    }
+
+    final sheetsApi = _getSheetsApi();
+    if (sheetsApi == null) {
+      print('Cannot fetch player season stats: Sheets API not available.');
+      return null;
+    }
+
+    const String sheetName = 'PlayerSeasonStats';
+    // Assuming data starts from row 2 (A2) and covers 10 columns (A to J)
+    // Player ID, Jersey, POS, GP, G, A, P, SOG, PIM, PLUSMINUS
+    final String range = '$sheetName!A2:J'; 
+
+    try {
+      print('Fetching player season stats from Google Sheet: $sheetName');
+      final result = await sheetsApi.spreadsheets.values.get(
+        _spreadsheetId,
+        range,
+      );
+
+      final values = result.values;
+      if (values == null || values.isEmpty) {
+        print('No player season stats data found in the sheet "$sheetName".');
+        return [];
+      }
+
+      print('Found ${values.length} player season stat records in the sheet.');
+      
+      List<PlayerSeasonStats> seasonStatsList = [];
+      final playersBox = Hive.box<Player>('players');
+
+      for (var row in values) {
+        if (row.length >= 10) { // Ensure all 10 columns are present
+          try {
+            String playerId = row[0]?.toString() ?? '';
+            if (playerId.isEmpty) {
+              print('Skipping row due to empty Player ID: $row');
+              continue;
+            }
+
+            Player? player = playersBox.get(playerId);
+            String playerName;
+
+            if (player == null) {
+              print('Player with ID "$playerId" not found in local Hive cache. Using Player ID as playerName.');
+              playerName = playerId; // Fallback if player not in local cache
+            } else {
+              // Assuming Player.id is the descriptive name (e.g., "SIDNEY CROSBY" or "SIDNEY CROSBY_87")
+              // This aligns with PlayerSeasonStats.updatePlayerDetails logic.
+              playerName = player.id; 
+            }
+
+            // Points (row[6]) are read from the sheet but not passed to constructor,
+            // as PlayerSeasonStats calculates it via a getter (goals + assists).
+            // We still parse goals and assists from row[4] and row[5].
+            seasonStatsList.add(PlayerSeasonStats(
+              playerId: playerId,
+              playerName: playerName,
+              playerJerseyNumber: int.tryParse(row[1]?.toString() ?? '0') ?? 0,
+              playerPosition: row[2]?.toString(),
+              gamesPlayed: int.tryParse(row[3]?.toString() ?? '0') ?? 0,
+              goals: int.tryParse(row[4]?.toString() ?? '0') ?? 0,
+              assists: int.tryParse(row[5]?.toString() ?? '0') ?? 0,
+              // points: int.tryParse(row[6]?.toString() ?? '0') ?? 0, // Removed: points is a getter
+              shots: int.tryParse(row[7]?.toString() ?? '0') ?? 0,
+              penaltyMinutes: int.tryParse(row[8]?.toString() ?? '0') ?? 0,
+              plusMinus: int.tryParse(row[9]?.toString() ?? '0') ?? 0,
+            ));
+          } catch (e) {
+             print('Error parsing player season stat row: $row, Error: $e');
+          }
+        } else {
+          print('Skipping player season stat row with insufficient data: $row (needs 10 columns)');
+        }
+      }
+      
+      print('Successfully parsed ${seasonStatsList.length} player season stats from the sheet.');
+      return seasonStatsList;
+
+    } catch (e) {
+      print('Error fetching player season stats from Google Sheet "$sheetName": $e');
+      return null;
+    }
+  }
+
   // Update an existing event in the Google Sheet
   // This method finds the row with the matching event ID and updates it
   Future<bool> updateEventInSheet(GameEvent event) async {
@@ -612,6 +703,109 @@ class SheetsService {
       print('Error updating event ${event.id} in Google Sheets: $e');
       return false;
     }
+  }
+
+  // --- Local Stats Update ---
+
+  Future<void> updateLocalPlayerSeasonStatsOnEvent(GameEvent event) async {
+    final playerStatsBox = Hive.box<PlayerSeasonStats>('playerSeasonStats');
+    final playersBox = Hive.box<Player>('players');
+
+    // Helper to get or create PlayerSeasonStats
+    Future<PlayerSeasonStats> getOrCreateStats(String playerId) async {
+      PlayerSeasonStats? stats = playerStatsBox.get(playerId);
+      if (stats == null) {
+        Player? player = playersBox.get(playerId);
+        stats = PlayerSeasonStats(
+          playerId: playerId,
+          playerName: player?.id ?? playerId, // Use player.id as name or fallback to playerId
+          playerJerseyNumber: player?.jerseyNumber ?? 0,
+          playerPosition: player?.position,
+        );
+      }
+      return stats;
+    }
+
+    // Update Games Played - this is complex as one event doesn't mean a new GP
+    // GP should ideally be incremented once per player per game.
+    // This simplified version increments GP if the player is involved in any event.
+    // A more robust GP calculation would track unique game IDs per player.
+    // For now, we'll increment GP for the primary player and assisters.
+
+    Set<String> involvedPlayerIds = {};
+
+    // Primary player
+    if (event.primaryPlayerId.isNotEmpty) {
+      involvedPlayerIds.add(event.primaryPlayerId);
+      PlayerSeasonStats primaryPlayerStats = await getOrCreateStats(event.primaryPlayerId);
+
+      if (event.eventType == 'Shot') {
+        primaryPlayerStats.shots++;
+        if (event.isGoal == true && event.team == 'Your Team') {
+          primaryPlayerStats.goals++;
+        }
+      } else if (event.eventType == 'Penalty' && event.team == 'Your Team') {
+        primaryPlayerStats.penaltyMinutes += event.penaltyDuration ?? 0;
+      }
+      await playerStatsBox.put(event.primaryPlayerId, primaryPlayerStats);
+    }
+
+    // Assisting players (for goals by 'Your Team')
+    if (event.eventType == 'Shot' && event.isGoal == true && event.team == 'Your Team') {
+      if (event.assistPlayer1Id != null && event.assistPlayer1Id!.isNotEmpty) {
+        involvedPlayerIds.add(event.assistPlayer1Id!);
+        PlayerSeasonStats assist1Stats = await getOrCreateStats(event.assistPlayer1Id!);
+        assist1Stats.assists++;
+        await playerStatsBox.put(event.assistPlayer1Id!, assist1Stats);
+      }
+      if (event.assistPlayer2Id != null && event.assistPlayer2Id!.isNotEmpty) {
+        involvedPlayerIds.add(event.assistPlayer2Id!);
+        PlayerSeasonStats assist2Stats = await getOrCreateStats(event.assistPlayer2Id!);
+        assist2Stats.assists++;
+        await playerStatsBox.put(event.assistPlayer2Id!, assist2Stats);
+      }
+
+      // Plus/Minus for 'Your Team' players on ice for a 'Your Team' goal
+      event.yourTeamPlayersOnIceIds?.forEach((playerId) async {
+        if (playerId.isNotEmpty) {
+          involvedPlayerIds.add(playerId); // Also track GP for them
+          PlayerSeasonStats onIcePlayerStats = await getOrCreateStats(playerId);
+          onIcePlayerStats.plusMinus++;
+          await playerStatsBox.put(playerId, onIcePlayerStats);
+        }
+      });
+    }
+
+    // Plus/Minus for 'Your Team' players on ice for an 'Opponent' goal
+    if (event.eventType == 'Shot' && event.isGoal == true && event.team == 'Opponent') {
+      event.yourTeamPlayersOnIceIds?.forEach((playerId) async {
+        if (playerId.isNotEmpty) {
+          involvedPlayerIds.add(playerId); // Also track GP for them
+          PlayerSeasonStats onIcePlayerStats = await getOrCreateStats(playerId);
+          onIcePlayerStats.plusMinus--;
+          await playerStatsBox.put(playerId, onIcePlayerStats);
+        }
+      });
+    }
+    
+    // Update Games Played for all involved players
+    // This is a simplified GP update. A more accurate way would be to check if this game
+    // is new for the player before incrementing. The current _aggregateStats in ViewSeasonStatsScreen
+    // does a better job by counting unique gameIds. This immediate update is a bit of a challenge
+    // for GP without more context or a different stats structure.
+    // For now, let's assume the _aggregateStats will correctly calculate GP on full refresh.
+    // This immediate update will focus on G, A, SOG, PIM, +/-.
+    // We can add a call to a more comprehensive GP update if needed, or rely on the full aggregation.
+    // To avoid incorrect GP increments here, we might defer GP updates to the full aggregation,
+    // or implement a check against a list of games already counted for the player in this session.
+
+    // Let's refine GP update: only increment if this is the first event for this player in this game
+    // This requires tracking (e.g., in a temporary set for the current app session or by checking existing events).
+    // For simplicity in this immediate update, we will *not* update GP here.
+    // GP will be correctly calculated by _aggregateStats in ViewSeasonStatsScreen.
+    // This function will primarily handle real-time G, A, SOG, PIM, +/-.
+
+    print('Local player season stats updated for event: ${event.id}');
   }
 
   // --- Season Stats Sync ---

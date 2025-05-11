@@ -164,3 +164,64 @@ class GameEventAdapter extends TypeAdapter<GameEvent> {
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
+
+class PlayerSeasonStatsAdapter extends TypeAdapter<PlayerSeasonStats> {
+  @override
+  final int typeId = 3;
+
+  @override
+  PlayerSeasonStats read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return PlayerSeasonStats(
+      playerId: fields[0] as String,
+      playerName: fields[1] as String,
+      playerJerseyNumber: fields[2] as int,
+      playerPosition: fields[3] as String?,
+      gamesPlayed: fields[4] as int,
+      goals: fields[5] as int,
+      assists: fields[6] as int,
+      shots: fields[7] as int,
+      penaltyMinutes: fields[8] as int,
+      plusMinus: fields[9] as int,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, PlayerSeasonStats obj) {
+    writer
+      ..writeByte(10)
+      ..writeByte(0)
+      ..write(obj.playerId)
+      ..writeByte(1)
+      ..write(obj.playerName)
+      ..writeByte(2)
+      ..write(obj.playerJerseyNumber)
+      ..writeByte(3)
+      ..write(obj.playerPosition)
+      ..writeByte(4)
+      ..write(obj.gamesPlayed)
+      ..writeByte(5)
+      ..write(obj.goals)
+      ..writeByte(6)
+      ..write(obj.assists)
+      ..writeByte(7)
+      ..write(obj.shots)
+      ..writeByte(8)
+      ..write(obj.penaltyMinutes)
+      ..writeByte(9)
+      ..write(obj.plusMinus);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlayerSeasonStatsAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}

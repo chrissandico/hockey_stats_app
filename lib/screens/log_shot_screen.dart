@@ -366,89 +366,116 @@ class _LogShotScreenState extends State<LogShotScreen> {
   Future<void> _logShot() async {
     // Basic validation
     if (_selectedTeam == 'Your Team' && _selectedShooter == null && _isGoal == true) {
-      // Show an error message (e.g., using a SnackBar)
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a shooter.')),
       );
       return;
     }
 
-    // Determine if we're updating an existing event or creating a new one
-    if (_isEditMode && _eventBeingEdited != null) {
-      // Update existing event
-      _eventBeingEdited!.period = _selectedPeriod;
-      _eventBeingEdited!.team = _selectedTeam;
-      _eventBeingEdited!.primaryPlayerId = _selectedTeam == 'Your Team' ? _selectedShooter?.id ?? '' : '';
-      _eventBeingEdited!.assistPlayer1Id = _isGoal ? _selectedAssist1?.id : null;
-      _eventBeingEdited!.isGoal = _isGoal;
-      _eventBeingEdited!.isSynced = false; // Mark as needing sync
-      _eventBeingEdited!.yourTeamPlayersOnIceIds = _isGoal ? _getPlayersOnIceIds() : null;
-      
-      // Save the updated event
-      await gameEventsBox.put(_eventBeingEdited!.id, _eventBeingEdited!);
-      
-      // Attempt to sync the updated event using the updateEventInSheet method
-      _sheetsService.updateEventInSheet(_eventBeingEdited!).then((syncSuccess) {
-        if (syncSuccess) {
-          print("Updated event ${_eventBeingEdited!.id} synced immediately.");
-        } else {
-          print("Updated event ${_eventBeingEdited!.id} saved locally, pending sync.");
-        }
-      });
-      
-      // Show confirmation
+    // Optional: Add a loading indicator state if desired
+    // setState(() { _isLogging = true; });
+
+    try {
+      GameEvent eventToProcess;
+      String successMessage;
+
+      if (_isEditMode && _eventBeingEdited != null) {
+        // Update existing event
+        _eventBeingEdited!.period = _selectedPeriod;
+        _eventBeingEdited!.team = _selectedTeam;
+        _eventBeingEdited!.primaryPlayerId = _selectedTeam == 'Your Team' ? _selectedShooter?.id ?? '' : '';
+        _eventBeingEdited!.assistPlayer1Id = _isGoal ? _selectedAssist1?.id : null;
+        // _eventBeingEdited!.assistPlayer2Id remains null as per original logic
+        _eventBeingEdited!.isGoal = _isGoal;
+        _eventBeingEdited!.isSynced = false; // Mark as needing sync
+        _eventBeingEdited!.yourTeamPlayersOnIceIds = _isGoal ? _getPlayersOnIceIds() : null;
+        
+        eventToProcess = _eventBeingEdited!;
+        successMessage = 'Shot updated for ${(_selectedTeam == 'Your Team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
+        
+        // Save the updated event
+        await gameEventsBox.put(eventToProcess.id, eventToProcess);
+
+        // Update local season stats
+        await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(eventToProcess);
+        
+        // Attempt to sync the updated event (fire and forget)
+        _sheetsService.updateEventInSheet(eventToProcess).then((syncSuccess) {
+          if (syncSuccess) {
+            print("Updated event ${eventToProcess.id} synced/queued for sync.");
+          } else {
+            print("Updated event ${eventToProcess.id} saved locally, pending sync. Sync call failed or not authenticated.");
+          }
+        }).catchError((error) {
+          print("Error during background sync for updated event ${eventToProcess.id}: $error");
+        });
+
+      } else {
+        // Create a new event
+        final newShotEvent = GameEvent(
+          id: uuid.v4(),
+          gameId: widget.gameId,
+          timestamp: DateTime.now(),
+          period: _selectedPeriod,
+          eventType: 'Shot',
+          team: _selectedTeam,
+          primaryPlayerId: _selectedTeam == 'Your Team' ? _selectedShooter?.id ?? '' : '',
+          assistPlayer1Id: _isGoal ? _selectedAssist1?.id : null,
+          assistPlayer2Id: null, 
+          isGoal: _isGoal,
+          isSynced: false,
+          yourTeamPlayersOnIceIds: _isGoal ? _getPlayersOnIceIds() : null,
+        );
+        eventToProcess = newShotEvent;
+        successMessage = 'Shot logged for ${(_selectedTeam == 'Your Team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
+
+        // Save the event to the Hive Box
+        await gameEventsBox.put(eventToProcess.id, eventToProcess);
+
+        // Update local season stats
+        await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(eventToProcess);
+
+        // Attempt to sync the newly added event (fire and forget)
+        _sheetsService.syncGameEvent(eventToProcess).then((syncSuccess) {
+          if (syncSuccess) {
+            print("New event ${eventToProcess.id} synced/queued for sync.");
+          } else {
+            print("New event ${eventToProcess.id} saved locally, pending sync. Sync call failed or not authenticated.");
+          }
+        }).catchError((error) {
+          print("Error during background sync for new event ${eventToProcess.id}: $error");
+        });
+      }
+
+      // If all local operations are successful up to this point:
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Shot updated for ${(_selectedTeam == 'Your Team') ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}')),
-      );
-    } else {
-      // Create a new event
-      final newShotEvent = GameEvent(
-        id: uuid.v4(), // Generate a unique ID for the event
-        gameId: widget.gameId, // Use the gameId passed to the widget
-        timestamp: DateTime.now(), // Record the current time
-        period: _selectedPeriod, // Use the selected period from the new UI
-        eventType: 'Shot', // Set the event type
-        team: _selectedTeam, // Set the team
-        primaryPlayerId: _selectedTeam == 'Your Team' ? _selectedShooter?.id ?? '' : '', // Link to the shooter's Player ID
-        assistPlayer1Id: _isGoal ? _selectedAssist1?.id : null, // Link assist 1 if it's a goal
-        assistPlayer2Id: null, // No assist 2
-        isGoal: _isGoal, // Set if it was a goal
-        isSynced: false, // Mark as unsynced initially
-        yourTeamPlayersOnIceIds: _isGoal ? _getPlayersOnIceIds() : null, // Include players on ice if it's a goal
+        SnackBar(content: Text(successMessage)),
       );
 
-      // Save the event to the Hive Box using the event's ID as the key
-      await gameEventsBox.put(newShotEvent.id, newShotEvent);
-
-      // Attempt to sync the newly added event immediately
-      _sheetsService.syncGameEvent(newShotEvent).then((syncSuccess) {
-        if (syncSuccess) {
-          print("Event ${newShotEvent.id} synced immediately.");
-        } else {
-          print("Event ${newShotEvent.id} saved locally, pending sync.");
-        }
-      });
-
-      // Show confirmation
+      // Navigate back after a short delay
+      await Future.delayed(const Duration(milliseconds: 500)); // Shorter delay
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Shot logged for ${(_selectedTeam == 'Your Team') ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}')),
-      );
-    }
 
-    // Return to appropriate screen after a short delay to show the confirmation
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (!mounted) return; // Ensure widget is still mounted before popping
       if (_isEditMode) {
-        // If we're in edit mode, just pop this screen.
-        // EditShotListScreen will handle refreshing its list via the .then() callback.
         Navigator.pop(context); 
       } else {
-        // If we're in create mode, pop back to LogStatsScreen and pass the period
         Navigator.pop(context, _selectedPeriod);
       }
-    });
+
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error processing shot: ${e.toString()}')),
+      );
+      print('Error in _logShot: $e');
+    } finally {
+      // Optional: Hide loading indicator if shown
+      // if (mounted) {
+      //   setState(() { _isLogging = false; });
+      // }
+    }
   }
 
   // Function to get the IDs of players on ice

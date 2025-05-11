@@ -176,25 +176,46 @@ class GameEvent extends HiveObject {
 }
 
 // --- PlayerSeasonStats Model ---
-// This is not a HiveObject, but a class to hold aggregated season stats for display.
-class PlayerSeasonStats {
-  final String playerId;
+@HiveType(typeId: 3) // Next available typeId
+class PlayerSeasonStats extends HiveObject { // Extend HiveObject
+  @HiveField(0)
+  final String playerId; // Keep as final if it's the key and doesn't change
+
+  @HiveField(1)
   String playerName;
+
+  @HiveField(2)
   int playerJerseyNumber;
-  String? playerPosition; // Added playerPosition
+
+  @HiveField(3)
+  String? playerPosition;
+
+  @HiveField(4)
   int gamesPlayed;
+
+  @HiveField(5)
   int goals;
+
+  @HiveField(6)
   int assists;
-  int get points => goals + assists; // Calculated property
+
+  // Points is a getter, so it doesn't need a HiveField
+  int get points => goals + assists;
+
+  @HiveField(7)
   int shots;
+
+  @HiveField(8)
   int penaltyMinutes;
+
+  @HiveField(9)
   int plusMinus;
 
   PlayerSeasonStats({
     required this.playerId,
     this.playerName = '',
     this.playerJerseyNumber = 0,
-    this.playerPosition, // Added to constructor
+    this.playerPosition,
     this.gamesPlayed = 0,
     this.goals = 0,
     this.assists = 0,
@@ -205,10 +226,10 @@ class PlayerSeasonStats {
 
   // Optional: Add a method to update from a Player object if needed elsewhere
   void updatePlayerDetails(Player player) {
-    playerName = player.id; // Assuming player.id is the name for now, or add a name field to Player
+    // PlayerName is likely derived from player.id or set when PlayerSeasonStats is created
+    // If player.id is "NAME_JERSEY", playerName should be "NAME"
+    // For now, this method primarily updates jersey and position if they change on the Player object
     playerJerseyNumber = player.jerseyNumber;
     playerPosition = player.position;
-    // If Player model had a 'name' field:
-    // playerName = player.name; 
   }
 }

@@ -14,7 +14,7 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
   List<PlayerSeasonStats> _seasonStats = [];
   bool _isLoading = true;
   String? _errorMessage;
-  bool _isUploading = false; // For the upload button
+  bool _isRefreshing = false; // For the refresh from sheets button
 
   Box<Player>? _playersBox;
   Box<GameEvent>? _gameEventsBox;
@@ -149,27 +149,25 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
     });
   }
 
-  Future<void> _handleUploadToSheets() async {
-    if (_seasonStats.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No stats to upload.')),
-      );
-      return;
-    }
+  Future<void> _handleRefreshFromSheets() async {
     setState(() {
-      _isUploading = true;
+      _isRefreshing = true;
       _errorMessage = null;
     });
     try {
-      // This method will be implemented in SheetsService later
-      final result = await _sheetsService.syncSeasonStatsToSheet(_seasonStats);
-      if (result['success'] == true) {
+      final List<PlayerSeasonStats>? fetchedStats = await _sheetsService.fetchPlayerSeasonStatsFromSheets();
+      if (fetchedStats != null) {
+        // Sort by playerJerseyNumber in ascending order, similar to _aggregateStats
+        fetchedStats.sort((a, b) => a.playerJerseyNumber.compareTo(b.playerJerseyNumber));
+        setState(() {
+          _seasonStats = fetchedStats;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'] ?? 'Successfully uploaded to Google Sheets!')),
+          const SnackBar(content: Text('Player stats refreshed from Google Sheets!')),
         );
       } else {
         setState(() {
-          _errorMessage = result['message'] ?? 'Failed to upload to Google Sheets.';
+          _errorMessage = 'Failed to fetch stats from Google Sheets.';
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(_errorMessage!)),
@@ -177,14 +175,14 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
       }
     } catch (e) {
       setState(() {
-        _errorMessage = "Error uploading: ${e.toString()}";
+        _errorMessage = "Error refreshing stats: ${e.toString()}";
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_errorMessage!)),
       );
     } finally {
       setState(() {
-        _isUploading = false;
+        _isRefreshing = false;
       });
     }
   }
@@ -197,8 +195,8 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _isLoading || _isUploading ? null : _loadData,
-            tooltip: 'Refresh Stats',
+            onPressed: _isLoading || _isRefreshing ? null : _loadData, // Use _isRefreshing
+            tooltip: 'Refresh Stats (Local)', // Clarify this is local aggregation
           ),
         ],
       ),
@@ -209,20 +207,21 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
                   padding: const EdgeInsets.all(16.0),
                   child: Text('Error: $_errorMessage', style: const TextStyle(color: Colors.red)),
                 ))
-              : _seasonStats.isEmpty
-                  ? const Center(child: Text('No season stats available.'))
+              : _seasonStats.isEmpty && !_isLoading // Ensure not to show "No stats" during initial load if _loadData is async for sheets
+                  ? const Center(child: Text('No season stats available. Try refreshing from Sheets.'))
                   : Column(
                       children: [
                         Padding(
                           padding: const EdgeInsets.all(8.0),
                           child: ElevatedButton.icon(
-                            icon: _isUploading 
-                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
-                                : const Icon(Icons.cloud_upload),
-                            label: const Text('Upload to Google Sheet'),
-                            onPressed: _isUploading ? null : _handleUploadToSheets,
+                            icon: _isRefreshing
+                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : const Icon(Icons.download), // Changed icon
+                            label: const Text('Refresh Stats from Sheets'), // Changed label
+                            onPressed: _isRefreshing ? null : _handleRefreshFromSheets, // Changed handler
                           ),
                         ),
+                        if (_seasonStats.isNotEmpty) // Only show table if stats are available
                         Expanded(
                           child: SingleChildScrollView(
                             scrollDirection: Axis.vertical,

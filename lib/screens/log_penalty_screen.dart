@@ -82,55 +82,80 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
      setState(() {}); // Update the UI after loading players
   }
 
-  Future<void> _logPenalty() async { // Mark method as async
+  Future<void> _logPenalty() async {
     if (_selectedPlayer == null || _penaltyType == null || _penaltyType!.isEmpty || _penaltyDuration == null || _penaltyDuration! <= 0) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill in all penalty details correctly.')),
       );
       return;
     }
 
-    final newPenaltyEvent = GameEvent(
-      id: uuid.v4(),
-      gameId: widget.gameId,
-      timestamp: DateTime.now(),
-      period: _selectedPeriod, // Use the selected period from the new UI
-      eventType: 'Penalty',
-      team: 'Your Team', // Penalties are only for 'Your Team'
-      primaryPlayerId: _selectedPlayer!.id,
-      penaltyType: _penaltyType,
-      penaltyDuration: _penaltyDuration,
-      isSynced: false,
-    );
+    // Optional: Add a loading indicator state if desired
+    // setState(() { _isLogging = true; });
 
-    await gameEventsBox.add(newPenaltyEvent); // Use await for async add
+    try {
+      final newPenaltyEvent = GameEvent(
+        id: uuid.v4(),
+        gameId: widget.gameId,
+        timestamp: DateTime.now(),
+        period: _selectedPeriod,
+        eventType: 'Penalty',
+        team: 'Your Team', // Assuming penalties are only for 'Your Team'
+        primaryPlayerId: _selectedPlayer!.id,
+        penaltyType: _penaltyType,
+        penaltyDuration: _penaltyDuration,
+        isSynced: false,
+      );
 
-    // Attempt to sync the newly added event immediately
-    _sheetsService.syncGameEvent(newPenaltyEvent).then((syncSuccess) {
-      if (syncSuccess) {
-        print("Penalty event ${newPenaltyEvent.id} synced immediately.");
-      } else {
-        print("Penalty event ${newPenaltyEvent.id} saved locally, pending sync.");
-      }
-    });
+      // Save to Hive
+      await gameEventsBox.put(newPenaltyEvent.id, newPenaltyEvent);
 
-    if (!mounted) return; // Check mounted before showing SnackBar
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Penalty logged for #${_selectedPlayer!.jerseyNumber}.')),
-    );
+      // Update local season stats
+      await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(newPenaltyEvent);
 
-    // Clear the form
-    setState(() {
-      _selectedPlayer = null;
-      _penaltyType = null;
-      _penaltyDuration = null;
-    });
-    
-    // Return to previous screen after a short delay to show the confirmation
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      // Return the current period to the previous screen
+      // Attempt background sync to Google Sheets (fire and forget)
+      _sheetsService.syncGameEvent(newPenaltyEvent).then((syncSuccess) {
+        if (syncSuccess) {
+          print("Penalty event ${newPenaltyEvent.id} synced/queued for sync.");
+        } else {
+          print("Penalty event ${newPenaltyEvent.id} saved locally, pending sync. Sync call failed or not authenticated.");
+        }
+      }).catchError((error) {
+        print("Error during background sync for penalty event ${newPenaltyEvent.id}: $error");
+      });
+
+      // If all local operations are successful
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Penalty logged for #${_selectedPlayer!.jerseyNumber}.')),
+      );
+
+      // Clear the form
+      setState(() {
+        _selectedPlayer = null;
+        _penaltyType = null;
+        _penaltyDuration = null;
+        // Consider resetting the TextEditingController for duration if you use one explicitly
+      });
+      
+      // Navigate back after a short delay
+      await Future.delayed(const Duration(milliseconds: 500)); // Shorter delay
+      if (!mounted) return;
       Navigator.pop(context, _selectedPeriod);
-    });
+
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error logging penalty: ${e.toString()}')),
+      );
+      print('Error in _logPenalty: $e');
+    } finally {
+      // Optional: Hide loading indicator if shown
+      // if (mounted) {
+      //   setState(() { _isLogging = false; });
+      // }
+    }
   }
 
   @override
