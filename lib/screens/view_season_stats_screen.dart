@@ -33,8 +33,8 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
     });
     try {
       _playersBox = Hive.box<Player>('players');
-      _gameEventsBox = Hive.box<GameEvent>('gameEvents');
-      await _aggregateStats();
+      _gameEventsBox = Hive.box<GameEvent>('gameEvents'); // Ensure this is opened
+      await _loadPlayerSeasonStatsFromHive(); 
     } catch (e) {
       setState(() {
         _errorMessage = "Error loading data: ${e.toString()}";
@@ -46,10 +46,10 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
     }
   }
 
-  Future<void> _aggregateStats() async {
+  Future<void> _loadPlayerSeasonStatsFromHive() async {
     if (_playersBox == null || _gameEventsBox == null) {
       setState(() {
-        _errorMessage = "Database not initialized.";
+        _errorMessage = "Database not fully initialized.";
         _isLoading = false;
       });
       return;
@@ -59,45 +59,34 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
     final allEvents = _gameEventsBox!.values.toList();
 
     Map<String, PlayerSeasonStats> statsMap = {};
-    Map<String, Set<String>> gamesPlayedMap = {}; // PlayerId -> Set of GameIds
 
     // Initialize statsMap for all players from 'your_team'
     for (var player in allPlayersList) {
-      if (player.teamId == 'your_team') { // Assuming 'your_team' is the identifier for the user's team
+      if (player.teamId == 'your_team') { 
         statsMap[player.id] = PlayerSeasonStats(
           playerId: player.id,
-          playerName: player.id, // Placeholder, will be updated
+          playerName: player.id, 
           playerJerseyNumber: player.jerseyNumber,
-          playerPosition: player.position, // Populate position
+          playerPosition: player.position,
         );
-        gamesPlayedMap[player.id] = {};
       }
     }
 
     for (var event in allEvents) {
       // Ensure primary player is in statsMap (should be if they are from 'your_team')
       if (!statsMap.containsKey(event.primaryPlayerId) && event.team == 'Your Team') {
-         // This case should ideally not happen if all 'your_team' players are pre-loaded.
-         // However, as a fallback, find the player and add them.
-         final player = allPlayersList.firstWhere((p) => p.id == event.primaryPlayerId, orElse: () => Player(id: event.primaryPlayerId, jerseyNumber: 0, position: "N/A")); // Dummy player if not found
+         final player = allPlayersList.firstWhere((p) => p.id == event.primaryPlayerId, orElse: () => Player(id: event.primaryPlayerId, jerseyNumber: 0, position: "N/A"));
          statsMap[event.primaryPlayerId] = PlayerSeasonStats(
             playerId: player.id,
             playerName: player.id, 
             playerJerseyNumber: player.jerseyNumber,
-            playerPosition: player.position // Populate position for fallback
+            playerPosition: player.position
          );
-         gamesPlayedMap[event.primaryPlayerId] = {};
       }
       
-      // Track games played for the primary player of an event if they are on 'Your Team'
-      if (event.team == 'Your Team' && statsMap.containsKey(event.primaryPlayerId)) {
-        gamesPlayedMap[event.primaryPlayerId]!.add(event.gameId);
-      }
-
-
       if (event.team == 'Your Team') {
         final playerStats = statsMap[event.primaryPlayerId];
-        if (playerStats == null) continue; // Skip if player not found (e.g. not 'your_team')
+        if (playerStats == null) continue;
 
         if (event.eventType == 'Shot') {
           playerStats.shots++;
@@ -108,13 +97,11 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
               statsMap[playerId]?.plusMinus++;
             });
             // Assists
-            if (event.assistPlayer1Id != null && statsMap.containsKey(event.assistPlayer1Id)) {
+            if (event.assistPlayer1Id != null && event.assistPlayer1Id!.isNotEmpty && statsMap.containsKey(event.assistPlayer1Id)) {
               statsMap[event.assistPlayer1Id!]!.assists++;
-               gamesPlayedMap[event.assistPlayer1Id!]!.add(event.gameId); // Also track game for assister
             }
-            if (event.assistPlayer2Id != null && statsMap.containsKey(event.assistPlayer2Id)) {
+            if (event.assistPlayer2Id != null && event.assistPlayer2Id!.isNotEmpty && statsMap.containsKey(event.assistPlayer2Id)) {
               statsMap[event.assistPlayer2Id!]!.assists++;
-              gamesPlayedMap[event.assistPlayer2Id!]!.add(event.gameId); // Also track game for assister
             }
           }
         } else if (event.eventType == 'Penalty') {
@@ -125,7 +112,6 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
         event.yourTeamPlayersOnIceIds?.forEach((playerId) {
           if (statsMap.containsKey(playerId)) {
             statsMap[playerId]!.plusMinus--;
-            gamesPlayedMap[playerId]!.add(event.gameId); // Track game for players on ice for opponent goal
           }
         });
       }
@@ -133,71 +119,32 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
 
     List<PlayerSeasonStats> aggregatedList = [];
     statsMap.forEach((playerId, stats) {
-      final player = allPlayersList.firstWhere((p) => p.id == playerId, orElse: () => Player(id: playerId, jerseyNumber: 0, position: "N/A")); // Fallback
-      stats.playerName = player.id; // Or a proper name field if it exists
-      stats.playerJerseyNumber = player.jerseyNumber;
-      stats.playerPosition = player.position; // Ensure position is set from the definitive Player object
-      stats.gamesPlayed = gamesPlayedMap[playerId]?.length ?? 0;
+      // Player details (name, jersey, position) are already set during initialization of statsMap
+      // or when a player was dynamically added.
+      // No need to re-fetch from allPlayersList here if PlayerSeasonStats holds them.
       aggregatedList.add(stats);
     });
 
     // Sort by playerJerseyNumber in ascending order
     aggregatedList.sort((a, b) => a.playerJerseyNumber.compareTo(b.playerJerseyNumber));
 
-    setState(() {
-      _seasonStats = aggregatedList;
-    });
-  }
-
-  Future<void> _handleRefreshFromSheets() async {
-    setState(() {
-      _isRefreshing = true;
-      _errorMessage = null;
-    });
-    try {
-      final List<PlayerSeasonStats>? fetchedStats = await _sheetsService.fetchPlayerSeasonStatsFromSheets();
-      if (fetchedStats != null) {
-        // Sort by playerJerseyNumber in ascending order, similar to _aggregateStats
-        fetchedStats.sort((a, b) => a.playerJerseyNumber.compareTo(b.playerJerseyNumber));
-        setState(() {
-          _seasonStats = fetchedStats;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Player stats refreshed from Google Sheets!')),
-        );
-      } else {
-        setState(() {
-          _errorMessage = 'Failed to fetch stats from Google Sheets.';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_errorMessage!)),
-        );
-      }
-    } catch (e) {
+    if(mounted){
       setState(() {
-        _errorMessage = "Error refreshing stats: ${e.toString()}";
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_errorMessage!)),
-      );
-    } finally {
-      setState(() {
-        _isRefreshing = false;
+        _seasonStats = aggregatedList;
       });
     }
   }
+
+  // Method _handleRefreshFromSheets removed as PlayerSeasonStats are no longer fetched from a separate sheet.
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Season Stats'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _isLoading || _isRefreshing ? null : _loadData, // Use _isRefreshing
-            tooltip: 'Refresh Stats (Local)', // Clarify this is local aggregation
-          ),
+        actions: const [
+          // Refresh button removed as per user request.
+          // Stats are loaded on initState.
         ],
       ),
       body: _isLoading
@@ -208,19 +155,10 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
                   child: Text('Error: $_errorMessage', style: const TextStyle(color: Colors.red)),
                 ))
               : _seasonStats.isEmpty && !_isLoading // Ensure not to show "No stats" during initial load if _loadData is async for sheets
-                  ? const Center(child: Text('No season stats available. Try refreshing from Sheets.'))
+                  ? const Center(child: Text('No season stats available. Try local refresh.')) // Updated message
                   : Column(
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: ElevatedButton.icon(
-                            icon: _isRefreshing
-                                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : const Icon(Icons.download), // Changed icon
-                            label: const Text('Refresh Stats from Sheets'), // Changed label
-                            onPressed: _isRefreshing ? null : _handleRefreshFromSheets, // Changed handler
-                          ),
-                        ),
+                        // "Refresh Stats from Sheets" button removed.
                         if (_seasonStats.isNotEmpty) // Only show table if stats are available
                         Expanded(
                           child: SingleChildScrollView(
@@ -230,9 +168,9 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
                               child: DataTable(
                                 columnSpacing: 15.0,
                                 columns: const [
-                                  DataColumn(label: Text('#')), // Renamed column
-                                  DataColumn(label: Text('POS')), // New POS column
-                                  DataColumn(label: Text('GP'), numeric: true),
+                                  DataColumn(label: Text('#')), 
+                                  DataColumn(label: Text('POS')), 
+                                  // DataColumn(label: Text('GP'), numeric: true), // GP Column REMOVED
                                   DataColumn(label: Text('G'), numeric: true),
                                   DataColumn(label: Text('A'), numeric: true),
                                   DataColumn(label: Text('P'), numeric: true),
@@ -243,8 +181,8 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
                                 rows: _seasonStats.map((stats) {
                                   return DataRow(cells: [
                                     DataCell(Text(stats.playerJerseyNumber.toString())),
-                                    DataCell(Text(stats.playerPosition ?? 'N/A')), // Display position
-                                    DataCell(Text(stats.gamesPlayed.toString())),
+                                    DataCell(Text(stats.playerPosition ?? 'N/A')), 
+                                    // DataCell(Text(stats.gamesPlayed.toString())), // GP Cell REMOVED
                                     DataCell(Text(stats.goals.toString())),
                                     DataCell(Text(stats.assists.toString())),
                                     DataCell(Text(stats.points.toString())),

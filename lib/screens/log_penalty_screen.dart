@@ -111,8 +111,8 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       // Save to Hive
       await gameEventsBox.put(newPenaltyEvent.id, newPenaltyEvent);
 
-      // Update local season stats
-      await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(newPenaltyEvent);
+      // Update local season stats - REMOVED as season stats are now aggregated on view
+      // await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(newPenaltyEvent);
 
       // Attempt background sync to Google Sheets (fire and forget)
       _sheetsService.syncGameEvent(newPenaltyEvent).then((syncSuccess) {

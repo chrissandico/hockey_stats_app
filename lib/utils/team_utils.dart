@@ -90,6 +90,37 @@ class TeamUtils {
 
   /// Returns a widget representing the team logo based on the team name
   static Widget getTeamLogo(String teamName, {double size = 40.0, BuildContext? context}) {
+    // Special case for 'Opponent' or any opponent team - always return a simple "O" logo
+    if (teamName == 'Opponent' || 
+        (teamName != 'Waxers' && teamName != 'Your Team' && !teamName.toLowerCase().contains('waxers'))) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: Colors.red,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 5,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            'O',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: size * 0.5,
+            ),
+          ),
+        ),
+      );
+    }
+    
+    // For all other teams, use the existing logic
     final team = getTeam(teamName, context: context);
     
     if (team.logoPath.toLowerCase().endsWith('.svg')) {

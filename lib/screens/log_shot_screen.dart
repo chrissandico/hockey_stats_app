@@ -397,8 +397,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
         // Save the updated event
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
 
-        // Update local season stats
-        await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(eventToProcess);
+        // Update local season stats - REMOVED as season stats are now aggregated on view
+        // await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(eventToProcess);
         
         // Attempt to sync the updated event (fire and forget)
         _sheetsService.updateEventInSheet(eventToProcess).then((syncSuccess) {
@@ -433,8 +433,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
         // Save the event to the Hive Box
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
 
-        // Update local season stats
-        await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(eventToProcess);
+        // Update local season stats - REMOVED as season stats are now aggregated on view
+        // await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(eventToProcess);
 
         // Attempt to sync the newly added event (fire and forget)
         _sheetsService.syncGameEvent(eventToProcess).then((syncSuccess) {

@@ -558,13 +558,81 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     }
   }
 
+  // Build the auth indicator based on sign-in state
+  Widget _buildAuthIndicator() {
+    return IconButton(
+      icon: _screenState == _ScreenState.needsSignIn || _screenState == _ScreenState.signInFailed
+          ? const Icon(Icons.account_circle, color: Colors.grey)
+          : _screenState == _ScreenState.initialLoading
+              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.account_circle, color: Colors.green),
+      tooltip: _screenState == _ScreenState.needsSignIn
+          ? 'Sign in with Google'
+          : _screenState == _ScreenState.signInFailed
+              ? 'Sign-in failed. Tap to retry.'
+              : _screenState == _ScreenState.initialLoading
+                  ? 'Checking sign-in status...'
+                  : 'Signed in. Tap to sign out.',
+      onPressed: _isPerformingAsyncOperation
+          ? null
+          : (_screenState == _ScreenState.needsSignIn || _screenState == _ScreenState.signInFailed)
+              ? _handleSignInAndSync
+              : _showSignOutDialog,
+    );
+  }
+
+  // Show sign-out confirmation dialog
+  void _showSignOutDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Sign Out'),
+          content: const Text('Are you sure you want to sign out? You won\'t be able to sync data until you sign in again.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _handleSignOut();
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Sign Out'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Handle sign-out process
+  Future<void> _handleSignOut() async {
+    if (!mounted) return;
+    setState(() { _isPerformingAsyncOperation = true; });
+    
+    await _sheetsService.signOut();
+    
+    if (!mounted) return;
+    setState(() {
+      _isPerformingAsyncOperation = false;
+      _screenState = _ScreenState.needsSignIn;
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Signed out successfully')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Home'),
         actions: [
-          // IconButton for refresh and season stats removed from AppBar
+          _buildAuthIndicator(),
         ],
       ),
       body: _buildBody(),

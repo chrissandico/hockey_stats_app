@@ -37,6 +37,8 @@
     }
   ],
   "default": {
+    "id": "default",
+    "name": "Default Team",
     "logoPath": "assets/logos/generic_logo.svg",
     "primaryColor": "#757575",
     "secondaryColor": "#FFFFFF"

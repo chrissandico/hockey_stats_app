@@ -79,8 +79,15 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     super.initState();
     _loadInitialData(); // Load data asynchronously
     // Initialize auth state directly
-    _currentUser = _sheetsService.getCurrentUser();
+    _checkSignInStatus();
     // _isSigningIn = false; // This flag is primarily for the sync button's loading state now
+  }
+
+  // Check sign-in status
+  Future<void> _checkSignInStatus() async {
+    if (!mounted) return;
+    _currentUser = _sheetsService.getCurrentUser();
+    setState(() {});
   }
 
   // Load initial game data and score asynchronously
@@ -143,15 +150,74 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   //   });
   // }
 
-  // // Handle Sign In button press - No longer needed here
-  // Future<void> _handleSignIn() async {
-  //   // ...
-  // }
+  // Handle Sign In button press
+  Future<void> _handleSignIn() async {
+    if (!mounted) return;
+    setState(() { _isSigningIn = true; });
+    
+    bool signInSuccess = await _sheetsService.signIn();
+    
+    if (!mounted) return;
+    setState(() {
+      _currentUser = _sheetsService.getCurrentUser();
+      _isSigningIn = false;
+    });
+    
+    if (signInSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Signed in successfully')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign-in failed. Please try again.')),
+      );
+    }
+  }
 
-  // // Handle Sign Out button press - No longer needed here
-  // Future<void> _handleSignOut() async {
-  //   // ...
-  // }
+  // Show sign-out confirmation dialog
+  void _showSignOutDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Sign Out'),
+          content: const Text('Are you sure you want to sign out? You won\'t be able to sync data until you sign in again.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _handleSignOut();
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Sign Out'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Handle sign-out process
+  Future<void> _handleSignOut() async {
+    if (!mounted) return;
+    setState(() { _isSigningIn = true; });
+    
+    await _sheetsService.signOut();
+    
+    if (!mounted) return;
+    setState(() {
+      _currentUser = null;
+      _isSigningIn = false;
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Signed out successfully')),
+    );
+  }
 
   // Handle Sync button press
   Future<void> _handleSync() async {
@@ -394,8 +460,8 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 );
               },
             ),
-            // Add Sign-In/Sign-Out Button - Removed
-            // _buildAuthButton(), 
+            // Add Sign-In/Sign-Out Button
+            _buildAuthIndicator(),
           ],
         ],
       ),
@@ -625,9 +691,21 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     );
   }
 
-  // // Build the Auth button based on sign-in state - No longer needed
-  // Widget _buildAuthButton() {
-  //   // ...
-  // }
+  // Build the auth indicator based on sign-in state
+  Widget _buildAuthIndicator() {
+    return IconButton(
+      icon: _currentUser == null
+          ? const Icon(Icons.account_circle, color: Colors.grey)
+          : const Icon(Icons.account_circle, color: Colors.green),
+      tooltip: _currentUser == null
+          ? 'Sign in with Google'
+          : 'Signed in as ${_currentUser!.email}. Tap to sign out.',
+      onPressed: _isSigningIn
+          ? null
+          : _currentUser == null
+              ? _handleSignIn
+              : _showSignOutDialog,
+    );
+  }
 
 }

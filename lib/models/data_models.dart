@@ -176,39 +176,28 @@ class GameEvent extends HiveObject {
 }
 
 // --- PlayerSeasonStats Model ---
-@HiveType(typeId: 3) // Next available typeId
-class PlayerSeasonStats extends HiveObject { // Extend HiveObject
-  @HiveField(0)
-  final String playerId; // Keep as final if it's the key and doesn't change
+// This is now a plain Dart class, not a HiveObject.
+// It's used by ViewSeasonStatsScreen to structure aggregated data.
+class PlayerSeasonStats {
+  final String playerId; 
 
-  @HiveField(1)
   String playerName;
 
-  @HiveField(2)
   int playerJerseyNumber;
 
-  @HiveField(3)
   String? playerPosition;
 
-  @HiveField(4)
-  int gamesPlayed;
-
-  @HiveField(5)
   int goals;
 
-  @HiveField(6)
   int assists;
 
-  // Points is a getter, so it doesn't need a HiveField
+  // Points is a getter
   int get points => goals + assists;
 
-  @HiveField(7)
   int shots;
 
-  @HiveField(8)
   int penaltyMinutes;
 
-  @HiveField(9)
   int plusMinus;
 
   PlayerSeasonStats({
@@ -216,7 +205,6 @@ class PlayerSeasonStats extends HiveObject { // Extend HiveObject
     this.playerName = '',
     this.playerJerseyNumber = 0,
     this.playerPosition,
-    this.gamesPlayed = 0,
     this.goals = 0,
     this.assists = 0,
     this.shots = 0,
