@@ -166,32 +166,144 @@ class _ViewSeasonStatsScreenState extends State<ViewSeasonStatsScreen> {
                               scrollDirection: Axis.vertical,
                               child: SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
-                                child: DataTable(
-                                  border: TableBorder.all(color: Colors.grey, width: 1),
-                                  columnSpacing: 15.0,
-                                  headingRowHeight: 40,
-                                  columns: const [
-                                    DataColumn(label: Text('#')),
-                                    DataColumn(label: Text('POS')),
-                                    DataColumn(label: Text('G'), numeric: true),
-                                    DataColumn(label: Text('A'), numeric: true),
-                                    DataColumn(label: Text('P'), numeric: true),
-                                    DataColumn(label: Text('+/-'), numeric: true),
-                                    DataColumn(label: Text('PIM'), numeric: true),
-                                    DataColumn(label: Text('SOG'), numeric: true),
-                                  ],
-                                  rows: _seasonStats.map((stats) {
-                                    return DataRow(cells: [
-                                      DataCell(Text(stats.playerJerseyNumber.toString())),
-                                      DataCell(Text(stats.playerPosition ?? 'N/A')),
-                                      DataCell(Text(stats.goals.toString())),
-                                      DataCell(Text(stats.assists.toString())),
-                                      DataCell(Text(stats.points.toString())),
-                                      DataCell(Text(stats.plusMinus.toString())),
-                                      DataCell(Text(stats.penaltyMinutes.toString())),
-                                      DataCell(Text(stats.shots.toString())),
-                                    ]);
-                                  }).toList(),
+                                child: Theme(
+                                  data: Theme.of(context).copyWith(
+                                    dataTableTheme: DataTableThemeData(
+                                      headingRowColor: MaterialStateProperty.all(Colors.black),
+                                      headingTextStyle: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  child: DataTable(
+                                    border: TableBorder.all(color: Colors.grey.shade300, width: 1),
+                                    columnSpacing: 15.0,
+                                    headingRowHeight: 50,
+                                    dataRowHeight: 45,
+                                    columns: const [
+                                      DataColumn(label: Text('#')),
+                                      DataColumn(label: Text('POS')),
+                                      DataColumn(label: Text('G'), numeric: true),
+                                      DataColumn(label: Text('A'), numeric: true),
+                                      DataColumn(label: Text('P'), numeric: true),
+                                      DataColumn(label: Text('+/-'), numeric: true),
+                                      DataColumn(label: Text('PIM'), numeric: true),
+                                      DataColumn(label: Text('SOG'), numeric: true),
+                                    ],
+                                    rows: _seasonStats.asMap().entries.map((entry) {
+                                      final index = entry.key;
+                                      final stats = entry.value;
+                                      return DataRow(
+                                        color: MaterialStateProperty.resolveWith<Color?>(
+                                          (Set<MaterialState> states) {
+                                            if (states.contains(MaterialState.hovered)) {
+                                              return Colors.blue.withOpacity(0.1);
+                                            }
+                                            return index.isEven ? Colors.grey.shade100 : null;
+                                          },
+                                        ),
+                                        cells: [
+                                          DataCell(
+                                            Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                              child: Text(
+                                                stats.playerJerseyNumber.toString(),
+                                                style: const TextStyle(fontSize: 15),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                              child: Text(
+                                                stats.playerPosition ?? 'N/A',
+                                                style: const TextStyle(fontSize: 15),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                              child: Text(
+                                                stats.goals.toString(),
+                                                style: const TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                              child: Text(
+                                                stats.assists.toString(),
+                                                style: const TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                              child: Text(
+                                                stats.points.toString(),
+                                                style: const TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                              child: Text(
+                                                stats.plusMinus.toString(),
+                                                style: TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: stats.plusMinus > 0 
+                                                    ? Colors.green 
+                                                    : stats.plusMinus < 0 
+                                                      ? Colors.red 
+                                                      : null,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                              child: Text(
+                                                stats.penaltyMinutes.toString(),
+                                                style: const TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                              child: Text(
+                                                stats.shots.toString(),
+                                                style: const TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    }).toList(),
+                                  ),
                                 ),
                               ),
                             ),
