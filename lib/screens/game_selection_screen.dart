@@ -632,6 +632,19 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
       appBar: AppBar(
         title: const Text('Home'),
         actions: [
+          // Season Stats Button in App Bar
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            tooltip: 'Season Stats',
+            onPressed: _isPerformingAsyncOperation
+                ? null
+                : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ViewSeasonStatsScreen()),
+                    );
+                  },
+          ),
           _buildAuthIndicator(),
         ],
       ),
@@ -745,31 +758,6 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
               Text(headerMessage, style: TextStyle(color: _screenState == _ScreenState.syncFailed ? Colors.orange[700] : Colors.black, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10.0),
             ],
-            // New Season Stats Button
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.album), // Using album icon as a puck
-                label: const Text('Season Stats'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 15.0, horizontal: 20.0),
-                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12.0),
-                  ),
-                  elevation: 3,
-                ),
-                onPressed: _isPerformingAsyncOperation
-                    ? null
-                    : () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const ViewSeasonStatsScreen()),
-                        );
-                      },
-              ),
-            ),
-            const SizedBox(height: 16.0),
             const Text(
               'Choose a game to track stats for:',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
