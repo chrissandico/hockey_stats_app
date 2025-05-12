@@ -557,8 +557,9 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                         ),
                         const SizedBox(height: 16), // const added
 
-                        // Team logos
+                        // Team logos and game info
                         if (_currentGame != null) ...[
+                          // Team logos
                           Center(
                             child: TeamUtils.getGameLogos(
                               'Waxers', // Your team name
@@ -567,6 +568,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             ),
                           ),
                           const SizedBox(height: 8), // const added
+                          
                           // Display current game score
                           Center(
                             child: _isLoadingScore // Use separate flag for score updates
@@ -600,11 +602,54 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                                     ],
                                   ),
                           ),
-                          const SizedBox(height: 16), // const added
-                        ],
+                          const SizedBox(height: 8),
+                          
+                          // Display shots on goal
+                          Builder(
+                            builder: (context) {
+                              final gameEventsBox = Hive.box<GameEvent>('gameEvents');
+                              final gameEvents = gameEventsBox.values.where((event) => event.gameId == widget.gameId).toList();
+                              
+                              final yourTeamShots = gameEvents.where((event) => 
+                                event.eventType == 'Shot' && event.team == 'Your Team'
+                              ).length;
+                              
+                              final opponentShots = gameEvents.where((event) => 
+                                event.eventType == 'Shot' && event.team == 'Opponent'
+                              ).length;
 
-                        // Game date and opponent
-                        if (_currentGame != null) ...[
+                              return Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    '$yourTeamShots',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                  const Text(
+                                    ' shots ',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    '$opponentShots',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+                          ),
+                          const SizedBox(height: 16),
+
                           // Date row
                           Row(
                             children: [
@@ -632,22 +677,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             ],
                           ),
 
-                          // Location row (if available)
-                          if (_currentGame!.location != null && _currentGame!.location!.isNotEmpty) ...[
-                            const SizedBox(height: 8), // const added
-                            Row(
-                              children: [
-                                const Icon(Icons.location_on, color: Colors.blue), // const added
-                                const SizedBox(width: 8), // const added
-                                Expanded(
-                                  child: Text(
-                                    'Location: ${_currentGame!.location}',
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500), // const added
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                          // Location row (if available) - REMOVED as per user request
                         ] else ...[
                           // If game details couldn't be loaded
                           Row(
@@ -707,5 +737,4 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
               : _showSignOutDialog,
     );
   }
-
 }

@@ -101,50 +101,6 @@ class ViewStatsScreen extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 8.0), // Further reduced height
-            const Text('Game Stats', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16.0),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: const <DataColumn>[
-                  DataColumn(
-                    label: Text(
-                      'Stat',
-                      style: TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Your Team',
-                      style: TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Opponent',
-                      style: TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                ],
-                rows: <DataRow>[
-                  DataRow(
-                    cells: <DataCell>[
-                      const DataCell(Text('Game Score')),
-                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == 'Your Team').length}')),
-                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == 'Opponent').length}')),
-                    ],
-                  ),
-                  DataRow(
-                    cells: <DataCell>[
-                      const DataCell(Text('Shots on Goal')),
-                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.team == 'Your Team').length}')),
-                      DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.team == 'Opponent').length}')),
-                    ],
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
