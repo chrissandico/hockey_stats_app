@@ -36,69 +36,131 @@ class ViewStatsScreen extends StatelessWidget {
             // Replace SingleChildScrollView and DataTable with DataTable2
             SizedBox( // DataTable2 often needs a defined height or to be in an Expanded widget
               height: (players.length + 1) * 56.0 + 20, // Estimate height: (num_rows + header_row) * row_height + padding
-              child: DataTable2(
-                columnSpacing: 12,
-                horizontalMargin: 12,
-                minWidth: 600, // Adjust as needed for your content
-                fixedLeftColumns: 1, // Freeze the first column
-                columns: const <DataColumn>[
-                  DataColumn(
-                    label: Text(
-                      'Jersey #',
-                      style: TextStyle(fontStyle: FontStyle.italic),
+              child: Theme(
+                data: Theme.of(context).copyWith(
+                  dataTableTheme: DataTableThemeData(
+                    headingRowColor: MaterialStateProperty.all(Colors.black),
+                    headingTextStyle: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  DataColumn( // New column for Position
-                    label: Text(
-                      'POS',
-                      style: TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'G',
-                      style: TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'A',
-                      style: TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      '+/-',
-                      style: TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'PIM',
-                      style: TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'SOG',
-                      style: TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                  ),
-                ],
-                rows: <DataRow>[
-                  for (var player in players)
-                    DataRow(
-                      cells: <DataCell>[
-                        DataCell(Text('${player.jerseyNumber}')),
-                        DataCell(Text(player.position?.isNotEmpty == true ? player.position! : 'N/A')), // Display position or N/A
-                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.primaryPlayerId == player.id).length}')),
-                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)).length}')),
-                        DataCell(Text('${calculatePlusMinus(player, gameEvents, gameId!)}')),
-                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id).map((event) => event.penaltyDuration).fold(0, (a, b) => a! + b!)}')),
-                        DataCell(Text('${gameEvents.where((event) => event.eventType == 'Shot' && event.primaryPlayerId == player.id).length}')),
+                ),
+                child: DataTable2(
+                  border: TableBorder.all(color: Colors.grey.shade300, width: 1),
+                  columnSpacing: 15.0,
+                  headingRowHeight: 50,
+                  dataRowHeight: 45,
+                  columns: const [
+                    DataColumn(label: Text('#')),
+                    DataColumn(label: Text('POS')),
+                    DataColumn(label: Text('G'), numeric: true),
+                    DataColumn(label: Text('A'), numeric: true),
+                    DataColumn(label: Text('+/-'), numeric: true),
+                    DataColumn(label: Text('PIM'), numeric: true),
+                    DataColumn(label: Text('SOG'), numeric: true),
+                  ],
+                  rows: players.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final player = entry.value;
+                    return DataRow(
+                      color: MaterialStateProperty.resolveWith<Color?>(
+                        (Set<MaterialState> states) {
+                          if (states.contains(MaterialState.hovered)) {
+                            return Colors.blue.withOpacity(0.1);
+                          }
+                          return index.isEven ? Colors.grey.shade100 : null;
+                        },
+                      ),
+                      cells: [
+                        DataCell(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text(
+                              player.jerseyNumber.toString(),
+                              style: const TextStyle(fontSize: 15),
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text(
+                              player.position ?? 'N/A',
+                              style: const TextStyle(fontSize: 15),
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text(
+                              gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.primaryPlayerId == player.id).length.toString(),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text(
+                              gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)).length.toString(),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text(
+                              calculatePlusMinus(player, gameEvents, gameId!).toString(),
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: calculatePlusMinus(player, gameEvents, gameId!) > 0 
+                                  ? Colors.green 
+                                  : calculatePlusMinus(player, gameEvents, gameId!) < 0 
+                                    ? Colors.red 
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text(
+                              gameEvents.where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id).map((event) => event.penaltyDuration).fold(0, (a, b) => a! + b!).toString(),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: Text(
+                              gameEvents.where((event) => event.eventType == 'Shot' && event.primaryPlayerId == player.id).length.toString(),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
-                    ),
-                ],
+                    );
+                  }).toList(),
+                ),
               ),
             ),
           ],
