@@ -26,7 +26,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
   // State variables to hold the input values
   late int _selectedPeriod;
   bool _isGoal = false;
-  bool _isOnGoal = false;
   String _selectedTeam = 'your_team';
   Player? _selectedShooter;
   Player? _selectedAssist1;
@@ -99,7 +98,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
         setState(() {
           _selectedPeriod = _eventBeingEdited!.period;
           _isGoal = _eventBeingEdited!.isGoal ?? false;
-          _isOnGoal = _eventBeingEdited!.isOnGoal ?? false;
           _selectedTeam = _eventBeingEdited!.team;
           
           if (_selectedTeam == 'your_team' && _eventBeingEdited!.primaryPlayerId.isNotEmpty) {
@@ -124,9 +122,9 @@ class _LogShotScreenState extends State<LogShotScreen> {
             }
           }
           
-          if (_isGoal && _eventBeingEdited!.yourTeamPlayersOnIceIds != null) {
+          if (_isGoal && _eventBeingEdited!.yourTeamPlayersOnIce != null) {
             _selectedYourTeamPlayersOnIce = _yourTeamPlayers.where(
-              (player) => _eventBeingEdited!.yourTeamPlayersOnIceIds!.contains(player.id)
+              (player) => _eventBeingEdited!.yourTeamPlayersOnIce!.contains(player.id)
             ).toList();
           }
         });
@@ -162,9 +160,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
         _eventBeingEdited!.primaryPlayerId = _selectedTeam == 'your_team' ? _selectedShooter?.id ?? '' : '';
         _eventBeingEdited!.assistPlayer1Id = _isGoal ? _selectedAssist1?.id : null;
         _eventBeingEdited!.isGoal = _isGoal;
-        _eventBeingEdited!.isOnGoal = true; // Every shot is considered on goal
         _eventBeingEdited!.isSynced = false;
-        _eventBeingEdited!.yourTeamPlayersOnIceIds = _isGoal ? _getPlayersOnIceIds() : null;
+        _eventBeingEdited!.yourTeamPlayersOnIce = _isGoal ? _getPlayersOnIceIds() : null;
         
         print('  IsGoal after: ${_eventBeingEdited!.isGoal}');
         
@@ -178,7 +175,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
         print('Verified saved event:');
         print('  ID: ${savedEvent?.id}');
         print('  IsGoal: ${savedEvent?.isGoal}');
-        print('  IsOnGoal: ${savedEvent?.isOnGoal}');
         
         bool syncSuccess = false;
         String syncError = '';
@@ -216,7 +212,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
         print('Creating new shot event:');
         print('  Team: $_selectedTeam');
         print('  IsGoal: $_isGoal');
-        print('  IsOnGoal: $_isOnGoal');
         
         final newShotEvent = GameEvent(
           id: uuid.v4(),
@@ -229,9 +224,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
           assistPlayer1Id: _isGoal ? _selectedAssist1?.id : null,
           assistPlayer2Id: null, 
           isGoal: _isGoal,
-          isOnGoal: true, // Every shot is considered on goal
           isSynced: false,
-          yourTeamPlayersOnIceIds: _isGoal ? _getPlayersOnIceIds() : null,
+          yourTeamPlayersOnIce: _isGoal ? _getPlayersOnIceIds() : null,
         );
         
         eventToProcess = newShotEvent;
@@ -240,7 +234,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
         print('Saving new event to Hive:');
         print('  ID: ${eventToProcess.id}');
         print('  IsGoal: ${eventToProcess.isGoal}');
-        print('  IsOnGoal: ${eventToProcess.isOnGoal}');
         
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
         
@@ -248,7 +241,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
         print('Verified saved event:');
         print('  ID: ${savedEvent?.id}');
         print('  IsGoal: ${savedEvent?.isGoal}');
-        print('  IsOnGoal: ${savedEvent?.isOnGoal}');
 
         bool syncSuccess = false;
         String syncError = '';
@@ -530,8 +522,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
                   onChanged: (value) {
                     setState(() {
                       _isGoal = value!;
-                      // Every shot is considered on goal
-                      _isOnGoal = true;
                     });
                   },
                 ),

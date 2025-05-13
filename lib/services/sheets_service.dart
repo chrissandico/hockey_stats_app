@@ -2,43 +2,29 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
-import 'package:hockey_stats_app/models/data_models.dart'; // Assuming your models are here
-import 'package:hive/hive.dart'; // Import Hive
+import 'package:hockey_stats_app/models/data_models.dart';
+import 'package:hive/hive.dart';
 
-// Define the scopes required for Google Sheets access
-// spreadsheets scope gives read/write access. Use .readonly for read-only.
 const _scopes = [sheets.SheetsApi.spreadsheetsScope];
 
 class SheetsService {
-  // TODO: Replace with your actual Spreadsheet ID
-  final String _spreadsheetId = '1u4olfiYFjXW0Z88U3Q1wOxI7gz04KYbg6LNn8h-rfno'; 
+  final String _spreadsheetId = '1u4olfiYFjXW0Z88U3Q1wOxI7gz04KYbg6LNn8h-rfno';
 
-  // Google Sign-In instance
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: _scopes,
-    // Optional: If you have a Web Client ID for backend verification
-    // serverClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com', 
   );
 
-  // Store the signed-in account
   GoogleSignInAccount? _currentUser;
-
-  // Store the authenticated HTTP client
   auth.AuthClient? _authClient;
 
-  // --- Authentication ---
-
-  // Check if user is already signed in
   Future<bool> isSignedIn() async {
     return await _googleSignIn.isSignedIn();
   }
 
-  // Get the current user
   GoogleSignInAccount? getCurrentUser() {
     return _currentUser;
   }
 
-  // Attempt to sign in silently
   Future<bool> signInSilently() async {
     _currentUser = await _googleSignIn.signInSilently();
     if (_currentUser != null) {
@@ -48,7 +34,6 @@ class SheetsService {
     return false;
   }
 
-  // Initiate interactive sign-in
   Future<bool> signIn() async {
     try {
       _currentUser = await _googleSignIn.signIn();
@@ -63,30 +48,22 @@ class SheetsService {
     }
   }
 
-  // Sign out
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     _currentUser = null;
     _authClient = null;
   }
 
-  // Setup the authenticated client
   Future<void> _setupAuthClient() async {
     if (_currentUser == null) return;
     _authClient = await _googleSignIn.authenticatedClient();
   }
 
-  // --- Google Sheets API Interaction ---
-
-  // Helper to get the Sheets API instance
   sheets.SheetsApi? _getSheetsApi() {
     if (_authClient == null) {
       print('Error: User not authenticated.');
-      // Try to refresh the auth client if we have a user but no client
       if (_currentUser != null) {
         print('Attempting to refresh authentication...');
-        // We can't await here since this method isn't async
-        // Instead, return null and let the caller handle re-authentication
       }
       return null;
     }
@@ -94,16 +71,14 @@ class SheetsService {
     return sheets.SheetsApi(_authClient!);
   }
 
-  // Check and refresh authentication if needed
   Future<bool> ensureAuthenticated() async {
     if (_authClient != null) {
       print('Auth client already exists');
-      return true; // Already authenticated
+      return true;
     }
     
     if (_currentUser == null) {
       print('No current user, attempting silent sign-in');
-      // Try silent sign-in first
       _currentUser = await _googleSignIn.signInSilently();
     }
     
@@ -117,187 +92,171 @@ class SheetsService {
     return false;
   }
 
-  // Fetch player roster data from the Players sheet
-  Future<List<Player>?> fetchPlayers() async {
-    // First ensure we're authenticated
+  Future<bool> syncGameEvent(GameEvent event) async {
     bool isAuthenticated = await ensureAuthenticated();
     if (!isAuthenticated) {
-      print('Cannot fetch players: Authentication failed.');
-      return null;
+      print('Cannot sync event: Authentication failed.');
+      return false;
     }
     
-    // Now get the API instance
     final sheetsApi = _getSheetsApi();
     if (sheetsApi == null) {
-      print('Cannot fetch players: Sheets API not available even after authentication check.');
-      return null;
+      print('Cannot sync event: Sheets API not available even after authentication check.');
+      return false;
     }
 
-    // Define the sheet name and range
-    final String range = 'Players!A2:D'; // Columns: ID, Jersey Number, Team ID, Position (starting from row 2)
+    const String sheetName = 'Events';
+    final String range = '$sheetName!A1';
+
+    // Match the exact column order from Google Sheets
+    final List<Object> values = [
+      event.id,                                    // ID
+      event.gameId,                               // GameID
+      event.timestamp.toIso8601String(),          // Timestamp
+      event.period,                               // Period
+      event.eventType,                            // EventType
+      event.team,                                 // Team
+      event.primaryPlayerId,                      // PrimaryPlayerID
+      event.assistPlayer1Id ?? '',                // AssistPlayer1ID
+      event.assistPlayer2Id ?? '',                // AssistPlayer2ID
+      event.isGoal ?? false,                      // IsGoal
+      event.penaltyType ?? '',                    // PenaltyType
+      event.penaltyDuration ?? 0,                 // PenaltyDuration
+      event.yourTeamPlayersOnIce?.join(',') ?? '', // YourTeamPlayersOnIce
+    ];
+
+    final valueRange = sheets.ValueRange()
+      ..values = [values];
 
     try {
-      print('Fetching players from Google Sheet...');
-      final result = await sheetsApi.spreadsheets.values.get(
+      final result = await sheetsApi.spreadsheets.values.append(
+        valueRange,
         _spreadsheetId,
         range,
+        valueInputOption: 'USER_ENTERED',
       );
 
-      final values = result.values;
-      if (values == null || values.isEmpty) {
-        print('No player data found in the sheet.');
-        return [];
+      if (result.updates != null && (result.updates!.updatedCells ?? 0) > 0) {
+        print('Successfully synced event ${event.id}');
+        if (event.isInBox) {
+          event.isSynced = true;
+          await event.save();
+        }
+        return true;
+      } else {
+        print('Sync successful according to API, but no cells were updated. Result: ${result.toJson()}');
+        if (event.isInBox) {
+          event.isSynced = true;
+          await event.save();
+        }
+        return true;
       }
+    } catch (e) {
+      print('Error syncing event ${event.id} to Google Sheets: $e');
+      return false;
+    }
+  }
 
-      print('Found ${values.length} player records in the sheet.');
+  Future<bool> updateEventInSheet(GameEvent event) async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot update event: Authentication failed.');
+      return false;
+    }
+    
+    final sheetsApi = _getSheetsApi();
+    if (sheetsApi == null) {
+      print('Cannot update event: Sheets API not available even after authentication check.');
+      return false;
+    }
+
+    const String sheetName = 'Events';
+    
+    try {
+      final idRange = await sheetsApi.spreadsheets.values.get(
+        _spreadsheetId,
+        '$sheetName!A:A',
+      );
       
-      // Parse the values into Player objects
-      List<Player> players = [];
-      for (var row in values) {
-        if (row.length >= 2) { // Need at least ID and Jersey Number
-          try {
-             // Column A: ID (String)
-             String id = row[0]?.toString() ?? '';
-             
-             // Column B: Jersey Number (int)
-             int jerseyNumber = int.tryParse(row[1]?.toString() ?? '') ?? 0;
-             
-             // Column C: Team ID (String, optional)
-             String? teamId = row.length > 2 ? row[2]?.toString() : 'your_team';
-
-             // Column D: Position (String, optional)
-             String? position = row.length > 3 ? row[3]?.toString() : null;
-             if (position != null && position.trim().isEmpty) {
-               position = null; // Treat empty strings as null for 'N/A' display
-             }
-             
-             if (id.isNotEmpty && jerseyNumber >= 0) {
-                players.add(Player(
-                  id: id, 
-                  jerseyNumber: jerseyNumber,
-                  teamId: teamId,
-                  position: position, // Add position
-                ));
-                print('Parsed player: #$jerseyNumber (ID: $id, Pos: $position)');
-             } else {
-                print('Skipping invalid player row: $row (ID or jersey number invalid)');
-             }
-          } catch (e) {
-             print('Error parsing player row: $row, Error: $e');
-          }
-        } else {
-          print('Skipping player row with insufficient data: $row');
+      final idValues = idRange.values;
+      if (idValues == null || idValues.isEmpty) {
+        print('No data found in the Events sheet.');
+        return false;
+      }
+      
+      int rowIndex = -1;
+      for (int i = 0; i < idValues.length; i++) {
+        if (idValues[i].isNotEmpty && idValues[i][0] == event.id) {
+          rowIndex = i + 1;
+          break;
         }
       }
       
-      print('Successfully parsed ${players.length} players from the sheet.');
-      return players;
-
+      if (rowIndex == -1) {
+        print('Event ID ${event.id} not found in the sheet. Cannot update.');
+        return await syncGameEvent(event);
+      }
+      
+      // Match the exact column order from Google Sheets
+      final List<Object> values = [
+        event.id,                                    // ID
+        event.gameId,                               // GameID
+        event.timestamp.toIso8601String(),          // Timestamp
+        event.period,                               // Period
+        event.eventType,                            // EventType
+        event.team,                                 // Team
+        event.primaryPlayerId,                      // PrimaryPlayerID
+        event.assistPlayer1Id ?? '',                // AssistPlayer1ID
+        event.assistPlayer2Id ?? '',                // AssistPlayer2ID
+        event.isGoal ?? false,                      // IsGoal
+        event.penaltyType ?? '',                    // PenaltyType
+        event.penaltyDuration ?? 0,                 // PenaltyDuration
+        event.yourTeamPlayersOnIce?.join(',') ?? '', // YourTeamPlayersOnIce
+      ];
+      
+      final updateRange = '$sheetName!A$rowIndex:M$rowIndex';
+      
+      final valueRange = sheets.ValueRange()
+        ..values = [values];
+      
+      final result = await sheetsApi.spreadsheets.values.update(
+        valueRange,
+        _spreadsheetId,
+        updateRange,
+        valueInputOption: 'USER_ENTERED',
+      );
+      
+      if (result.updatedCells != null && result.updatedCells! > 0) {
+        print('Successfully updated event ${event.id} in row $rowIndex');
+        if (event.isInBox) {
+          event.isSynced = true;
+          await event.save();
+        }
+        return true;
+      } else {
+        print('Update API call succeeded but no cells were updated. Result: ${result.toJson()}');
+        return false;
+      }
     } catch (e) {
-      print('Error fetching players from Google Sheet: $e');
-      return null;
+      print('Error updating event ${event.id} in Google Sheets: $e');
+      return false;
     }
   }
 
-  // Append a GameEvent to the Events sheet
-  // Returns true if sync is successful, false otherwise.
-  Future<bool> syncGameEvent(GameEvent event) async {
-     // First ensure we're authenticated
-     bool isAuthenticated = await ensureAuthenticated();
-     if (!isAuthenticated) {
-        print('Cannot sync event: Authentication failed.');
-        return false;
-     }
-     
-     // Now get the API instance
-     final sheetsApi = _getSheetsApi();
-     if (sheetsApi == null) {
-        print('Cannot sync event: Sheets API not available even after authentication check.');
-        return false;
-     }
-
-     // *** IMPORTANT: Update sheet name if different ***
-     const String sheetName = 'Events'; 
-     // Range notation 'SheetName!A1' tells Sheets API to append after the last row with data
-     final String range = '$sheetName!A1'; 
-
-     // Convert GameEvent to a list of values matching the sheet column order
-     // *** IMPORTANT: Adjust the order and content based on your actual sheet columns ***
-     final List<Object> values = [
-       event.id, // Column A: Event ID
-       event.gameId, // Column B: Game ID
-       event.timestamp.toIso8601String(), // Column C: Timestamp (ISO 8601 format)
-       event.period, // Column D: Period
-       event.eventType, // Column E: Event Type ("Shot", "Penalty")
-       event.team, // Column F: Team ("your_team", "opponent")
-       event.primaryPlayerId, // Column G: Primary Player ID (Shooter/Penalized)
-       event.assistPlayer1Id ?? '', // Column H: Assist 1 ID (Handle null)
-       event.assistPlayer2Id ?? '', // Column I: Assist 2 ID (Handle null)
-       event.isGoal ?? false, // Column J: Is Goal (TRUE/FALSE)
-       event.isOnGoal ?? false, // Column K: Is On Goal (TRUE/FALSE)
-       event.penaltyType ?? '', // Column L: Penalty Type (Handle null)
-       event.penaltyDuration ?? 0, // Column M: Penalty Duration (Handle null)
-       event.yourTeamPlayersOnIceIds?.join(',') ?? '', // Column N: Players on Ice (comma-separated IDs, handle null)
-     ];
-
-     // ValueRange object required by the API
-     final valueRange = sheets.ValueRange()
-       ..values = [values]; // API expects a list of rows (even if it's just one row)
-
-     try {
-       // Perform the append operation
-       final result = await sheetsApi.spreadsheets.values.append(
-         valueRange, // The data to append
-         _spreadsheetId, // The ID of the spreadsheet
-         range, // The range (SheetName!A1 indicates append)
-         valueInputOption: 'USER_ENTERED', // How the data should be interpreted by Sheets
-         // Other options: 'RAW' (no parsing), 'USER_ENTERED' (like typing in UI)
-       );
-
-       // Check the result - successful append usually updates some cells/rows
-       if (result.updates != null && (result.updates!.updatedCells ?? 0) > 0) {
-         print('Successfully synced event ${event.id}');
-         // Update the local event's sync status
-         if (event.isInBox) { // Check if the object is still managed by Hive
-            event.isSynced = true;
-            await event.save(); // Save the change back to Hive
-         }
-         return true;
-       } else {
-         print('Sync successful according to API, but no cells were updated. Result: ${result.toJson()}');
-         // Consider this a success for now, but might need investigation
-         if (event.isInBox) {
-            event.isSynced = true;
-            await event.save();
-         }
-         return true; 
-       }
-     } catch (e) {
-       // Handle potential API errors (e.g., network issues, permission errors)
-       print('Error syncing event ${event.id} to Google Sheets: $e');
-       // TODO: Implement more robust error handling (e.g., retry logic, user feedback)
-      return false;
-     }
-  }
-
-  // Sync all locally stored events that haven't been synced yet
   Future<Map<String, int>> syncPendingEvents() async {
-    // First ensure we're authenticated
     bool isAuthenticated = await ensureAuthenticated();
     if (!isAuthenticated) {
       print('Cannot sync pending events: Authentication failed.');
-      return {'success': 0, 'failed': 0, 'pending': -1}; // Indicate auth failure
+      return {'success': 0, 'failed': 0, 'pending': -1};
     }
     
-    // Now get the API instance
     final sheetsApi = _getSheetsApi();
     if (sheetsApi == null) {
       print('Cannot sync pending events: Sheets API not available even after authentication check.');
-      return {'success': 0, 'failed': 0, 'pending': -1}; // Indicate auth failure
+      return {'success': 0, 'failed': 0, 'pending': -1};
     }
 
     final gameEventsBox = Hive.box<GameEvent>('gameEvents');
-    // Find events that are not synced
     final pendingEvents = gameEventsBox.values.where((event) => !event.isSynced).toList();
 
     if (pendingEvents.isEmpty) {
@@ -309,271 +268,28 @@ class SheetsService {
     int successCount = 0;
     int failureCount = 0;
 
-    // Loop through and sync each pending event
     for (final event in pendingEvents) {
-      // Check again if authenticated before each attempt (token might expire)
       if (_authClient == null) {
          print('Authentication lost during batch sync.');
-         failureCount = pendingEvents.length - successCount; // Mark remaining as failed
-         break; // Stop syncing if auth is lost
+         failureCount = pendingEvents.length - successCount;
+         break;
       }
       
-      bool success = await syncGameEvent(event); // Reuse the single event sync logic
+      bool success = await syncGameEvent(event);
       if (success) {
         successCount++;
       } else {
         failureCount++;
-        // Optional: Implement retry logic here for failures
       }
-      // Optional: Add a small delay between API calls to avoid rate limits
-      // await Future.delayed(const Duration(milliseconds: 100)); 
     }
 
     print('Sync complete. Success: $successCount, Failed: $failureCount');
-    return {'success': successCount, 'failed': failureCount, 'pending': failureCount}; // Return remaining pending count
+    return {'success': successCount, 'failed': failureCount, 'pending': failureCount};
   }
 
-  // Fetch game schedule data from the Games sheet
-  Future<List<Game>?> fetchGames() async {
-    // First ensure we're authenticated
-    bool isAuthenticated = await ensureAuthenticated();
-    if (!isAuthenticated) {
-      print('Cannot fetch games: Authentication failed.');
-      return null;
-    }
-    
-    // Now get the API instance
-    final sheetsApi = _getSheetsApi();
-    if (sheetsApi == null) {
-      print('Cannot fetch games: Sheets API not available even after authentication check.');
-      return null;
-    }
-
-    // Define the sheet name and range
-    final String range = 'Games!A2:D'; // Columns: ID, Date, Opponent, Location (starting from row 2)
-
-    try {
-      print('Fetching games from Google Sheet...');
-      final result = await sheetsApi.spreadsheets.values.get(
-        _spreadsheetId,
-        range,
-      );
-
-      final values = result.values;
-      if (values == null || values.isEmpty) {
-        print('No game data found in the sheet.');
-        return [];
-      }
-
-      print('Found ${values.length} game records in the sheet.');
-      
-      // Parse the values into Game objects
-      List<Game> games = [];
-      for (var row in values) {
-        if (row.length >= 3) { // Need at least ID, Date, and Opponent
-          try {
-             // Column A: ID (String)
-             String id = row[0]?.toString() ?? '';
-             
-             // Column B: Date (DateTime)
-             DateTime date;
-             try {
-               // Try to parse date from various formats
-               String dateStr = row[1]?.toString() ?? '';
-               // First try ISO format (YYYY-MM-DD)
-               if (dateStr.contains('-')) {
-                 date = DateTime.parse(dateStr);
-               } 
-               // Try MM/DD/YYYY format
-               else if (dateStr.contains('/')) {
-                 final parts = dateStr.split('/');
-                 if (parts.length == 3) {
-                   final month = int.parse(parts[0]);
-                   final day = int.parse(parts[1]);
-                   final year = int.parse(parts[2]);
-                   date = DateTime(year, month, day);
-                 } else {
-                   throw FormatException('Invalid date format: $dateStr');
-                 }
-               } else {
-                 throw FormatException('Unrecognized date format: $dateStr');
-               }
-             } catch (e) {
-               print('Error parsing date for game: $row, Error: $e');
-               continue; // Skip this row if date can't be parsed
-             }
-             
-             // Column C: Opponent (String)
-             String opponent = row[2]?.toString() ?? '';
-             
-             // Column D: Location (String, optional)
-             String? location = row.length > 3 ? row[3]?.toString() : null;
-             
-             if (id.isNotEmpty && opponent.isNotEmpty) {
-                games.add(Game(
-                  id: id, 
-                  date: date,
-                  opponent: opponent,
-                  location: location,
-                ));
-                print('Parsed game: $opponent on ${date.toIso8601String().split('T')[0]} (ID: $id)');
-             } else {
-                print('Skipping invalid game row: $row (ID or opponent invalid)');
-             }
-          } catch (e) {
-             print('Error parsing game row: $row, Error: $e');
-          }
-        } else {
-          print('Skipping game row with insufficient data: $row');
-        }
-      }
-      
-      print('Successfully parsed ${games.length} games from the sheet.');
-      return games;
-
-    } catch (e) {
-      print('Error fetching games from Google Sheet: $e');
-      return null;
-    }
-  }
-
-  // Fetch events data from the Events sheet
-  Future<List<GameEvent>?> fetchEvents() async {
-    // First ensure we're authenticated
-    bool isAuthenticated = await ensureAuthenticated();
-    if (!isAuthenticated) {
-      print('Cannot fetch events: Authentication failed.');
-      return null;
-    }
-    
-    // Now get the API instance
-    final sheetsApi = _getSheetsApi();
-    if (sheetsApi == null) {
-      print('Cannot fetch events: Sheets API not available even after authentication check.');
-      return null;
-    }
-
-    // Define the sheet name and range
-    final String range = 'Events!A2:N'; // All columns starting from row 2
-
-    try {
-      print('Fetching events from Google Sheet...');
-      final result = await sheetsApi.spreadsheets.values.get(
-        _spreadsheetId,
-        range,
-      );
-
-      final values = result.values;
-      if (values == null || values.isEmpty) {
-        print('No event data found in the sheet.');
-        return [];
-      }
-
-      print('Found ${values.length} event records in the sheet.');
-      
-      // Parse the values into GameEvent objects
-      List<GameEvent> events = [];
-      for (var row in values) {
-        if (row.length >= 7) { // Need at least the essential fields
-          try {
-             String id = row[0]?.toString() ?? '';
-             String gameId = row[1]?.toString() ?? '';
-             DateTime timestamp;
-             try {
-               String dateStr = row[2]?.toString() ?? '';
-               // Handle single-digit hours by ensuring 2 digits
-               if (dateStr.contains(' ')) {
-                 var parts = dateStr.split(' ');
-                 var datePart = parts[0];
-                 var timePart = parts[1];
-                 var timeComponents = timePart.split(':');
-                 if (timeComponents[0].length == 1) {
-                   timeComponents[0] = '0${timeComponents[0]}';
-                 }
-                 dateStr = '$datePart ${timeComponents.join(':')}';
-               }
-               timestamp = DateTime.parse(dateStr);
-             } catch (e) {
-               print('Error parsing timestamp: ${row[2]}');
-               continue;
-             }
-             int period = int.tryParse(row[3]?.toString() ?? '') ?? 1;
-             String eventType = row[4]?.toString() ?? '';
-             String team = row[5]?.toString() ?? '';
-             String primaryPlayerId = row[6]?.toString() ?? '';
-             
-             // Optional fields
-             String? assistPlayer1Id = row.length > 7 ? row[7]?.toString() : null;
-             if (assistPlayer1Id?.isEmpty ?? true) assistPlayer1Id = null;
-             
-             String? assistPlayer2Id = row.length > 8 ? row[8]?.toString() : null;
-             if (assistPlayer2Id?.isEmpty ?? true) assistPlayer2Id = null;
-             
-             bool isGoal = row.length > 9 ? (row[9]?.toString().toLowerCase() == 'true') : false;
-             
-             bool isOnGoal = row.length > 10 ? (row[10]?.toString().toLowerCase() == 'true') : false;
-
-             String? penaltyType = row.length > 11 ? row[11]?.toString() : null;
-             if (penaltyType?.isEmpty ?? true) penaltyType = null;
-             
-             int? penaltyDuration = row.length > 12 ? int.tryParse(row[12]?.toString() ?? '') : null;
-             
-             List<String>? playersOnIce = row.length > 13 && row[13]?.toString().isNotEmpty == true 
-                 ? row[13].toString().split(',')
-                 : null;
-
-             if (id.isNotEmpty && gameId.isNotEmpty && (team == 'opponent' || primaryPlayerId.isNotEmpty)) {
-                print('Adding event:');
-                print('  ID: $id');
-                print('  Team: $team');
-                print('  Type: $eventType');
-                print('  Primary Player: $primaryPlayerId');
-                print('  Is Goal: $isGoal');
-                print('  Is On Goal: $isOnGoal');
-                events.add(GameEvent(
-                  id: id,
-                  gameId: gameId,
-                  timestamp: timestamp,
-                  period: period,
-                  eventType: eventType,
-                  team: team,
-                  primaryPlayerId: primaryPlayerId,
-                  assistPlayer1Id: assistPlayer1Id,
-                  assistPlayer2Id: assistPlayer2Id,
-                  isGoal: isGoal,
-                  penaltyType: penaltyType,
-                  penaltyDuration: penaltyDuration,
-                  yourTeamPlayersOnIceIds: playersOnIce,
-                  isSynced: true, // Mark as synced since it came from sheets
-                ));
-             } else {
-                print('Skipping event:');
-                print('  ID: $id');
-                print('  Team: $team');
-                print('  Type: $eventType');
-                print('  Primary Player: $primaryPlayerId');
-                print('  Reason: ${id.isEmpty ? "Empty ID" : gameId.isEmpty ? "Empty Game ID" : team != "opponent" && primaryPlayerId.isEmpty ? "Missing player ID for non-opponent event" : "Unknown"}');
-             }
-          } catch (e) {
-             print('Error parsing event row: $row, Error: $e');
-          }
-        }
-      }
-      
-      print('Successfully parsed ${events.length} events from the sheet.');
-      return events;
-
-    } catch (e) {
-      print('Error fetching events from Google Sheet: $e');
-      return null;
-    }
-  }
-
-  // Sync players, games, and events from Google Sheets to local Hive database
   Future<Map<String, dynamic>> syncDataFromSheets() async {
     print('Starting full data sync from Google Sheets...');
     
-    // First ensure we're authenticated
     bool isAuthenticated = await ensureAuthenticated();
     if (!isAuthenticated) {
       print('Cannot sync data: Authentication failed.');
@@ -585,8 +301,6 @@ class SheetsService {
       };
     }
     
-    // Fetch players
-    print('Fetching players...');
     final players = await fetchPlayers();
     if (players == null) {
       print('Failed to fetch players.');
@@ -598,21 +312,17 @@ class SheetsService {
       };
     }
     
-    // Fetch games
-    print('Fetching games...');
     final games = await fetchGames();
     if (games == null) {
       print('Failed to fetch games.');
       return {
         'success': false,
         'message': 'Failed to fetch games',
-        'players': players, // Return players even if games failed
+        'players': players,
         'games': null
       };
     }
     
-    // Fetch events
-    print('Fetching events...');
     final events = await fetchEvents();
     if (events == null) {
       print('Failed to fetch events.');
@@ -625,11 +335,8 @@ class SheetsService {
       };
     }
 
-    // Save data to Hive while preserving unsynced events
     print('Saving data to local database...');
     
-    // Save players to Hive (clear existing your_team players)
-    print('Saving ${players.length} players...');
     final playersBox = Hive.box<Player>('players');
     final existingPlayers = playersBox.values.where((p) => p.teamId == 'your_team').toList();
     for (final player in existingPlayers) {
@@ -639,42 +346,31 @@ class SheetsService {
       await playersBox.put(player.id, player);
     }
     
-    // Save games to Hive (clear all existing)
-    print('Saving ${games.length} games...');
     final gamesBox = Hive.box<Game>('games');
-    await gamesBox.clear(); // Clear all games
+    await gamesBox.clear();
     for (final game in games) {
       await gamesBox.put(game.id, game);
     }
     
-    // Save events to Hive while preserving unsynced events
-    print('Processing ${events.length} events...');
     final eventsBox = Hive.box<GameEvent>('gameEvents');
-    
-    // Get all unsynced local events before clearing
     final unsyncedEvents = eventsBox.values.where((event) => !event.isSynced).toList();
     print('Found ${unsyncedEvents.length} unsynced local events');
     
-    // Clear synced events only
     final syncedEvents = eventsBox.values.where((event) => event.isSynced).toList();
     for (final event in syncedEvents) {
       await event.delete();
     }
     
-    // Save remote events
     for (final event in events) {
-      // Skip if we have an unsynced local version
       if (!unsyncedEvents.any((e) => e.id == event.id)) {
         await eventsBox.put(event.id, event);
       }
     }
     
-    // Restore unsynced events
     for (final event in unsyncedEvents) {
       await eventsBox.put(event.id, event);
     }
     
-    // Try to sync any unsynced events
     if (unsyncedEvents.isNotEmpty) {
       print('Attempting to sync ${unsyncedEvents.length} unsynced events...');
       for (final event in unsyncedEvents) {
@@ -706,114 +402,285 @@ class SheetsService {
     };
   }
 
-  // Update an existing event in the Google Sheet
-  // This method finds the row with the matching event ID and updates it
-  Future<bool> updateEventInSheet(GameEvent event) async {
-    // First ensure we're authenticated
+  Future<List<Player>?> fetchPlayers() async {
     bool isAuthenticated = await ensureAuthenticated();
     if (!isAuthenticated) {
-      print('Cannot update event: Authentication failed.');
-      return false;
+      print('Cannot fetch players: Authentication failed.');
+      return null;
     }
     
-    // Now get the API instance
     final sheetsApi = _getSheetsApi();
     if (sheetsApi == null) {
-      print('Cannot update event: Sheets API not available even after authentication check.');
-      return false;
+      print('Cannot fetch players: Sheets API not available even after authentication check.');
+      return null;
     }
 
-    // Define the sheet name
-    const String sheetName = 'Events';
-    
+    final String range = 'Players!A2:D';
+
     try {
-      // First, we need to find the row that contains this event ID
-      // Get all IDs from column A
-      final idRange = await sheetsApi.spreadsheets.values.get(
+      print('Fetching players from Google Sheet...');
+      final result = await sheetsApi.spreadsheets.values.get(
         _spreadsheetId,
-        '$sheetName!A:A', // Get all values in column A (Event IDs)
+        range,
       );
-      
-      final idValues = idRange.values;
-      if (idValues == null || idValues.isEmpty) {
-        print('No data found in the Events sheet.');
-        return false;
+
+      final values = result.values;
+      if (values == null || values.isEmpty) {
+        print('No player data found in the sheet.');
+        return [];
       }
+
+      print('Found ${values.length} player records in the sheet.');
       
-      // Find the row index where the ID matches
-      int rowIndex = -1;
-      for (int i = 0; i < idValues.length; i++) {
-        if (idValues[i].isNotEmpty && idValues[i][0] == event.id) {
-          rowIndex = i + 1; // Sheets API uses 1-based indexing
-          break;
+      List<Player> players = [];
+      for (var row in values) {
+        if (row.length >= 2) {
+          try {
+             String id = row[0]?.toString() ?? '';
+             int jerseyNumber = int.tryParse(row[1]?.toString() ?? '') ?? 0;
+             String? teamId = row.length > 2 ? row[2]?.toString() : 'your_team';
+             String? position = row.length > 3 ? row[3]?.toString() : null;
+             if (position != null && position.trim().isEmpty) {
+               position = null;
+             }
+             
+             if (id.isNotEmpty && jerseyNumber >= 0) {
+                players.add(Player(
+                  id: id, 
+                  jerseyNumber: jerseyNumber,
+                  teamId: teamId,
+                  position: position,
+                ));
+                print('Parsed player: #$jerseyNumber (ID: $id, Pos: $position)');
+             } else {
+                print('Skipping invalid player row: $row (ID or jersey number invalid)');
+             }
+          } catch (e) {
+             print('Error parsing player row: $row, Error: $e');
+          }
+        } else {
+          print('Skipping player row with insufficient data: $row');
         }
       }
       
-      if (rowIndex == -1) {
-        print('Event ID ${event.id} not found in the sheet. Cannot update.');
-        // If the event doesn't exist in the sheet, try to append it instead
-        return await syncGameEvent(event);
-      }
-      
-      // Prepare the data to update
-      final List<Object> values = [
-        event.id, // Column A: Event ID
-        event.gameId, // Column B: Game ID
-        event.timestamp.toIso8601String(), // Column C: Timestamp (ISO 8601 format)
-        event.period, // Column D: Period
-        event.eventType, // Column E: Event Type ("Shot", "Penalty")
-        event.team, // Column F: Team ("your_team", "opponent")
-        event.primaryPlayerId, // Column G: Primary Player ID (Shooter/Penalized)
-        event.assistPlayer1Id ?? '', // Column H: Assist 1 ID (Handle null)
-        event.assistPlayer2Id ?? '', // Column I: Assist 2 ID (Handle null)
-        event.isGoal ?? false, // Column J: Is Goal (TRUE/FALSE)
-        event.isOnGoal ?? false, // Column K: Is On Goal (TRUE/FALSE)
-        event.penaltyType ?? '', // Column L: Penalty Type (Handle null)
-        event.penaltyDuration ?? 0, // Column M: Penalty Duration (Handle null)
-        event.yourTeamPlayersOnIceIds?.join(',') ?? '', // Column N: Players on Ice (comma-separated IDs, handle null)
-      ];
-      
-      // Create the update range (the entire row for this event)
-      final updateRange = '$sheetName!A$rowIndex:N$rowIndex';
-      
-      // Create the ValueRange object
-      final valueRange = sheets.ValueRange()
-        ..values = [values]; // API expects a list of rows
-      
-      // Perform the update
-      final result = await sheetsApi.spreadsheets.values.update(
-        valueRange,
-        _spreadsheetId,
-        updateRange,
-        valueInputOption: 'USER_ENTERED', // How the data should be interpreted by Sheets
-      );
-      
-      // Check the result
-      if (result.updatedCells != null && result.updatedCells! > 0) {
-        print('Successfully updated event ${event.id} in row $rowIndex');
-        // Update the local event's sync status
-        if (event.isInBox) {
-          event.isSynced = true;
-          await event.save();
-        }
-        return true;
-      } else {
-        print('Update API call succeeded but no cells were updated. Result: ${result.toJson()}');
-        return false;
-      }
+      print('Successfully parsed ${players.length} players from the sheet.');
+      return players;
+
     } catch (e) {
-      print('Error updating event ${event.id} in Google Sheets: $e');
-      return false;
+      print('Error fetching players from Google Sheet: $e');
+      return null;
     }
   }
 
-  // --- Local Stats Update ---
-  // Method `updateLocalPlayerSeasonStatsOnEvent` removed as PlayerSeasonStats are no longer stored in Hive or synced separately.
-  // Season stats will be aggregated on-the-fly in ViewSeasonStatsScreen.
+  Future<List<Game>?> fetchGames() async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot fetch games: Authentication failed.');
+      return null;
+    }
+    
+    final sheetsApi = _getSheetsApi();
+    if (sheetsApi == null) {
+      print('Cannot fetch games: Sheets API not available even after authentication check.');
+      return null;
+    }
 
-  // Helper method `_syncPlayerSeasonStatsToSheet` removed as PlayerSeasonStats are no longer stored in Hive or synced separately.
+    final String range = 'Games!A2:D';
 
-  // --- Season Stats Sync ---
-  // Method `syncSeasonStatsToSheet` and `_ensureSheetExists` removed as PlayerSeasonStats are no longer synced to a separate sheet.
-  // All related code for these methods has been deleted.
+    try {
+      print('Fetching games from Google Sheet...');
+      final result = await sheetsApi.spreadsheets.values.get(
+        _spreadsheetId,
+        range,
+      );
+
+      final values = result.values;
+      if (values == null || values.isEmpty) {
+        print('No game data found in the sheet.');
+        return [];
+      }
+
+      print('Found ${values.length} game records in the sheet.');
+      
+      List<Game> games = [];
+      for (var row in values) {
+        if (row.length >= 3) {
+          try {
+             String id = row[0]?.toString() ?? '';
+             DateTime date;
+             try {
+               String dateStr = row[1]?.toString() ?? '';
+               if (dateStr.contains('-')) {
+                 date = DateTime.parse(dateStr);
+               } 
+               else if (dateStr.contains('/')) {
+                 final parts = dateStr.split('/');
+                 if (parts.length == 3) {
+                   final month = int.parse(parts[0]);
+                   final day = int.parse(parts[1]);
+                   final year = int.parse(parts[2]);
+                   date = DateTime(year, month, day);
+                 } else {
+                   throw FormatException('Invalid date format: $dateStr');
+                 }
+               } else {
+                 throw FormatException('Unrecognized date format: $dateStr');
+               }
+             } catch (e) {
+               print('Error parsing date for game: $row, Error: $e');
+               continue;
+             }
+             
+             String opponent = row[2]?.toString() ?? '';
+             String? location = row.length > 3 ? row[3]?.toString() : null;
+             
+             if (id.isNotEmpty && opponent.isNotEmpty) {
+                games.add(Game(
+                  id: id, 
+                  date: date,
+                  opponent: opponent,
+                  location: location,
+                ));
+                print('Parsed game: $opponent on ${date.toIso8601String().split('T')[0]} (ID: $id)');
+             } else {
+                print('Skipping invalid game row: $row (ID or opponent invalid)');
+             }
+          } catch (e) {
+             print('Error parsing game row: $row, Error: $e');
+          }
+        } else {
+          print('Skipping game row with insufficient data: $row');
+        }
+      }
+      
+      print('Successfully parsed ${games.length} games from the sheet.');
+      return games;
+
+    } catch (e) {
+      print('Error fetching games from Google Sheet: $e');
+      return null;
+    }
+  }
+
+  Future<List<GameEvent>?> fetchEvents() async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot fetch events: Authentication failed.');
+      return null;
+    }
+    
+    final sheetsApi = _getSheetsApi();
+    if (sheetsApi == null) {
+      print('Cannot fetch events: Sheets API not available even after authentication check.');
+      return null;
+    }
+
+    final String range = 'Events!A2:M';
+
+    try {
+      print('Fetching events from Google Sheet...');
+      final result = await sheetsApi.spreadsheets.values.get(
+        _spreadsheetId,
+        range,
+      );
+
+      final values = result.values;
+      if (values == null || values.isEmpty) {
+        print('No event data found in the sheet.');
+        return [];
+      }
+
+      print('Found ${values.length} event records in the sheet.');
+      
+      List<GameEvent> events = [];
+      for (var row in values) {
+        if (row.length >= 7) {
+          try {
+             String id = row[0]?.toString() ?? '';
+             String gameId = row[1]?.toString() ?? '';
+             DateTime timestamp;
+             try {
+               String dateStr = row[2]?.toString() ?? '';
+               if (dateStr.contains(' ')) {
+                 var parts = dateStr.split(' ');
+                 var datePart = parts[0];
+                 var timePart = parts[1];
+                 var timeComponents = timePart.split(':');
+                 if (timeComponents[0].length == 1) {
+                   timeComponents[0] = '0${timeComponents[0]}';
+                 }
+                 dateStr = '$datePart ${timeComponents.join(':')}';
+               }
+               timestamp = DateTime.parse(dateStr);
+             } catch (e) {
+               print('Error parsing timestamp: ${row[2]}');
+               continue;
+             }
+             int period = int.tryParse(row[3]?.toString() ?? '') ?? 1;
+             String eventType = row[4]?.toString() ?? '';
+             String team = row[5]?.toString() ?? '';
+             String primaryPlayerId = row[6]?.toString() ?? '';
+             
+             String? assistPlayer1Id = row.length > 7 ? row[7]?.toString() : null;
+             if (assistPlayer1Id?.isEmpty ?? true) assistPlayer1Id = null;
+             
+             String? assistPlayer2Id = row.length > 8 ? row[8]?.toString() : null;
+             if (assistPlayer2Id?.isEmpty ?? true) assistPlayer2Id = null;
+             
+             bool isGoal = row.length > 9 ? (row[9]?.toString().toLowerCase() == 'true') : false;
+             
+             String? penaltyType = row.length > 10 ? row[10]?.toString() : null;
+             if (penaltyType?.isEmpty ?? true) penaltyType = null;
+             
+             int? penaltyDuration = row.length > 11 ? int.tryParse(row[11]?.toString() ?? '') : null;
+             
+             List<String>? playersOnIce = row.length > 12 && row[12]?.toString().isNotEmpty == true 
+                 ? row[12].toString().split(',')
+                 : null;
+
+             if (id.isNotEmpty && gameId.isNotEmpty && (team == 'opponent' || primaryPlayerId.isNotEmpty)) {
+                print('Adding event:');
+                print('  ID: $id');
+                print('  Team: $team');
+                print('  Type: $eventType');
+                print('  Primary Player: $primaryPlayerId');
+                print('  Is Goal: $isGoal');
+                events.add(GameEvent(
+                  id: id,
+                  gameId: gameId,
+                  timestamp: timestamp,
+                  period: period,
+                  eventType: eventType,
+                  team: team,
+                  primaryPlayerId: primaryPlayerId,
+                  assistPlayer1Id: assistPlayer1Id,
+                  assistPlayer2Id: assistPlayer2Id,
+                  isGoal: isGoal,
+                  penaltyType: penaltyType,
+                  penaltyDuration: penaltyDuration,
+                  yourTeamPlayersOnIce: playersOnIce,
+                  isSynced: true,
+                ));
+             } else {
+                print('Skipping event:');
+                print('  ID: $id');
+                print('  Team: $team');
+                print('  Type: $eventType');
+                print('  Primary Player: $primaryPlayerId');
+                print('  Reason: ${id.isEmpty ? "Empty ID" : gameId.isEmpty ? "Empty Game ID" : team != "opponent" && primaryPlayerId.isEmpty ? "Missing player ID for non-opponent event" : "Unknown"}');
+             }
+          } catch (e) {
+             print('Error parsing event row: $row, Error: $e');
+          }
+        }
+      }
+      
+      print('Successfully parsed ${events.length} events from the sheet.');
+      return events;
+
+    } catch (e) {
+      print('Error fetching events from Google Sheet: $e');
+      return null;
+    }
+  }
 }
