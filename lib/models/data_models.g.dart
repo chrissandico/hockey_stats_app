@@ -117,13 +117,14 @@ class GameEventAdapter extends TypeAdapter<GameEvent> {
       penaltyDuration: fields[11] as int?,
       isSynced: fields[12] as bool,
       yourTeamPlayersOnIceIds: (fields[13] as List?)?.cast<String>(),
+      isOnGoal: fields[14] as bool?,
     );
   }
 
   @override
   void write(BinaryWriter writer, GameEvent obj) {
     writer
-      ..writeByte(14)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -151,7 +152,9 @@ class GameEventAdapter extends TypeAdapter<GameEvent> {
       ..writeByte(12)
       ..write(obj.isSynced)
       ..writeByte(13)
-      ..write(obj.yourTeamPlayersOnIceIds);
+      ..write(obj.yourTeamPlayersOnIceIds)
+      ..writeByte(14)
+      ..write(obj.isOnGoal);
   }
 
   @override

@@ -154,8 +154,11 @@ class GameEvent extends HiveObject {
   // --- New field for Plus/Minus tracking ---
   // Store the IDs of 'Your Team' players on the ice when a goal is scored.
   // This list will be populated when eventType is "Shot" and isGoal is true.
-  @HiveField(13) // Use the next available fieldId
+  @HiveField(13)
   List<String>? yourTeamPlayersOnIceIds; // Optional list of Player IDs
+
+  @HiveField(14)
+  bool? isOnGoal; // Optional: For shots, tracks if it was on goal
 
   // We won't store googleSheetRow directly in the Hive object.
 
@@ -175,9 +178,12 @@ class GameEvent extends HiveObject {
     this.penaltyDuration,
     this.isSynced = false,
     this.yourTeamPlayersOnIceIds,
+    this.isOnGoal,
   }) {
-    // Ensure isGoal is properly initialized
+    // Ensure isGoal and isOnGoal are properly initialized
     this.isGoal = isGoal ?? false;
+    // For shots that are goals or explicitly marked as on goal, set isOnGoal
+    this.isOnGoal = (this.isGoal == true || isOnGoal == true);
   }
 }
 

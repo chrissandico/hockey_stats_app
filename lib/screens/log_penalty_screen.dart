@@ -82,6 +82,9 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
      setState(() {}); // Update the UI after loading players
   }
 
+  // State variable for loading indicator
+  bool _isLogging = false;
+
   Future<void> _logPenalty() async {
     if (_selectedPlayer == null || _penaltyType == null || _penaltyType!.isEmpty || _penaltyDuration == null || _penaltyDuration! <= 0) {
       if (!mounted) return;
@@ -91,8 +94,8 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       return;
     }
 
-    // Optional: Add a loading indicator state if desired
-    // setState(() { _isLogging = true; });
+    // Show loading indicator
+    setState(() { _isLogging = true; });
 
     try {
       final newPenaltyEvent = GameEvent(
@@ -111,38 +114,54 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       // Save to Hive
       await gameEventsBox.put(newPenaltyEvent.id, newPenaltyEvent);
 
-      // Update local season stats - REMOVED as season stats are now aggregated on view
-      // await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(newPenaltyEvent);
-
-      // Attempt background sync to Google Sheets (fire and forget)
-      _sheetsService.syncGameEvent(newPenaltyEvent).then((syncSuccess) {
+      // Attempt sync to Google Sheets and wait for result
+      bool syncSuccess = false;
+      String syncError = '';
+      try {
+        syncSuccess = await _sheetsService.syncGameEvent(newPenaltyEvent);
         if (syncSuccess) {
-          print("Penalty event ${newPenaltyEvent.id} synced/queued for sync.");
+          print("Penalty event ${newPenaltyEvent.id} synced successfully.");
         } else {
-          print("Penalty event ${newPenaltyEvent.id} saved locally, pending sync. Sync call failed or not authenticated.");
+          syncError = "Sync failed - please try again later.";
+          print("Penalty event ${newPenaltyEvent.id} sync failed.");
         }
-      }).catchError((error) {
-        print("Error during background sync for penalty event ${newPenaltyEvent.id}: $error");
-      });
+      } catch (error) {
+        syncError = error.toString();
+        print("Error during sync for penalty event ${newPenaltyEvent.id}: $error");
+      }
 
-      // If all local operations are successful
+      // If all operations are successful
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Penalty logged for #${_selectedPlayer!.jerseyNumber}.')),
-      );
 
-      // Clear the form
-      setState(() {
-        _selectedPlayer = null;
-        _penaltyType = null;
-        _penaltyDuration = null;
-        // Consider resetting the TextEditingController for duration if you use one explicitly
-      });
-      
-      // Navigate back after a short delay
-      await Future.delayed(const Duration(milliseconds: 500)); // Shorter delay
-      if (!mounted) return;
-      Navigator.pop(context, _selectedPeriod);
+      if (syncSuccess) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Penalty logged and synced for #${_selectedPlayer!.jerseyNumber}.')),
+        );
+
+        // Clear the form
+        setState(() {
+          _selectedPlayer = null;
+          _penaltyType = null;
+          _penaltyDuration = null;
+          _isLogging = false;
+        });
+        
+        // Navigate back
+        Navigator.pop(context, _selectedPeriod);
+      } else {
+        // Show error but keep form data for retry
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Penalty saved locally but sync failed: $syncError'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Retry Sync',
+              onPressed: _logPenalty,
+            ),
+          ),
+        );
+        setState(() { _isLogging = false; });
+      }
 
     } catch (e) {
       if (!mounted) return;
@@ -150,11 +169,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
         SnackBar(content: Text('Error logging penalty: ${e.toString()}')),
       );
       print('Error in _logPenalty: $e');
-    } finally {
-      // Optional: Hide loading indicator if shown
-      // if (mounted) {
-      //   setState(() { _isLogging = false; });
-      // }
+      setState(() { _isLogging = false; });
     }
   }
 
@@ -243,13 +258,26 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
                 ),
                 const SizedBox(height: 24.0),
 
-                // Log Penalty Button
+                // Log Penalty Button with loading state
                 ElevatedButton(
-                  onPressed: _logPenalty,
+                  onPressed: _isLogging ? null : _logPenalty,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16.0),
                   ),
-                  child: const Text('Log Penalty', style: TextStyle(fontSize: 16)),
+                  child: _isLogging
+                    ? const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 10),
+                          Text('Logging...', style: TextStyle(fontSize: 16)),
+                        ],
+                      )
+                    : const Text('Log Penalty', style: TextStyle(fontSize: 16)),
                 ),
               ],
             ),

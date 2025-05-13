@@ -1,27 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart'; // Import Hive
-import 'package:hockey_stats_app/models/data_models.dart'; // Import your data models
-import 'package:hockey_stats_app/screens/view_stats_screen.dart'; // Import the ViewStatsScreen
-import 'package:uuid/uuid.dart'; // Package for generating unique IDs
-import 'package:hockey_stats_app/utils/team_utils.dart'; // Import team utils for logos
-import 'package:hockey_stats_app/services/sheets_service.dart'; // Import the SheetsService
-
-// We'll need a way to select players. For simplicity, we'll use dummy data for now.
-// In a real app, this would come from your LocalDatabase 'players' box.
-// This list should ideally be passed to the screen or fetched based on the selected game's teams.
-
+import 'package:hive/hive.dart';
+import 'package:hockey_stats_app/models/data_models.dart';
+import 'package:hockey_stats_app/screens/view_stats_screen.dart';
+import 'package:uuid/uuid.dart';
+import 'package:hockey_stats_app/utils/team_utils.dart';
+import 'package:hockey_stats_app/services/sheets_service.dart';
 
 class LogShotScreen extends StatefulWidget {
-  final String gameId; // Accept the gameId
-  final int period; // Accept the period
-  final String? eventIdToEdit; // Optional ID of event to edit
+  final String gameId;
+  final int period;
+  final String? eventIdToEdit;
 
   const LogShotScreen({
     super.key, 
     required this.gameId,
     required this.period,
-    this.eventIdToEdit, // Optional parameter for edit mode
-  }); // Require gameId and period in constructor
+    this.eventIdToEdit,
+  });
 
   @override
   _LogShotScreenState createState() => _LogShotScreenState();
@@ -29,271 +24,59 @@ class LogShotScreen extends StatefulWidget {
 
 class _LogShotScreenState extends State<LogShotScreen> {
   // State variables to hold the input values
-  late int _selectedPeriod; // To store the currently selected period
+  late int _selectedPeriod;
   bool _isGoal = false;
-  String _selectedTeam = 'your_team'; // Default team
+  bool _isOnGoal = false;
+  String _selectedTeam = 'your_team';
   Player? _selectedShooter;
   Player? _selectedAssist1;
   Player? _selectedAssist2;
-  // New state variable for players on ice
   List<Player> _selectedYourTeamPlayersOnIce = [];
-
-  // Helper method to build styled team selection buttons
-  Widget _buildTeamSelectionButton({
-    required String teamName,
-    required String teamIdentifier, // 'Your Team' or 'Opponent'
-    required Widget logo,
-    required bool isSelected,
-    required VoidCallback onPressed,
-  }) {
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6.0),
-        child: ElevatedButton(
-          onPressed: onPressed,
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 10.0),
-            backgroundColor: isSelected 
-                ? (teamIdentifier == 'your_team' ? Colors.blue.withOpacity(0.3) : Colors.red.withOpacity(0.3)) 
-                : Theme.of(context).colorScheme.surfaceVariant,
-            foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12.0),
-              side: BorderSide(
-                color: isSelected 
-                    ? (teamIdentifier == 'your_team' ? Colors.blue : Colors.red) 
-                    : Colors.grey.withOpacity(0.5),
-                width: 2.0,
-              ),
-            ),
-            elevation: isSelected ? 4 : 2,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              logo, // Use the provided logo widget
-              const SizedBox(height: 8.0),
-              Text(
-                teamName,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16.0,
-                  fontWeight: FontWeight.w500,
-                  color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        // When the user presses the back button (either app bar or system),
-        // pop with the currently selected period on this screen.
-        Navigator.pop(context, _selectedPeriod);
-        // Return false because we've handled the pop manually.
-        // Return true if you want the system to handle the pop after your code.
-        return false; 
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(_isEditMode ? 'Edit Shot' : 'Log Shot'),
-          // The default back button in AppBar will trigger onWillPop.
-          actions: [ // Ensure actions is part of AppBar
-            IconButton(
-              icon: const Icon(Icons.bar_chart),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId)),
-                );
-              },
-            ),
-          ],
-        ),
-        body: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // New Period Selector
-                _buildPeriodSelector(),
-                const SizedBox(height: 20.0), // Add some spacing after the period selector
-
-                // New Team Selection Buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildTeamSelectionButton(
-                      teamName: 'Waxers', // Or your actual team name variable
-                      teamIdentifier: 'your_team',
-                      logo: TeamUtils.getTeamLogo('Waxers', size: 52), // Larger logo
-                      isSelected: _selectedTeam == 'your_team',
-                      onPressed: () {
-                        setState(() {
-                          _selectedTeam = 'your_team';
-                          _filterPlayersByTeam();
-                        });
-                      },
-                    ),
-                    _buildTeamSelectionButton(
-                      teamName: 'Opponent',
-                      teamIdentifier: 'opponent',
-                      logo: TeamUtils.getTeamLogo('Opponent', size: 52), // Larger logo
-                      isSelected: _selectedTeam == 'opponent',
-                      onPressed: () {
-                        setState(() {
-                          _selectedTeam = 'opponent';
-                          _filterPlayersByTeam();
-                        });
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20.0), // Spacing after team selection
-
-                // Is Goal Checkbox
-                CheckboxListTile(
-                  title: const Text('Was it a goal?', style: TextStyle(fontSize: 16),),
-                  value: _isGoal,
-                  onChanged: (value) {
-                    setState(() {
-                      _isGoal = value!;
-                    });
-                  },
-                ),
-                // Shooter Selection (Conditional)
-                if (_selectedTeam == 'your_team')
-                  DropdownButtonFormField<Player>(
-                    decoration: const InputDecoration(labelText: 'Who shot it?'),
-                    value: _selectedShooter,
-                    items: _playersForTeam
-                        .map((player) => DropdownMenuItem(
-                              value: player,
-                              child: Text('#${player.jerseyNumber}', style: const TextStyle(fontSize: 16),),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedShooter = value;
-                      });
-                    },
-                  ),
-                // Assist Selection (Conditional)
-                if (_isGoal && _selectedTeam == 'your_team')
-                  DropdownButtonFormField<Player>(
-                    decoration: const InputDecoration(labelText: 'Who assisted it?'),
-                    value: _selectedAssist1,
-                    items: _yourTeamPlayers
-                        .map((player) => DropdownMenuItem(
-                              value: player,
-                              child: Text('#${player.jerseyNumber}', style: const TextStyle(fontSize: 16),),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedAssist1 = value;
-                      });
-                    },
-                  ),
-                // Players on Ice Button (Conditional - show when it's a goal)
-                if (_isGoal)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16.0),
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.people),
-                      label: Text(
-                        'Select Players On Ice (${_selectedYourTeamPlayersOnIce.length})',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      onPressed: _selectPlayersOnIce,
-                    ),
-                  ),
-                const SizedBox(height: 16.0), // Add spacing
-                // Log/Update Shot Button
-                ElevatedButton(
-                  onPressed: _logShot,
-                  child: Text(
-                    _isEditMode ? 'Update Shot' : 'Log Shot', 
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ), // This closes the Padding for body
-      ), // This closes the Scaffold
-    ); // This closes the WillPopScope
-  }
-
 
   // Hive Box for GameEvents
   late Box<GameEvent> gameEventsBox;
-  // Service for Google Sheets interaction
-  late SheetsService _sheetsService; // Add service instance
+  late SheetsService _sheetsService;
 
   // Uuid generator for unique IDs
   final uuid = Uuid();
 
   // Filtered player lists based on selected team
   List<Player> _playersForTeam = [];
-  List<Player> _yourTeamPlayers = []; // List of players from 'Your Team'
-
+  List<Player> _yourTeamPlayers = [];
 
   // Flag to indicate if we're in edit mode
   bool _isEditMode = false;
   // Store the event being edited
   GameEvent? _eventBeingEdited;
+  // State variable for loading indicator
+  bool _isLogging = false;
 
   @override
   void initState() {
     super.initState();
-    _selectedPeriod = widget.period; // Initialize _selectedPeriod
-    // Open the GameEvents box. It should already be open from main,
-    // but it's good practice to get a reference here.
+    _selectedPeriod = widget.period;
     gameEventsBox = Hive.box<GameEvent>('gameEvents');
-    // Initialize SheetsService (assuming it doesn't need context or async init)
-    // If SheetsService needed async init, we'd handle it differently.
-    _sheetsService = SheetsService(); 
-
-    // --- Load players from Hive instead of dummy data ---
-    // In a real app, you'd filter players based on the selected game's teams.
-    // For now, we'll just use the dummy list as the source.
+    _sheetsService = SheetsService();
     _loadPlayers();
-
-    // Remove opponent players from the Hive box
     _removeOpponentPlayers();
-
-    // Initialize selected shooter/assists with players from the loaded list
-    _filterPlayersByTeam(); // Filter initially based on default team
+    _filterPlayersByTeam();
     
-    // Check if we're in edit mode
     if (widget.eventIdToEdit != null) {
       _loadEventForEditing();
     } else {
-      // Default initialization for new shot
       if (_playersForTeam.isNotEmpty) {
         _selectedShooter = _playersForTeam.first;
       }
-      _selectedAssist1 = null; // Initially no assist selected
-      _selectedAssist2 = null; // Initially no assist selected
+      _selectedAssist1 = null;
+      _selectedAssist2 = null;
     }
   }
 
- // Function to load players (currently from dummy list, will be from Hive)
   void _loadPlayers() {
-    // Fetch players from Hive 'players' box
     final playersBox = Hive.box<Player>('players');
     _yourTeamPlayers = playersBox.values.where((p) => p.teamId == 'your_team').toList();
   }
 
-  // Function to filter players based on the currently selected team
   void _filterPlayersByTeam() {
     setState(() {
       final playersBox = Hive.box<Player>('players');
@@ -306,24 +89,19 @@ class _LogShotScreenState extends State<LogShotScreen> {
     });
   }
 
-
-  // Load event data for editing
   void _loadEventForEditing() {
     try {
-      // Get the event from Hive
       _eventBeingEdited = gameEventsBox.get(widget.eventIdToEdit);
       
       if (_eventBeingEdited != null) {
-        // Set edit mode flag
         _isEditMode = true;
         
-        // Populate form fields with event data
         setState(() {
           _selectedPeriod = _eventBeingEdited!.period;
           _isGoal = _eventBeingEdited!.isGoal ?? false;
+          _isOnGoal = _eventBeingEdited!.isOnGoal ?? false;
           _selectedTeam = _eventBeingEdited!.team;
           
-          // Load shooter if it's your team
           if (_selectedTeam == 'your_team' && _eventBeingEdited!.primaryPlayerId.isNotEmpty) {
             try {
               _selectedShooter = _yourTeamPlayers.firstWhere(
@@ -335,7 +113,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
             }
           }
           
-          // Load assist if it's a goal
           if (_isGoal && _eventBeingEdited!.assistPlayer1Id != null) {
             try {
               _selectedAssist1 = _yourTeamPlayers.firstWhere(
@@ -347,7 +124,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
             }
           }
           
-          // Load players on ice if it's a goal
           if (_isGoal && _eventBeingEdited!.yourTeamPlayersOnIceIds != null) {
             _selectedYourTeamPlayersOnIce = _yourTeamPlayers.where(
               (player) => _eventBeingEdited!.yourTeamPlayersOnIceIds!.contains(player.id)
@@ -357,14 +133,11 @@ class _LogShotScreenState extends State<LogShotScreen> {
       }
     } catch (e) {
       print('Error loading event for editing: $e');
-      // If there's an error, fall back to creating a new event
       _isEditMode = false;
     }
   }
 
-  // Function to save or update the shot event
   Future<void> _logShot() async {
-    // Basic validation
     if (_selectedTeam == 'your_team' && _selectedShooter == null && _isGoal == true) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -372,6 +145,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
       );
       return;
     }
+
+    setState(() { _isLogging = true; });
 
     try {
       GameEvent eventToProcess;
@@ -382,43 +157,67 @@ class _LogShotScreenState extends State<LogShotScreen> {
         print('  ID: ${_eventBeingEdited!.id}');
         print('  IsGoal before: ${_eventBeingEdited!.isGoal}');
         
-        // Update existing event
         _eventBeingEdited!.period = _selectedPeriod;
         _eventBeingEdited!.team = _selectedTeam;
         _eventBeingEdited!.primaryPlayerId = _selectedTeam == 'your_team' ? _selectedShooter?.id ?? '' : '';
         _eventBeingEdited!.assistPlayer1Id = _isGoal ? _selectedAssist1?.id : null;
         _eventBeingEdited!.isGoal = _isGoal;
+        _eventBeingEdited!.isOnGoal = _isGoal || _isOnGoal;
         _eventBeingEdited!.isSynced = false;
         _eventBeingEdited!.yourTeamPlayersOnIceIds = _isGoal ? _getPlayersOnIceIds() : null;
         
         print('  IsGoal after: ${_eventBeingEdited!.isGoal}');
         
         eventToProcess = _eventBeingEdited!;
-        successMessage = 'Shot updated for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
+        successMessage = 'Shot updated for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : _isOnGoal ? " (On Goal)" : ""}';
         
-        // Save the updated event
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
         print('Event updated in Hive');
 
-        // Verify the update
         final savedEvent = gameEventsBox.get(eventToProcess.id);
         print('Verified saved event:');
         print('  ID: ${savedEvent?.id}');
         print('  IsGoal: ${savedEvent?.isGoal}');
+        print('  IsOnGoal: ${savedEvent?.isOnGoal}');
         
-        // Attempt to sync the updated event
-        _sheetsService.updateEventInSheet(eventToProcess).then((syncSuccess) {
-          print("Updated event sync result: $syncSuccess");
-        }).catchError((error) {
+        bool syncSuccess = false;
+        String syncError = '';
+        try {
+          syncSuccess = await _sheetsService.updateEventInSheet(eventToProcess);
+          if (!syncSuccess) {
+            syncError = "Sync failed - please try again later.";
+          }
+        } catch (error) {
+          syncError = error.toString();
           print("Error during sync for updated event: $error");
-        });
+        }
+
+        if (!mounted) return;
+
+        if (syncSuccess) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$successMessage and synced.')),
+          );
+          Navigator.pop(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Shot updated locally but sync failed: $syncError'),
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'Retry Sync',
+                onPressed: _logShot,
+              ),
+            ),
+          );
+        }
 
       } else {
         print('Creating new shot event:');
         print('  Team: $_selectedTeam');
         print('  IsGoal: $_isGoal');
+        print('  IsOnGoal: $_isOnGoal');
         
-        // Create a new event
         final newShotEvent = GameEvent(
           id: uuid.v4(),
           gameId: widget.gameId,
@@ -430,47 +229,58 @@ class _LogShotScreenState extends State<LogShotScreen> {
           assistPlayer1Id: _isGoal ? _selectedAssist1?.id : null,
           assistPlayer2Id: null, 
           isGoal: _isGoal,
+          isOnGoal: _isGoal || _isOnGoal,
           isSynced: false,
           yourTeamPlayersOnIceIds: _isGoal ? _getPlayersOnIceIds() : null,
         );
         
         eventToProcess = newShotEvent;
-        successMessage = 'Shot logged for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
+        successMessage = 'Shot logged for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : _isOnGoal ? " (On Goal)" : ""}';
 
         print('Saving new event to Hive:');
         print('  ID: ${eventToProcess.id}');
         print('  IsGoal: ${eventToProcess.isGoal}');
+        print('  IsOnGoal: ${eventToProcess.isOnGoal}');
         
-        // Save the event to Hive
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
         
-        // Verify the save
         final savedEvent = gameEventsBox.get(eventToProcess.id);
         print('Verified saved event:');
         print('  ID: ${savedEvent?.id}');
         print('  IsGoal: ${savedEvent?.isGoal}');
+        print('  IsOnGoal: ${savedEvent?.isOnGoal}');
 
-        // Attempt to sync the new event
-        _sheetsService.syncGameEvent(eventToProcess).then((syncSuccess) {
-          print("New event sync result: $syncSuccess");
-        }).catchError((error) {
+        bool syncSuccess = false;
+        String syncError = '';
+        try {
+          syncSuccess = await _sheetsService.syncGameEvent(eventToProcess);
+          if (!syncSuccess) {
+            syncError = "Sync failed - please try again later.";
+          }
+        } catch (error) {
+          syncError = error.toString();
           print("Error during sync for new event: $error");
-        });
-      }
+        }
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(successMessage)),
-      );
+        if (!mounted) return;
 
-      // Navigate back after a short delay
-      await Future.delayed(const Duration(milliseconds: 500));
-      if (!mounted) return;
-
-      if (_isEditMode) {
-        Navigator.pop(context);
-      } else {
-        Navigator.pop(context, _selectedPeriod);
+        if (syncSuccess) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$successMessage and synced.')),
+          );
+          Navigator.pop(context, _selectedPeriod);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Shot saved locally but sync failed: $syncError'),
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'Retry Sync',
+                onPressed: _logShot,
+              ),
+            ),
+          );
+        }
       }
 
     } catch (e) {
@@ -479,20 +289,20 @@ class _LogShotScreenState extends State<LogShotScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error processing shot: ${e.toString()}')),
       );
+    } finally {
+      if (mounted) {
+        setState(() { _isLogging = false; });
+      }
     }
   }
 
-  // Function to get the IDs of players on ice
   List<String> _getPlayersOnIceIds() {
     return _selectedYourTeamPlayersOnIce.map((player) => player.id).toList();
   }
 
-  // Function to show a dialog for selecting players on ice
   void _selectPlayersOnIce() async {
-    // Create a temporary list to track selections
     List<Player> tempSelectedPlayers = List.from(_selectedYourTeamPlayersOnIce);
     
-    // Show a dialog with checkboxes for each player
     await showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -532,7 +342,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
                 TextButton(
                   child: const Text('OK'),
                   onPressed: () {
-                    // Update the main state with the selected players
                     this.setState(() {
                       _selectedYourTeamPlayersOnIce = tempSelectedPlayers;
                     });
@@ -547,7 +356,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
     );
   }
 
-  // Function to remove opponent players from the Hive box
   void _removeOpponentPlayers() {
     final playersBox = Hive.box<Player>('players');
     final opponentPlayers = playersBox.values.where((player) => player.teamId != 'your_team').toList();
@@ -556,7 +364,56 @@ class _LogShotScreenState extends State<LogShotScreen> {
     }
   }
 
-  // --- Copied Period Selector Methods ---
+  Widget _buildTeamSelectionButton({
+    required String teamName,
+    required String teamIdentifier,
+    required Widget logo,
+    required bool isSelected,
+    required VoidCallback onPressed,
+  }) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6.0),
+        child: ElevatedButton(
+          onPressed: onPressed,
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 10.0),
+            backgroundColor: isSelected 
+                ? (teamIdentifier == 'your_team' ? Colors.blue.withOpacity(0.3) : Colors.red.withOpacity(0.3)) 
+                : Theme.of(context).colorScheme.surfaceVariant,
+            foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12.0),
+              side: BorderSide(
+                color: isSelected 
+                    ? (teamIdentifier == 'your_team' ? Colors.blue : Colors.red) 
+                    : Colors.grey.withOpacity(0.5),
+                width: 2.0,
+              ),
+            ),
+            elevation: isSelected ? 4 : 2,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              logo,
+              const SizedBox(height: 8.0),
+              Text(
+                teamName,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16.0,
+                  fontWeight: FontWeight.w500,
+                  color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPeriodSelector() {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 16.0),
@@ -603,5 +460,172 @@ class _LogShotScreenState extends State<LogShotScreen> {
       ),
     );
   }
-  // --- End Copied Period Selector Methods ---
+
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: () async {
+        Navigator.pop(context, _selectedPeriod);
+        return false;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_isEditMode ? 'Edit Shot' : 'Log Shot'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.bar_chart),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId)),
+                );
+              },
+            ),
+          ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildPeriodSelector(),
+                const SizedBox(height: 20.0),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildTeamSelectionButton(
+                      teamName: 'Waxers',
+                      teamIdentifier: 'your_team',
+                      logo: TeamUtils.getTeamLogo('Waxers', size: 52),
+                      isSelected: _selectedTeam == 'your_team',
+                      onPressed: () {
+                        setState(() {
+                          _selectedTeam = 'your_team';
+                          _filterPlayersByTeam();
+                        });
+                      },
+                    ),
+                    _buildTeamSelectionButton(
+                      teamName: 'Opponent',
+                      teamIdentifier: 'opponent',
+                      logo: TeamUtils.getTeamLogo('Opponent', size: 52),
+                      isSelected: _selectedTeam == 'opponent',
+                      onPressed: () {
+                        setState(() {
+                          _selectedTeam = 'opponent';
+                          _filterPlayersByTeam();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20.0),
+
+                // Shot Result Checkboxes
+                Column(
+                  children: [
+                    CheckboxListTile(
+                      title: const Text('Was it a goal?', style: TextStyle(fontSize: 16)),
+                      value: _isGoal,
+                      onChanged: (value) {
+                        setState(() {
+                          _isGoal = value!;
+                          // If it's a goal, it must be on goal
+                          if (value) {
+                            _isOnGoal = true;
+                          }
+                        });
+                      },
+                    ),
+                    if (!_isGoal) // Only show "On Goal" checkbox if it's not a goal
+                      CheckboxListTile(
+                        title: const Text('Was it on goal?', style: TextStyle(fontSize: 16)),
+                        value: _isOnGoal,
+                        onChanged: (value) {
+                          setState(() {
+                            _isOnGoal = value!;
+                          });
+                        },
+                      ),
+                  ],
+                ),
+
+                if (_selectedTeam == 'your_team')
+                  DropdownButtonFormField<Player>(
+                    decoration: const InputDecoration(labelText: 'Who shot it?'),
+                    value: _selectedShooter,
+                    items: _playersForTeam
+                        .map((player) => DropdownMenuItem(
+                              value: player,
+                              child: Text('#${player.jerseyNumber}', style: const TextStyle(fontSize: 16),),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedShooter = value;
+                      });
+                    },
+                  ),
+
+                if (_isGoal && _selectedTeam == 'your_team')
+                  DropdownButtonFormField<Player>(
+                    decoration: const InputDecoration(labelText: 'Who assisted it?'),
+                    value: _selectedAssist1,
+                    items: _yourTeamPlayers
+                        .map((player) => DropdownMenuItem(
+                              value: player,
+                              child: Text('#${player.jerseyNumber}', style: const TextStyle(fontSize: 16),),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedAssist1 = value;
+                      });
+                    },
+                  ),
+
+                if (_isGoal)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16.0),
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.people),
+                      label: Text(
+                        'Select Players On Ice (${_selectedYourTeamPlayersOnIce.length})',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      onPressed: _selectPlayersOnIce,
+                    ),
+                  ),
+
+                const SizedBox(height: 16.0),
+
+                ElevatedButton(
+                  onPressed: _isLogging ? null : _logShot,
+                  child: _isLogging
+                    ? const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 10),
+                          Text('Logging...', style: TextStyle(fontSize: 16)),
+                        ],
+                      )
+                    : Text(
+                        _isEditMode ? 'Update Shot' : 'Log Shot',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

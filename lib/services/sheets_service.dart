@@ -234,9 +234,10 @@ class SheetsService {
        event.assistPlayer1Id ?? '', // Column H: Assist 1 ID (Handle null)
        event.assistPlayer2Id ?? '', // Column I: Assist 2 ID (Handle null)
        event.isGoal ?? false, // Column J: Is Goal (TRUE/FALSE)
-       event.penaltyType ?? '', // Column K: Penalty Type (Handle null)
-       event.penaltyDuration ?? 0, // Column L: Penalty Duration (Handle null)
-       event.yourTeamPlayersOnIceIds?.join(',') ?? '', // Column M: Players on Ice (comma-separated IDs, handle null)
+       event.isOnGoal ?? false, // Column K: Is On Goal (TRUE/FALSE)
+       event.penaltyType ?? '', // Column L: Penalty Type (Handle null)
+       event.penaltyDuration ?? 0, // Column M: Penalty Duration (Handle null)
+       event.yourTeamPlayersOnIceIds?.join(',') ?? '', // Column N: Players on Ice (comma-separated IDs, handle null)
      ];
 
      // ValueRange object required by the API
@@ -453,7 +454,7 @@ class SheetsService {
     }
 
     // Define the sheet name and range
-    final String range = 'Events!A2:M'; // All columns starting from row 2
+    final String range = 'Events!A2:N'; // All columns starting from row 2
 
     try {
       print('Fetching events from Google Sheet...');
@@ -477,7 +478,25 @@ class SheetsService {
           try {
              String id = row[0]?.toString() ?? '';
              String gameId = row[1]?.toString() ?? '';
-             DateTime timestamp = DateTime.parse(row[2]?.toString() ?? '');
+             DateTime timestamp;
+             try {
+               String dateStr = row[2]?.toString() ?? '';
+               // Handle single-digit hours by ensuring 2 digits
+               if (dateStr.contains(' ')) {
+                 var parts = dateStr.split(' ');
+                 var datePart = parts[0];
+                 var timePart = parts[1];
+                 var timeComponents = timePart.split(':');
+                 if (timeComponents[0].length == 1) {
+                   timeComponents[0] = '0${timeComponents[0]}';
+                 }
+                 dateStr = '$datePart ${timeComponents.join(':')}';
+               }
+               timestamp = DateTime.parse(dateStr);
+             } catch (e) {
+               print('Error parsing timestamp: ${row[2]}');
+               continue;
+             }
              int period = int.tryParse(row[3]?.toString() ?? '') ?? 1;
              String eventType = row[4]?.toString() ?? '';
              String team = row[5]?.toString() ?? '';
@@ -492,16 +511,25 @@ class SheetsService {
              
              bool isGoal = row.length > 9 ? (row[9]?.toString().toLowerCase() == 'true') : false;
              
-             String? penaltyType = row.length > 10 ? row[10]?.toString() : null;
+             bool isOnGoal = row.length > 10 ? (row[10]?.toString().toLowerCase() == 'true') : false;
+
+             String? penaltyType = row.length > 11 ? row[11]?.toString() : null;
              if (penaltyType?.isEmpty ?? true) penaltyType = null;
              
-             int? penaltyDuration = row.length > 11 ? int.tryParse(row[11]?.toString() ?? '') : null;
+             int? penaltyDuration = row.length > 12 ? int.tryParse(row[12]?.toString() ?? '') : null;
              
-             List<String>? playersOnIce = row.length > 12 && row[12]?.toString().isNotEmpty == true 
-                 ? row[12].toString().split(',')
+             List<String>? playersOnIce = row.length > 13 && row[13]?.toString().isNotEmpty == true 
+                 ? row[13].toString().split(',')
                  : null;
 
-             if (id.isNotEmpty && gameId.isNotEmpty && primaryPlayerId.isNotEmpty) {
+             if (id.isNotEmpty && gameId.isNotEmpty && (team == 'opponent' || primaryPlayerId.isNotEmpty)) {
+                print('Adding event:');
+                print('  ID: $id');
+                print('  Team: $team');
+                print('  Type: $eventType');
+                print('  Primary Player: $primaryPlayerId');
+                print('  Is Goal: $isGoal');
+                print('  Is On Goal: $isOnGoal');
                 events.add(GameEvent(
                   id: id,
                   gameId: gameId,
@@ -518,6 +546,13 @@ class SheetsService {
                   yourTeamPlayersOnIceIds: playersOnIce,
                   isSynced: true, // Mark as synced since it came from sheets
                 ));
+             } else {
+                print('Skipping event:');
+                print('  ID: $id');
+                print('  Team: $team');
+                print('  Type: $eventType');
+                print('  Primary Player: $primaryPlayerId');
+                print('  Reason: ${id.isEmpty ? "Empty ID" : gameId.isEmpty ? "Empty Game ID" : team != "opponent" && primaryPlayerId.isEmpty ? "Missing player ID for non-opponent event" : "Unknown"}');
              }
           } catch (e) {
              print('Error parsing event row: $row, Error: $e');
@@ -590,7 +625,7 @@ class SheetsService {
       };
     }
 
-    // Clear and save all data to Hive
+    // Save data to Hive while preserving unsynced events
     print('Saving data to local database...');
     
     // Save players to Hive (clear existing your_team players)
@@ -612,21 +647,62 @@ class SheetsService {
       await gamesBox.put(game.id, game);
     }
     
-    // Save events to Hive (clear all existing)
-    print('Saving ${events.length} events...');
+    // Save events to Hive while preserving unsynced events
+    print('Processing ${events.length} events...');
     final eventsBox = Hive.box<GameEvent>('gameEvents');
-    await eventsBox.clear(); // Clear all events
+    
+    // Get all unsynced local events before clearing
+    final unsyncedEvents = eventsBox.values.where((event) => !event.isSynced).toList();
+    print('Found ${unsyncedEvents.length} unsynced local events');
+    
+    // Clear synced events only
+    final syncedEvents = eventsBox.values.where((event) => event.isSynced).toList();
+    for (final event in syncedEvents) {
+      await event.delete();
+    }
+    
+    // Save remote events
     for (final event in events) {
+      // Skip if we have an unsynced local version
+      if (!unsyncedEvents.any((e) => e.id == event.id)) {
+        await eventsBox.put(event.id, event);
+      }
+    }
+    
+    // Restore unsynced events
+    for (final event in unsyncedEvents) {
       await eventsBox.put(event.id, event);
     }
     
-    print('Data sync complete. Synced ${players.length} players, ${games.length} games, and ${events.length} events.');
+    // Try to sync any unsynced events
+    if (unsyncedEvents.isNotEmpty) {
+      print('Attempting to sync ${unsyncedEvents.length} unsynced events...');
+      for (final event in unsyncedEvents) {
+        try {
+          bool syncSuccess = await syncGameEvent(event);
+          if (syncSuccess) {
+            print('Successfully synced event ${event.id}');
+            event.isSynced = true;
+            await event.save();
+          } else {
+            print('Failed to sync event ${event.id}');
+          }
+        } catch (e) {
+          print('Error syncing event ${event.id}: $e');
+        }
+      }
+    }
+    
+    final remainingUnsyncedCount = eventsBox.values.where((event) => !event.isSynced).length;
+    print('Sync complete. ${events.length} remote events processed. $remainingUnsyncedCount events remain unsynced.');
+    
     return {
       'success': true,
       'message': 'Sync completed successfully',
       'players': players.length,
       'games': games.length,
-      'events': events.length
+      'events': events.length,
+      'unsynced': remainingUnsyncedCount
     };
   }
 
@@ -691,13 +767,14 @@ class SheetsService {
         event.assistPlayer1Id ?? '', // Column H: Assist 1 ID (Handle null)
         event.assistPlayer2Id ?? '', // Column I: Assist 2 ID (Handle null)
         event.isGoal ?? false, // Column J: Is Goal (TRUE/FALSE)
-        event.penaltyType ?? '', // Column K: Penalty Type (Handle null)
-        event.penaltyDuration ?? 0, // Column L: Penalty Duration (Handle null)
-        event.yourTeamPlayersOnIceIds?.join(',') ?? '', // Column M: Players on Ice (comma-separated IDs, handle null)
+        event.isOnGoal ?? false, // Column K: Is On Goal (TRUE/FALSE)
+        event.penaltyType ?? '', // Column L: Penalty Type (Handle null)
+        event.penaltyDuration ?? 0, // Column M: Penalty Duration (Handle null)
+        event.yourTeamPlayersOnIceIds?.join(',') ?? '', // Column N: Players on Ice (comma-separated IDs, handle null)
       ];
       
       // Create the update range (the entire row for this event)
-      final updateRange = '$sheetName!A$rowIndex:M$rowIndex';
+      final updateRange = '$sheetName!A$rowIndex:N$rowIndex';
       
       // Create the ValueRange object
       final valueRange = sheets.ValueRange()

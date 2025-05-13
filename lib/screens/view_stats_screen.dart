@@ -137,7 +137,11 @@ class ViewStatsScreen extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8.0),
                             child: Text(
-                              gameEvents.where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id).map((event) => event.penaltyDuration).fold(0, (a, b) => a! + b!).toString(),
+                              gameEvents
+                                .where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id)
+                                .map((event) => event.penaltyDuration ?? 0)
+                                .fold(0, (a, b) => a + b)
+                                .toString(),
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
@@ -149,7 +153,14 @@ class ViewStatsScreen extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8.0),
                             child: Text(
-                              gameEvents.where((event) => event.eventType == 'Shot' && event.primaryPlayerId == player.id).length.toString(),
+                              gameEvents
+                                .where((event) => 
+                                  event.eventType == 'Shot' && 
+                                  event.primaryPlayerId == player.id &&
+                                  (event.isOnGoal == true || event.isGoal == true)
+                                )
+                                .length
+                                .toString(),
                               style: const TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
@@ -176,18 +187,26 @@ int calculatePlusMinus(Player player, List<GameEvent> gameEvents, String gameId)
   // Calculate plus/minus for when the player is on the ice when a goal is scored
   for (var event in gameEvents) {
     if (event.eventType == 'Shot' && event.isGoal == true && event.gameId == gameId) {
-      // Only consider events where we have players on ice data
+      bool playerWasOnIce = false;
+
+      // First check if we have players on ice data
       if (event.yourTeamPlayersOnIceIds != null && event.yourTeamPlayersOnIceIds!.isNotEmpty) {
-        // Check if the player was on ice
-        if (event.yourTeamPlayersOnIceIds!.contains(player.id)) {
-          // If your team scored, add +1
-          if (event.team == 'your_team') {
-            plusMinus++;
-          } 
-          // If opponent scored, subtract 1
-          else if (event.team == 'opponent') {
-            plusMinus--;
-          }
+        playerWasOnIce = event.yourTeamPlayersOnIceIds!.contains(player.id);
+      } else {
+        // If no players on ice data, assume player was on ice if they were involved in the play
+        playerWasOnIce = event.primaryPlayerId == player.id || 
+                        event.assistPlayer1Id == player.id || 
+                        event.assistPlayer2Id == player.id;
+      }
+
+      if (playerWasOnIce) {
+        // If your team scored, add +1
+        if (event.team == 'your_team') {
+          plusMinus++;
+        } 
+        // If opponent scored, subtract 1
+        else if (event.team == 'opponent') {
+          plusMinus--;
         }
       }
     }
