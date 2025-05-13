@@ -162,14 +162,14 @@ class _LogShotScreenState extends State<LogShotScreen> {
         _eventBeingEdited!.primaryPlayerId = _selectedTeam == 'your_team' ? _selectedShooter?.id ?? '' : '';
         _eventBeingEdited!.assistPlayer1Id = _isGoal ? _selectedAssist1?.id : null;
         _eventBeingEdited!.isGoal = _isGoal;
-        _eventBeingEdited!.isOnGoal = _isGoal || _isOnGoal;
+        _eventBeingEdited!.isOnGoal = true; // Every shot is considered on goal
         _eventBeingEdited!.isSynced = false;
         _eventBeingEdited!.yourTeamPlayersOnIceIds = _isGoal ? _getPlayersOnIceIds() : null;
         
         print('  IsGoal after: ${_eventBeingEdited!.isGoal}');
         
         eventToProcess = _eventBeingEdited!;
-        successMessage = 'Shot updated for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : _isOnGoal ? " (On Goal)" : ""}';
+        successMessage = 'Shot updated for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
         
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
         print('Event updated in Hive');
@@ -229,13 +229,13 @@ class _LogShotScreenState extends State<LogShotScreen> {
           assistPlayer1Id: _isGoal ? _selectedAssist1?.id : null,
           assistPlayer2Id: null, 
           isGoal: _isGoal,
-          isOnGoal: _isGoal || _isOnGoal,
+          isOnGoal: true, // Every shot is considered on goal
           isSynced: false,
           yourTeamPlayersOnIceIds: _isGoal ? _getPlayersOnIceIds() : null,
         );
         
         eventToProcess = newShotEvent;
-        successMessage = 'Shot logged for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : _isOnGoal ? " (On Goal)" : ""}';
+        successMessage = 'Shot logged for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
 
         print('Saving new event to Hive:');
         print('  ID: ${eventToProcess.id}');
@@ -524,32 +524,16 @@ class _LogShotScreenState extends State<LogShotScreen> {
                 const SizedBox(height: 20.0),
 
                 // Shot Result Checkboxes
-                Column(
-                  children: [
-                    CheckboxListTile(
-                      title: const Text('Was it a goal?', style: TextStyle(fontSize: 16)),
-                      value: _isGoal,
-                      onChanged: (value) {
-                        setState(() {
-                          _isGoal = value!;
-                          // If it's a goal, it must be on goal
-                          if (value) {
-                            _isOnGoal = true;
-                          }
-                        });
-                      },
-                    ),
-                    if (!_isGoal) // Only show "On Goal" checkbox if it's not a goal
-                      CheckboxListTile(
-                        title: const Text('Was it on goal?', style: TextStyle(fontSize: 16)),
-                        value: _isOnGoal,
-                        onChanged: (value) {
-                          setState(() {
-                            _isOnGoal = value!;
-                          });
-                        },
-                      ),
-                  ],
+                CheckboxListTile(
+                  title: const Text('Was it a goal?', style: TextStyle(fontSize: 16)),
+                  value: _isGoal,
+                  onChanged: (value) {
+                    setState(() {
+                      _isGoal = value!;
+                      // Every shot is considered on goal
+                      _isOnGoal = true;
+                    });
+                  },
                 ),
 
                 if (_selectedTeam == 'your_team')
