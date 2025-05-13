@@ -79,7 +79,7 @@ Future<Map<String, dynamic>> attemptInitialDataSyncIfSignedIn() async {
       final Map<String, dynamic> syncResult = await sheetsService.syncDataFromSheets();
       
       if (syncResult['success'] == true) {
-        print('Initial data sync successful: ${syncResult['players']} players and ${syncResult['games']} games synced.');
+        print('Initial data sync successful: ${syncResult['players']} players, ${syncResult['games']} games, and ${syncResult['events']} events synced.');
         return {'status': 'sync_success', 'message': 'Sync successful', 'data': syncResult};
       } else {
         print('Initial data sync failed after successful sign-in: ${syncResult['message']}');

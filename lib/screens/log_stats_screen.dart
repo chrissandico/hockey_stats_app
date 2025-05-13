@@ -4,45 +4,31 @@ import 'package:hockey_stats_app/screens/log_shot_screen.dart';
 import 'package:hockey_stats_app/screens/log_penalty_screen.dart';
 import 'package:hockey_stats_app/screens/view_stats_screen.dart';
 import 'package:hockey_stats_app/screens/edit_shot_list_screen.dart';
-import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import the service
 import 'package:google_sign_in/google_sign_in.dart'; // Import for GoogleSignInAccount
 
-// Plain Dart object for passing GameEvent data to the isolate
-class _GameEventDataForIsolate {
-  final String gameId;
-  final String eventType;
-  final bool? isGoal; // Nullable to match GameEvent
-  final String team;
-
-  _GameEventDataForIsolate({
-    required this.gameId,
-    required this.eventType,
-    this.isGoal,
-    required this.team,
-  });
-}
-
-// Top-level function for score calculation in an isolate
-Map<String, int> _calculateScoreIsolate(Map<String, dynamic> params) {
-  final String targetGameId = params['targetGameId'] as String;
-  final List<_GameEventDataForIsolate> eventsData = params['eventsData'] as List<_GameEventDataForIsolate>;
-
-  final gameSpecificEventsData = eventsData.where((eventData) => eventData.gameId == targetGameId).toList();
-
-  int yourTeamScore = gameSpecificEventsData.where((eventData) =>
-    eventData.eventType == 'Shot' &&
-    eventData.isGoal == true &&
-    eventData.team == 'Your Team'
+// Helper function to calculate score
+Map<String, int> _calculateScore(List<GameEvent> events) {
+  print('Calculating score from ${events.length} events');
+  
+  int yourTeamScore = events.where((event) => 
+    event.eventType == 'Shot' && 
+    event.isGoal == true && 
+    event.team == 'your_team'
   ).length;
 
-  int opponentScore = gameSpecificEventsData.where((eventData) =>
-    eventData.eventType == 'Shot' &&
-    eventData.isGoal == true &&
-    eventData.team == 'Opponent'
+  int opponentScore = events.where((event) => 
+    event.eventType == 'Shot' && 
+    event.isGoal == true && 
+    event.team == 'opponent'
   ).length;
+
+  print('Score calculation complete:');
+  print('Your Team: $yourTeamScore');
+  print('Opponent: $opponentScore');
 
   return {
     'Your Team': yourTeamScore,
@@ -65,7 +51,6 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   // State variables
   int _selectedPeriod = 1; // Default to period 1
   Game? _currentGame;
-  Map<String, int> _currentScore = {'Your Team': 0, 'Opponent': 0};
   bool _isLoadingScore = false; // Keep for score updates after initial load if needed
 
   // Add instance of the service and state for authentication
@@ -90,8 +75,10 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     setState(() {});
   }
 
-  // Load initial game data and score asynchronously
+  // Load initial game data
   Future<void> _loadInitialData() async {
+    print('Loading initial data for game ${widget.gameId}');
+    
     // Ensure initial state reflects loading
     if (mounted) {
       setState(() {
@@ -100,41 +87,32 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
       });
     }
 
-    // Load game details
-    final gamesBox = Hive.box<Game>('games');
-    Game? game;
     try {
-      // Optimized to use Hive's get() method as gameId is the key
-      game = gamesBox.get(widget.gameId);
+      // Load game details
+      final gamesBox = Hive.box<Game>('games');
+      final game = gamesBox.get(widget.gameId);
+      print('Game loaded: ${game?.id}');
+      
+      if (game == null) {
+        print('Game not found in Hive: ${widget.gameId}');
+      }
+
+      // Update state after loading is complete
+      if (mounted) {
+        setState(() {
+          _currentGame = game;
+          _isLoadingInitialData = false;
+          _isLoadingScore = false;
+        });
+      }
     } catch (e) {
-      // This catch might not be necessary if .get() returns null on not found,
-      // but good for logging other potential errors.
-      print('Error loading game from Hive: ${widget.gameId}, Error: $e');
-    }
-    
-    if (game == null) {
-      print('Game not found in Hive: ${widget.gameId}');
-      // Handle case where game is not found, perhaps show an error or default state
-    }
-
-    // Load score
-     Map<String, int> score = {'Your Team': 0, 'Opponent': 0};
-    try {
-       // _getGameScore can remain sync if Hive reads are fast enough
-       // If it becomes slow, make it async or run in an isolate.
-       score = await _getGameScore();
-    } catch(e) {
-       print('Error loading game score: $e');
-    }
-
-    // Update state after loading is complete
-    if (mounted) { // Check if the widget is still in the tree
-      setState(() {
-        _currentGame = game;
-        _currentScore = score;
-        _isLoadingInitialData = false;
-        _isLoadingScore = false;
-      });
+      print('Error in _loadInitialData: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingInitialData = false;
+          _isLoadingScore = false;
+        });
+      }
     }
   }
 
@@ -222,13 +200,14 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   // Handle Sync button press
   Future<void> _handleSync() async {
     if (!mounted) return;
-    setState(() { _isSigningIn = true; }); // Use _isSigningIn to show loading on button
+    setState(() { 
+      _isSigningIn = true;
+      _isLoadingScore = true; // Show loading indicator for score
+    });
 
     final result = await _sheetsService.syncPendingEvents();
 
-    if (!mounted) return; // Check again after await
-
-    setState(() { _isSigningIn = false; });
+    if (!mounted) return;
 
     // Show feedback based on sync result
     String message;
@@ -236,11 +215,21 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
       message = 'Sync failed: Not authenticated.';
     } else if (result['failed']! > 0) {
       message = 'Sync complete with ${result['failed']} failures. ${result['success']} succeeded.';
+      // Refresh score even if some failed
+      await _refreshScore();
     } else if (result['success']! > 0) {
       message = 'Sync complete: ${result['success']} events synced.';
+      // Refresh score on success
+      await _refreshScore();
     } else {
       message = 'No pending events to sync.';
     }
+
+    if (!mounted) return;
+    setState(() {
+      _isSigningIn = false;
+      _isLoadingScore = false;
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -250,26 +239,33 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   // Handle Sync from Sheets button press
   Future<void> _handleSyncFromSheets() async {
     if (!mounted) return;
-    setState(() { _isSigningIn = true; }); // Use _isSigningIn to show loading on button
+    setState(() { 
+      _isSigningIn = true;
+      _isLoadingScore = true; // Show loading indicator for score
+    });
 
     final result = await _sheetsService.syncDataFromSheets();
 
-    if (!mounted) return; // Check again after await
-
-    setState(() { _isSigningIn = false; });
+    if (!mounted) return;
 
     // Show feedback based on sync result
     String message;
     if (result['success'] == true) {
-      message = 'Sync complete: ${result['players']} players and ${result['games']} games synced.';
+      message = 'Sync complete: ${result['players']} players, ${result['games']} games, and ${result['events']} events synced.';
       
-      // Reload current game data if we're viewing a game
-      if (_currentGame != null) {
-        _loadInitialData(); // Reload game details and score
-      }
+      // Reload game data and refresh score
+      await _loadInitialData();
+      await _refreshScore();
+      
     } else {
       message = 'Sync failed: ${result['message']}';
     }
+
+    if (!mounted) return;
+    setState(() {
+      _isSigningIn = false;
+      _isLoadingScore = false;
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
@@ -326,35 +322,16 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     );
   }
 
-  // Calculate the current game score using compute
-  Future<Map<String, int>> _getGameScore() async {
-    final gameEventsBox = Hive.box<GameEvent>('gameEvents');
-    
-    // Map GameEvent (HiveObject) to _GameEventDataForIsolate (plain Dart object)
-    final List<_GameEventDataForIsolate> eventsDataForIsolate = gameEventsBox.values.map((event) {
-      return _GameEventDataForIsolate(
-        gameId: event.gameId,
-        eventType: event.eventType,
-        isGoal: event.isGoal,
-        team: event.team,
-      );
-    }).toList();
-    
-    return await compute(_calculateScoreIsolate, {
-      'targetGameId': widget.gameId, // Pass the specific gameId we're interested in
-      'eventsData': eventsDataForIsolate, // Pass the list of plain data objects
-    });
-  }
+  // Remove unused _getGameScore method since we're using ValueListenableBuilder
 
   // Method to refresh score after an event is logged
   Future<void> _refreshScore() async {
      if (!mounted) return;
      setState(() { _isLoadingScore = true; });
      try {
-        final score = await _getGameScore();
+        // No need to update _currentScore since we're using ValueListenableBuilder
         if (mounted) {
            setState(() {
-              _currentScore = score;
               _isLoadingScore = false;
            });
         }
@@ -446,7 +423,12 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => EditShotListScreen(gameId: widget.gameId)),
-                );
+                ).then((_) {
+                  print('Returned from EditShotListScreen, refreshing score...');
+                  _refreshScore().then((_) {
+                    print('Score refresh complete');
+                  });
+                });
               },
             ),
             // View Stats Button
@@ -496,12 +478,15 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             ),
                           ),
                         ).then((value) {
-                          _refreshScore();
-                          if (value != null && value is int) {
-                            setState(() {
-                              _selectedPeriod = value;
-                            });
-                          }
+                          print('Returned from LogShotScreen, refreshing score...');
+                          _refreshScore().then((_) {
+                            print('Score refresh complete');
+                            if (value != null && value is int) {
+                              setState(() {
+                                _selectedPeriod = value;
+                              });
+                            }
+                          });
                         });
                       },
                     ),
@@ -519,12 +504,15 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             ),
                           ),
                         ).then((value) {
-                          _refreshScore();
-                          if (value != null && value is int) {
-                            setState(() {
-                              _selectedPeriod = value;
-                            });
-                          }
+                          print('Returned from LogPenaltyScreen, refreshing score...');
+                          _refreshScore().then((_) {
+                            print('Score refresh complete');
+                            if (value != null && value is int) {
+                              setState(() {
+                                _selectedPeriod = value;
+                              });
+                            }
+                          });
                         });
                       },
                     ),
@@ -569,54 +557,78 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                           ),
                           const SizedBox(height: 8), // const added
                           
-                          // Display current game score
-                          Center(
-                            child: _isLoadingScore // Use separate flag for score updates
-                                ? const SizedBox(height: 30, width: 30, child: CircularProgressIndicator(strokeWidth: 3,)) // const added
-                                : Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        '${_currentScore['Your Team']}',
-                                        style: const TextStyle(
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.blue,
-                                        ),
-                                      ),
-                                      const Text( // const added
-                                        ' - ',
-                                        style: TextStyle(
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Text(
-                                        '${_currentScore['Opponent']}',
-                                        style: const TextStyle(
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.red,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                          ),
+  // Display current game score
+  ValueListenableBuilder(
+    valueListenable: Hive.box<GameEvent>('gameEvents').listenable(),
+    builder: (context, Box<GameEvent> box, _) {
+      final gameEvents = box.values.where((event) => event.gameId == widget.gameId).toList();
+      final score = _calculateScore(gameEvents);
+      
+      return Center(
+        child: _isLoadingScore
+            ? const SizedBox(height: 30, width: 30, child: CircularProgressIndicator(strokeWidth: 3))
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '${score['Your Team']}',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                  const Text(
+                    ' - ',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '${score['Opponent']}',
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
+                    ),
+                  ),
+                ],
+              ),
+      );
+    }
+  ),
                           const SizedBox(height: 8),
                           
                           // Display shots on goal
-                          Builder(
-                            builder: (context) {
-                              final gameEventsBox = Hive.box<GameEvent>('gameEvents');
-                              final gameEvents = gameEventsBox.values.where((event) => event.gameId == widget.gameId).toList();
+                          ValueListenableBuilder(
+                            valueListenable: Hive.box<GameEvent>('gameEvents').listenable(),
+                            builder: (context, Box<GameEvent> box, _) {
+                              final gameEvents = box.values.where((event) => event.gameId == widget.gameId).toList();
+                              
+                              // Calculate shots
+                              print('Calculating shots for game ${widget.gameId}');
                               
                               final yourTeamShots = gameEvents.where((event) => 
-                                event.eventType == 'Shot' && event.team == 'Your Team'
+                                event.eventType == 'Shot' && 
+                                event.team == 'your_team'
                               ).length;
                               
                               final opponentShots = gameEvents.where((event) => 
-                                event.eventType == 'Shot' && event.team == 'Opponent'
+                                event.eventType == 'Shot' && 
+                                event.team == 'opponent'
                               ).length;
+                              
+                              // Debug print each shot
+                              for (var event in gameEvents.where((e) => e.eventType == 'Shot')) {
+                                print('Shot Event:');
+                                print('  ID: ${event.id}');
+                                print('  Team: ${event.team}');
+                                print('  IsGoal (raw): ${event.isGoal}');
+                                print('  IsGoal (wasGoal): ${event.wasGoal}');
+                              }
+                              
+                              print('Shot totals - Your Team: $yourTeamShots, Opponent: $opponentShots');
 
                               return Row(
                                 mainAxisAlignment: MainAxisAlignment.center,

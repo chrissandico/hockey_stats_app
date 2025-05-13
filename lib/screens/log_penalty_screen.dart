@@ -101,7 +101,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
         timestamp: DateTime.now(),
         period: _selectedPeriod,
         eventType: 'Penalty',
-        team: 'Your Team', // Assuming penalties are only for 'Your Team'
+        team: 'your_team', // Assuming penalties are only for 'Your Team'
         primaryPlayerId: _selectedPlayer!.id,
         penaltyType: _penaltyType,
         penaltyDuration: _penaltyDuration,

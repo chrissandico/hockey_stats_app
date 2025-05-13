@@ -47,6 +47,22 @@ Key implementations:
 - Added support for team colors in the UI
 - Updated the LOGO_INSTRUCTIONS.md with details on how to use the new system
 
+### 5. Real-time Stats Updates and Team Identifier Standardization
+
+Implemented real-time stats updates and standardized team identifiers across the app.
+
+Key implementations:
+- Added ValueListenableBuilder for real-time score and shots updates
+- Standardized team identifiers to use 'your_team' and 'opponent' consistently
+- Updated all screens to use the standardized identifiers:
+  - LogStatsScreen: Real-time score and shots display
+  - LogShotScreen: Team selection and event creation
+  - ViewStatsScreen: Plus/minus calculation
+  - EditShotListScreen: Shot list display
+  - LogPenaltyScreen: Event creation
+- Enhanced logging for better debugging and tracking
+- Improved state management for loading indicators
+
 ## Technical Details
 
 ### Files Modified
@@ -55,15 +71,32 @@ Key implementations:
    - Converted to StatefulWidget with period selection state
    - Added period selector UI and visual indicators
    - Enhanced game details display with logos and better formatting
+   - Added real-time stats updates using ValueListenableBuilder
+   - Updated team identifiers to use standardized format
 
 2. `lib/screens/log_shot_screen.dart`
    - Updated to accept and use period parameter
    - Added period change functionality
    - Enhanced team selection UI with logos
+   - Updated team identifiers and event creation
 
 3. `lib/screens/log_penalty_screen.dart`
    - Updated to accept and use period parameter
    - Added period change functionality
+   - Updated team identifier for event creation
+
+4. `lib/screens/view_stats_screen.dart`
+   - Updated plus/minus calculation to use standardized team identifiers
+   - Enhanced player stats display
+
+5. `lib/screens/edit_shot_list_screen.dart`
+   - Updated team identifier checks
+   - Fixed shot display text for opponent shots
+   - Enhanced shot list UI with proper team attribution
+
+6. `lib/services/sheets_service.dart`
+   - Updated documentation to use standardized team identifiers
+   - Enhanced sync functionality
 
 ### Files Created
 
@@ -96,9 +129,47 @@ Key implementations:
 
 ## Future Enhancements
 
-Potential future enhancements could include:
-- Enhancing the period selection with period duration tracking
-- Implementing a remote team logo database
-- Adding more advanced team statistics
-- Creating a team management interface
-- Enhanced Plus/Minus User Experience: Implement a visual rink diagram for player selection, add line combination presets, and improve the visualization of plus/minus statistics in the app
+### 1. Enhanced Stats Tracking
+- Implement shot location tracking with a visual rink diagram
+- Add shot type classification (wrist shot, slap shot, etc.)
+- Track time on ice for players
+- Add face-off tracking and win/loss statistics
+
+### 2. Team Management
+- Create a team management interface for adding/editing teams
+- Implement roster management with player positions and numbers
+- Add line combination presets for quick player selection
+- Support multiple teams in the same app instance
+
+### 3. Advanced Analytics
+- Implement heat maps for shot locations
+- Add advanced statistics (Corsi, Fenwick, etc.)
+- Create detailed player performance reports
+- Add trend analysis over multiple games
+
+### 4. UI/UX Improvements
+- Add dark mode support
+- Implement customizable color themes per team
+- Add animations for stat updates
+- Create a more intuitive player selection interface
+- Add quick action shortcuts for common operations
+
+### 5. Data Management
+- Implement data export to CSV/Excel
+- Add backup/restore functionality
+- Create a web dashboard for viewing stats
+- Add support for importing data from other sources
+
+### 6. Sync and Sharing
+- Add real-time sync between multiple devices
+- Implement team sharing functionality
+- Add support for exporting game reports
+- Create a coach's view for team management
+
+### 7. Game Management
+- Add game clock functionality
+- Implement period duration tracking
+- Add support for tracking timeouts
+- Create a game summary report generator
+
+These enhancements would make the app more comprehensive and user-friendly while maintaining its core functionality of efficient stats tracking.

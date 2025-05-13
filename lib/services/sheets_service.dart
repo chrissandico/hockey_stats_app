@@ -229,7 +229,7 @@ class SheetsService {
        event.timestamp.toIso8601String(), // Column C: Timestamp (ISO 8601 format)
        event.period, // Column D: Period
        event.eventType, // Column E: Event Type ("Shot", "Penalty")
-       event.team, // Column F: Team ("Your Team", "Opponent")
+       event.team, // Column F: Team ("your_team", "opponent")
        event.primaryPlayerId, // Column G: Primary Player ID (Shooter/Penalized)
        event.assistPlayer1Id ?? '', // Column H: Assist 1 ID (Handle null)
        event.assistPlayer2Id ?? '', // Column I: Assist 2 ID (Handle null)
@@ -436,7 +436,105 @@ class SheetsService {
     }
   }
 
-  // Sync both players and games from Google Sheets to local Hive database
+  // Fetch events data from the Events sheet
+  Future<List<GameEvent>?> fetchEvents() async {
+    // First ensure we're authenticated
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot fetch events: Authentication failed.');
+      return null;
+    }
+    
+    // Now get the API instance
+    final sheetsApi = _getSheetsApi();
+    if (sheetsApi == null) {
+      print('Cannot fetch events: Sheets API not available even after authentication check.');
+      return null;
+    }
+
+    // Define the sheet name and range
+    final String range = 'Events!A2:M'; // All columns starting from row 2
+
+    try {
+      print('Fetching events from Google Sheet...');
+      final result = await sheetsApi.spreadsheets.values.get(
+        _spreadsheetId,
+        range,
+      );
+
+      final values = result.values;
+      if (values == null || values.isEmpty) {
+        print('No event data found in the sheet.');
+        return [];
+      }
+
+      print('Found ${values.length} event records in the sheet.');
+      
+      // Parse the values into GameEvent objects
+      List<GameEvent> events = [];
+      for (var row in values) {
+        if (row.length >= 7) { // Need at least the essential fields
+          try {
+             String id = row[0]?.toString() ?? '';
+             String gameId = row[1]?.toString() ?? '';
+             DateTime timestamp = DateTime.parse(row[2]?.toString() ?? '');
+             int period = int.tryParse(row[3]?.toString() ?? '') ?? 1;
+             String eventType = row[4]?.toString() ?? '';
+             String team = row[5]?.toString() ?? '';
+             String primaryPlayerId = row[6]?.toString() ?? '';
+             
+             // Optional fields
+             String? assistPlayer1Id = row.length > 7 ? row[7]?.toString() : null;
+             if (assistPlayer1Id?.isEmpty ?? true) assistPlayer1Id = null;
+             
+             String? assistPlayer2Id = row.length > 8 ? row[8]?.toString() : null;
+             if (assistPlayer2Id?.isEmpty ?? true) assistPlayer2Id = null;
+             
+             bool isGoal = row.length > 9 ? (row[9]?.toString().toLowerCase() == 'true') : false;
+             
+             String? penaltyType = row.length > 10 ? row[10]?.toString() : null;
+             if (penaltyType?.isEmpty ?? true) penaltyType = null;
+             
+             int? penaltyDuration = row.length > 11 ? int.tryParse(row[11]?.toString() ?? '') : null;
+             
+             List<String>? playersOnIce = row.length > 12 && row[12]?.toString().isNotEmpty == true 
+                 ? row[12].toString().split(',')
+                 : null;
+
+             if (id.isNotEmpty && gameId.isNotEmpty && primaryPlayerId.isNotEmpty) {
+                events.add(GameEvent(
+                  id: id,
+                  gameId: gameId,
+                  timestamp: timestamp,
+                  period: period,
+                  eventType: eventType,
+                  team: team,
+                  primaryPlayerId: primaryPlayerId,
+                  assistPlayer1Id: assistPlayer1Id,
+                  assistPlayer2Id: assistPlayer2Id,
+                  isGoal: isGoal,
+                  penaltyType: penaltyType,
+                  penaltyDuration: penaltyDuration,
+                  yourTeamPlayersOnIceIds: playersOnIce,
+                  isSynced: true, // Mark as synced since it came from sheets
+                ));
+             }
+          } catch (e) {
+             print('Error parsing event row: $row, Error: $e');
+          }
+        }
+      }
+      
+      print('Successfully parsed ${events.length} events from the sheet.');
+      return events;
+
+    } catch (e) {
+      print('Error fetching events from Google Sheet: $e');
+      return null;
+    }
+  }
+
+  // Sync players, games, and events from Google Sheets to local Hive database
   Future<Map<String, dynamic>> syncDataFromSheets() async {
     print('Starting full data sync from Google Sheets...');
     
@@ -478,39 +576,57 @@ class SheetsService {
       };
     }
     
-    // Save players to Hive
-    print('Saving ${players.length} players to local database...');
-    final playersBox = Hive.box<Player>('players');
+    // Fetch events
+    print('Fetching events...');
+    final events = await fetchEvents();
+    if (events == null) {
+      print('Failed to fetch events.');
+      return {
+        'success': false,
+        'message': 'Failed to fetch events',
+        'players': players,
+        'games': games,
+        'events': null
+      };
+    }
+
+    // Clear and save all data to Hive
+    print('Saving data to local database...');
     
-    // Clear existing players with teamId 'your_team' (keep any other teams)
+    // Save players to Hive (clear existing your_team players)
+    print('Saving ${players.length} players...');
+    final playersBox = Hive.box<Player>('players');
     final existingPlayers = playersBox.values.where((p) => p.teamId == 'your_team').toList();
     for (final player in existingPlayers) {
       await player.delete();
     }
-    
-    // Add new players
     for (final player in players) {
       await playersBox.put(player.id, player);
     }
     
-    // Save games to Hive
-    print('Saving ${games.length} games to local database...');
+    // Save games to Hive (clear all existing)
+    print('Saving ${games.length} games...');
     final gamesBox = Hive.box<Game>('games');
-    
-    // Option 1: Clear all existing games and replace with new ones
-    // await gamesBox.clear();
-    
-    // Option 2: Update existing games and add new ones
+    await gamesBox.clear(); // Clear all games
     for (final game in games) {
       await gamesBox.put(game.id, game);
     }
     
-    print('Data sync complete. Synced ${players.length} players and ${games.length} games.');
+    // Save events to Hive (clear all existing)
+    print('Saving ${events.length} events...');
+    final eventsBox = Hive.box<GameEvent>('gameEvents');
+    await eventsBox.clear(); // Clear all events
+    for (final event in events) {
+      await eventsBox.put(event.id, event);
+    }
+    
+    print('Data sync complete. Synced ${players.length} players, ${games.length} games, and ${events.length} events.');
     return {
       'success': true,
       'message': 'Sync completed successfully',
       'players': players.length,
-      'games': games.length
+      'games': games.length,
+      'events': events.length
     };
   }
 
@@ -570,7 +686,7 @@ class SheetsService {
         event.timestamp.toIso8601String(), // Column C: Timestamp (ISO 8601 format)
         event.period, // Column D: Period
         event.eventType, // Column E: Event Type ("Shot", "Penalty")
-        event.team, // Column F: Team ("Your Team", "Opponent")
+        event.team, // Column F: Team ("your_team", "opponent")
         event.primaryPlayerId, // Column G: Primary Player ID (Shooter/Penalized)
         event.assistPlayer1Id ?? '', // Column H: Assist 1 ID (Handle null)
         event.assistPlayer2Id ?? '', // Column I: Assist 2 ID (Handle null)

@@ -31,7 +31,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
   // State variables to hold the input values
   late int _selectedPeriod; // To store the currently selected period
   bool _isGoal = false;
-  String _selectedTeam = 'Your Team'; // Default team
+  String _selectedTeam = 'your_team'; // Default team
   Player? _selectedShooter;
   Player? _selectedAssist1;
   Player? _selectedAssist2;
@@ -54,14 +54,14 @@ class _LogShotScreenState extends State<LogShotScreen> {
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 10.0),
             backgroundColor: isSelected 
-                ? (teamIdentifier == 'Your Team' ? Colors.blue.withOpacity(0.3) : Colors.red.withOpacity(0.3)) 
+                ? (teamIdentifier == 'your_team' ? Colors.blue.withOpacity(0.3) : Colors.red.withOpacity(0.3)) 
                 : Theme.of(context).colorScheme.surfaceVariant,
             foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12.0),
               side: BorderSide(
                 color: isSelected 
-                    ? (teamIdentifier == 'Your Team' ? Colors.blue : Colors.red) 
+                    ? (teamIdentifier == 'your_team' ? Colors.blue : Colors.red) 
                     : Colors.grey.withOpacity(0.5),
                 width: 2.0,
               ),
@@ -132,24 +132,24 @@ class _LogShotScreenState extends State<LogShotScreen> {
                   children: [
                     _buildTeamSelectionButton(
                       teamName: 'Waxers', // Or your actual team name variable
-                      teamIdentifier: 'Your Team',
+                      teamIdentifier: 'your_team',
                       logo: TeamUtils.getTeamLogo('Waxers', size: 52), // Larger logo
-                      isSelected: _selectedTeam == 'Your Team',
+                      isSelected: _selectedTeam == 'your_team',
                       onPressed: () {
                         setState(() {
-                          _selectedTeam = 'Your Team';
+                          _selectedTeam = 'your_team';
                           _filterPlayersByTeam();
                         });
                       },
                     ),
                     _buildTeamSelectionButton(
                       teamName: 'Opponent',
-                      teamIdentifier: 'Opponent',
+                      teamIdentifier: 'opponent',
                       logo: TeamUtils.getTeamLogo('Opponent', size: 52), // Larger logo
-                      isSelected: _selectedTeam == 'Opponent',
+                      isSelected: _selectedTeam == 'opponent',
                       onPressed: () {
                         setState(() {
-                          _selectedTeam = 'Opponent';
+                          _selectedTeam = 'opponent';
                           _filterPlayersByTeam();
                         });
                       },
@@ -169,7 +169,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
                   },
                 ),
                 // Shooter Selection (Conditional)
-                if (_selectedTeam == 'Your Team')
+                if (_selectedTeam == 'your_team')
                   DropdownButtonFormField<Player>(
                     decoration: const InputDecoration(labelText: 'Who shot it?'),
                     value: _selectedShooter,
@@ -186,7 +186,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
                     },
                   ),
                 // Assist Selection (Conditional)
-                if (_isGoal && _selectedTeam == 'Your Team')
+                if (_isGoal && _selectedTeam == 'your_team')
                   DropdownButtonFormField<Player>(
                     decoration: const InputDecoration(labelText: 'Who assisted it?'),
                     value: _selectedAssist1,
@@ -297,7 +297,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
   void _filterPlayersByTeam() {
     setState(() {
       final playersBox = Hive.box<Player>('players');
-      if (_selectedTeam == 'Your Team') {
+      if (_selectedTeam == 'your_team') {
         _playersForTeam = playersBox.values.where((p) => p.teamId == 'your_team').toList();
       } else {
         _playersForTeam.clear();
@@ -324,7 +324,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
           _selectedTeam = _eventBeingEdited!.team;
           
           // Load shooter if it's your team
-          if (_selectedTeam == 'Your Team' && _eventBeingEdited!.primaryPlayerId.isNotEmpty) {
+          if (_selectedTeam == 'your_team' && _eventBeingEdited!.primaryPlayerId.isNotEmpty) {
             try {
               _selectedShooter = _yourTeamPlayers.firstWhere(
                 (player) => player.id == _eventBeingEdited!.primaryPlayerId
@@ -365,7 +365,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
   // Function to save or update the shot event
   Future<void> _logShot() async {
     // Basic validation
-    if (_selectedTeam == 'Your Team' && _selectedShooter == null && _isGoal == true) {
+    if (_selectedTeam == 'your_team' && _selectedShooter == null && _isGoal == true) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a shooter.')),
@@ -373,45 +373,51 @@ class _LogShotScreenState extends State<LogShotScreen> {
       return;
     }
 
-    // Optional: Add a loading indicator state if desired
-    // setState(() { _isLogging = true; });
-
     try {
       GameEvent eventToProcess;
       String successMessage;
 
       if (_isEditMode && _eventBeingEdited != null) {
+        print('Updating existing shot event:');
+        print('  ID: ${_eventBeingEdited!.id}');
+        print('  IsGoal before: ${_eventBeingEdited!.isGoal}');
+        
         // Update existing event
         _eventBeingEdited!.period = _selectedPeriod;
         _eventBeingEdited!.team = _selectedTeam;
-        _eventBeingEdited!.primaryPlayerId = _selectedTeam == 'Your Team' ? _selectedShooter?.id ?? '' : '';
+        _eventBeingEdited!.primaryPlayerId = _selectedTeam == 'your_team' ? _selectedShooter?.id ?? '' : '';
         _eventBeingEdited!.assistPlayer1Id = _isGoal ? _selectedAssist1?.id : null;
-        // _eventBeingEdited!.assistPlayer2Id remains null as per original logic
         _eventBeingEdited!.isGoal = _isGoal;
-        _eventBeingEdited!.isSynced = false; // Mark as needing sync
+        _eventBeingEdited!.isSynced = false;
         _eventBeingEdited!.yourTeamPlayersOnIceIds = _isGoal ? _getPlayersOnIceIds() : null;
         
+        print('  IsGoal after: ${_eventBeingEdited!.isGoal}');
+        
         eventToProcess = _eventBeingEdited!;
-        successMessage = 'Shot updated for ${(_selectedTeam == 'Your Team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
+        successMessage = 'Shot updated for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
         
         // Save the updated event
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
+        print('Event updated in Hive');
 
-        // Update local season stats - REMOVED as season stats are now aggregated on view
-        // await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(eventToProcess);
+        // Verify the update
+        final savedEvent = gameEventsBox.get(eventToProcess.id);
+        print('Verified saved event:');
+        print('  ID: ${savedEvent?.id}');
+        print('  IsGoal: ${savedEvent?.isGoal}');
         
-        // Attempt to sync the updated event (fire and forget)
+        // Attempt to sync the updated event
         _sheetsService.updateEventInSheet(eventToProcess).then((syncSuccess) {
-          if (syncSuccess) {
-            print("Updated event ${eventToProcess.id} synced/queued for sync.");
-          } else {
-            print("Updated event ${eventToProcess.id} saved locally, pending sync. Sync call failed or not authenticated.");
-          }
+          print("Updated event sync result: $syncSuccess");
         }).catchError((error) {
-          print("Error during background sync for updated event ${eventToProcess.id}: $error");
+          print("Error during sync for updated event: $error");
         });
 
       } else {
+        print('Creating new shot event:');
+        print('  Team: $_selectedTeam');
+        print('  IsGoal: $_isGoal');
+        
         // Create a new event
         final newShotEvent = GameEvent(
           id: uuid.v4(),
@@ -420,61 +426,59 @@ class _LogShotScreenState extends State<LogShotScreen> {
           period: _selectedPeriod,
           eventType: 'Shot',
           team: _selectedTeam,
-          primaryPlayerId: _selectedTeam == 'Your Team' ? _selectedShooter?.id ?? '' : '',
+          primaryPlayerId: _selectedTeam == 'your_team' ? _selectedShooter?.id ?? '' : '',
           assistPlayer1Id: _isGoal ? _selectedAssist1?.id : null,
           assistPlayer2Id: null, 
           isGoal: _isGoal,
           isSynced: false,
           yourTeamPlayersOnIceIds: _isGoal ? _getPlayersOnIceIds() : null,
         );
+        
         eventToProcess = newShotEvent;
-        successMessage = 'Shot logged for ${(_selectedTeam == 'Your Team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
+        successMessage = 'Shot logged for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
 
-        // Save the event to the Hive Box
+        print('Saving new event to Hive:');
+        print('  ID: ${eventToProcess.id}');
+        print('  IsGoal: ${eventToProcess.isGoal}');
+        
+        // Save the event to Hive
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
+        
+        // Verify the save
+        final savedEvent = gameEventsBox.get(eventToProcess.id);
+        print('Verified saved event:');
+        print('  ID: ${savedEvent?.id}');
+        print('  IsGoal: ${savedEvent?.isGoal}');
 
-        // Update local season stats - REMOVED as season stats are now aggregated on view
-        // await _sheetsService.updateLocalPlayerSeasonStatsOnEvent(eventToProcess);
-
-        // Attempt to sync the newly added event (fire and forget)
+        // Attempt to sync the new event
         _sheetsService.syncGameEvent(eventToProcess).then((syncSuccess) {
-          if (syncSuccess) {
-            print("New event ${eventToProcess.id} synced/queued for sync.");
-          } else {
-            print("New event ${eventToProcess.id} saved locally, pending sync. Sync call failed or not authenticated.");
-          }
+          print("New event sync result: $syncSuccess");
         }).catchError((error) {
-          print("Error during background sync for new event ${eventToProcess.id}: $error");
+          print("Error during sync for new event: $error");
         });
       }
 
-      // If all local operations are successful up to this point:
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(successMessage)),
       );
 
       // Navigate back after a short delay
-      await Future.delayed(const Duration(milliseconds: 500)); // Shorter delay
+      await Future.delayed(const Duration(milliseconds: 500));
       if (!mounted) return;
 
       if (_isEditMode) {
-        Navigator.pop(context); 
+        Navigator.pop(context);
       } else {
         Navigator.pop(context, _selectedPeriod);
       }
 
     } catch (e) {
+      print('Error in _logShot: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error processing shot: ${e.toString()}')),
       );
-      print('Error in _logShot: $e');
-    } finally {
-      // Optional: Hide loading indicator if shown
-      // if (mounted) {
-      //   setState(() { _isLogging = false; });
-      // }
     }
   }
 

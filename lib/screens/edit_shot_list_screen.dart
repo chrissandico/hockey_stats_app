@@ -80,12 +80,12 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                   itemBuilder: (context, index) {
                     final event = shotEvents[index];
                     final isGoal = event.isGoal ?? false;
-                    final isYourTeam = event.team == 'Your Team';
+                    final isYourTeam = event.team == 'your_team';
                     
                     // Determine shooter display text
                     String shooterText = isYourTeam 
                         ? _getPlayerJerseyNumber(event.primaryPlayerId)
-                        : 'Opponent';
+                        : 'opponent';
                     
                     // Determine assist display text if applicable
                     String assistText = '';

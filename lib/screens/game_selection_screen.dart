@@ -5,8 +5,6 @@ import 'package:hockey_stats_app/screens/log_stats_screen.dart'; // We'll create
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import SheetsService for syncing
 import 'package:uuid/uuid.dart'; // Import for generating UUIDs
 import 'package:hockey_stats_app/main.dart' as main_logic; // To access functions from main.dart
-import 'package:hockey_stats_app/screens/view_season_stats_screen.dart'; // Import the new screen
-
 // Enum for different screen states
 enum _ScreenState { initialLoading, needsSignIn, signInFailed, syncFailed, dataLoaded, noGamesFound }
 
@@ -632,19 +630,6 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
       appBar: AppBar(
         title: const Text('Home'),
         actions: [
-          // Season Stats Button in App Bar
-          IconButton(
-            icon: const Icon(Icons.bar_chart),
-            tooltip: 'Season Stats',
-            onPressed: _isPerformingAsyncOperation
-                ? null
-                : () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const ViewSeasonStatsScreen()),
-                    );
-                  },
-          ),
           _buildAuthIndicator(),
         ],
       ),

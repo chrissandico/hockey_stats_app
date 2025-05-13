@@ -139,6 +139,9 @@ class GameEvent extends HiveObject {
   @HiveField(9)
   bool? isGoal; // Optional: Relevant for "Shot"
 
+  // Helper method to ensure isGoal is properly handled
+  bool get wasGoal => isGoal ?? false;
+
   @HiveField(10)
   String? penaltyType; // Optional: Relevant for "Penalty"
 
@@ -167,12 +170,15 @@ class GameEvent extends HiveObject {
     required this.primaryPlayerId,
     this.assistPlayer1Id,
     this.assistPlayer2Id,
-    this.isGoal,
+    bool? isGoal, // Make parameter explicit
     this.penaltyType,
     this.penaltyDuration,
-    this.isSynced = false, // Default value
-    this.yourTeamPlayersOnIceIds, // Include the new field in the constructor
-  });
+    this.isSynced = false,
+    this.yourTeamPlayersOnIceIds,
+  }) {
+    // Ensure isGoal is properly initialized
+    this.isGoal = isGoal ?? false;
+  }
 }
 
 // --- PlayerSeasonStats Model ---

@@ -181,11 +181,11 @@ int calculatePlusMinus(Player player, List<GameEvent> gameEvents, String gameId)
         // Check if the player was on ice
         if (event.yourTeamPlayersOnIceIds!.contains(player.id)) {
           // If your team scored, add +1
-          if (event.team == 'Your Team') {
+          if (event.team == 'your_team') {
             plusMinus++;
           } 
           // If opponent scored, subtract 1
-          else if (event.team == 'Opponent') {
+          else if (event.team == 'opponent') {
             plusMinus--;
           }
         }
