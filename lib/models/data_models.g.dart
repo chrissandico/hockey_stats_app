@@ -164,3 +164,37 @@ class GameEventAdapter extends TypeAdapter<GameEvent> {
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
+
+class EmailSettingsAdapter extends TypeAdapter<EmailSettings> {
+  @override
+  final int typeId = 3;
+
+  @override
+  EmailSettings read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return EmailSettings(
+      defaultEmailAddresses: (fields[0] as List).cast<String>(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, EmailSettings obj) {
+    writer
+      ..writeByte(1)
+      ..writeByte(0)
+      ..write(obj.defaultEmailAddresses);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EmailSettingsAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}

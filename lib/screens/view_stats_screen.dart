@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:data_table_2/data_table_2.dart';
+import 'package:hockey_stats_app/widgets/email_dialog.dart';
 
 class ViewStatsScreen extends StatefulWidget {
   const ViewStatsScreen({super.key, this.gameId});
@@ -30,6 +31,32 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('View Stats'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.email),
+            onPressed: () async {
+              final gamesBox = Hive.box<Game>('games');
+              final game = gamesBox.get(widget.gameId);
+              if (game == null) return;
+
+              final gameEventsBox = Hive.box<GameEvent>('gameEvents');
+              final gameEvents = gameEventsBox.values
+                  .where((event) => event.gameId == widget.gameId)
+                  .toList();
+
+              if (mounted) {
+                await showDialog(
+                  context: context,
+                  builder: (context) => EmailDialog(
+                    players: players,
+                    gameEvents: gameEvents,
+                    game: game,
+                  ),
+                );
+              }
+            },
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

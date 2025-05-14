@@ -47,12 +47,12 @@ void main() async {
   Hive.registerAdapter(PlayerAdapter());
   Hive.registerAdapter(GameAdapter());
   Hive.registerAdapter(GameEventAdapter());
-  // Hive.registerAdapter(PlayerSeasonStatsAdapter()); // PlayerSeasonStats is no longer a HiveObject
+  Hive.registerAdapter(EmailSettingsAdapter());
 
   await Hive.openBox<Player>('players');
   await Hive.openBox<Game>('games');
   await Hive.openBox<GameEvent>('gameEvents');
-  // await Hive.openBox<PlayerSeasonStats>('playerSeasonStats'); // This box is no longer used
+  await Hive.openBox<EmailSettings>('emailSettings');
 
   // DO NOT call attemptInitialDataSyncIfSignedIn() or addDummyDataIfNeeded() here anymore.
   // The GameSelectionScreen (or a new AuthWrapperScreen) will handle this.

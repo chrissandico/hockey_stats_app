@@ -134,6 +134,16 @@ class GameEvent extends HiveObject {
   }
 }
 
+@HiveType(typeId: 3)
+class EmailSettings extends HiveObject {
+  @HiveField(0)
+  List<String> defaultEmailAddresses;
+
+  EmailSettings({
+    required this.defaultEmailAddresses,
+  });
+}
+
 class PlayerSeasonStats {
   final String playerId; 
   String playerName;
