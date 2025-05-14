@@ -76,6 +76,27 @@ event_002   | game_001  | 2023-05-15 19:20:00 | 1      | Penalty   | opponent  |
 event_003   | game_001  | 2023-05-15 19:25:00 | 2      | Shot      | your_team | player_4       |                 |                 | false  |             |                |
 ```
 
+## User Access Setup
+
+Before users can access the app, two important steps must be completed:
+
+1. **Add Test Users in OAuth Consent Screen**
+   - Go to the Google Cloud Console
+   - Navigate to "APIs & Services" > "OAuth consent screen"
+   - Under "Test users", click "Add Users"
+   - Enter the Gmail address of each user who needs access
+   - Click "Save" to add the test users
+
+2. **Share the Google Sheet**
+   - Open Google Drive in your web browser
+   - Navigate to the spreadsheet
+   - Click the "Share" button in the top-right corner
+   - In the "Share with people and groups" field, enter the user's Gmail address
+   - Set permission level to "Editor" (required for the app to write data)
+   - Click "Send" to share the sheet
+
+Both steps are required - users must be both added as test users AND have editor access to the spreadsheet to use the app successfully.
+
 ## Important Notes
 
 1. **The ID column is critical** - Each player, game, and event must have a unique ID in column A
@@ -95,6 +116,9 @@ Common errors and their solutions:
 - **"Error parsing date for game"**: Ensure dates are in YYYY-MM-DD format
 - **"Authentication failed"**: Sign in again through the app
 - **"No player/game data found in the sheet"**: Verify your sheet names are exactly "Players", "Games", and "Events"
+- **"The caller does not have permission" (403 error)**: Check that:
+  - The user's Gmail address has been added as a test user in the OAuth consent screen
+  - The Google Sheet has been shared with the user's Gmail address with Editor permissions
 
 ## Recent Updates
 

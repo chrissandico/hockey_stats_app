@@ -2,7 +2,13 @@
 
 This guide explains how to manage test users for the Hockey Stats App.
 
-## Adding Test Users
+## Required Access Setup
+
+New users need two types of access to use the app:
+1. OAuth test user access (to authenticate with the app)
+2. Google Sheet access (to read/write stats data)
+
+### 1. Adding OAuth Test Users
 
 1. Go to the Google Cloud Console:
    - Visit https://console.cloud.google.com
@@ -20,12 +26,19 @@ This guide explains how to manage test users for the Hockey Stats App.
    - You can add up to 100 test users
    - Click "SAVE" to apply the changes
 
-4. Notify users:
-   - Inform the added users that they've been approved
+4. Share the Google Sheet:
+   - Open the team's Google Sheet in your browser
+   - Click the "Share" button in the top-right corner
+   - Enter the user's Gmail address
+   - Set their access level to "Editor" (required for the app to work)
+   - Click "Send" to share the sheet
+
+5. Notify users:
+   - Inform users they've been granted both types of access
    - Direct them to the NEW_USER_GUIDE.md for installation instructions
    - Remind them to use the same Google account you added as a test user
 
-## Managing Test Users
+## Managing User Access
 
 ### Removing Test Users
 1. Go to the OAuth consent screen as described above
@@ -40,11 +53,20 @@ This guide explains how to manage test users for the Hockey Stats App.
 
 ## Common Issues
 
-### User Still Sees "Access Blocked"
+### User Access Issues
+
+#### "Access Blocked" Error
 1. Verify the exact email address they're using
 2. Check if it matches what's in the test users list
 3. Ask them to completely sign out and sign back in
 4. If issues persist, remove and re-add them as a test user
+
+#### "Permission Denied" Error
+1. Open the Google Sheet and click "Share"
+2. Check if their email is listed with Editor access
+3. If not, add them with Editor access
+4. If they are listed, try removing and re-adding them
+5. Ask them to sign out of the app and sign back in
 
 ### Publishing the App
 

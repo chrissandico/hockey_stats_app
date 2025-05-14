@@ -12,11 +12,21 @@ Before you begin, ensure you have:
 
 ## Getting Started
 
-### 1. Becoming an Approved Test User
-- The app requires Google test user approval for access
-- Send your Google email address to the team administrator
-- Wait for confirmation that you've been added as a test user
-- If you try to sign in before being approved, you'll see an "Access blocked" message
+### 1. Getting Access to the App
+The app requires two types of access to be set up by the team administrator:
+
+1. **OAuth Test User Access**
+   - Send your Google email address to the team administrator
+   - Administrator will add you as a test user in the Google Cloud Console
+   - This allows you to authenticate with the app
+   - Without this, you'll see an "Access blocked" message when trying to sign in
+
+2. **Google Sheet Access**
+   - Administrator will share the team's Google Sheet with your email
+   - You'll be given "Editor" access to allow recording stats
+   - Without this, you'll see a "Permission denied" error after signing in
+
+Both types of access are required to use the app. Wait for confirmation from the administrator that both have been set up before proceeding.
 
 ### 2. Installing the App (Sideloading)
 
