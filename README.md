@@ -23,35 +23,56 @@ To enable users to easily record hockey game events (Shots and Penalties) on a m
 *   **Period Selection:** Users can select the current period (P1, P2, P3, OT) for tracking shots and penalties, with the selected period persisting across relevant screens and clearly indicated in the UI.
 *   **Enhanced Game Details Display:** Game information on the stats tracking screen is presented in an improved card-based layout, featuring team logos, informational icons, and better data formatting.
 *   **Team Logo Integration:** Team logos are displayed in key areas like game details and team selection, enhancing visual appeal. Logos are managed via a JSON configuration (`assets/data/team_logos.json`) and a dedicated utility (`lib/utils/team_utils.dart`), also supporting team-specific colors.
-
-## Planned Features (from Requirements Document)
-
-*   **Offline Data Entry:** All data entry (logging shots and penalties) will function fully offline, with data stored in a local Hive database.
-*   **Data Synchronization:** Automatically synchronize unsynced game event data from the local database to a designated Google Sheet when network connectivity is available.
-*   **Initial Data Sync:** On first launch or user request, synchronize Roster and Game data from Google Sheets to the local database.
-*   **Robust Synchronization Service:** Implement logic for monitoring network connectivity, identifying unsynced data, formatting data for Google Sheets, handling API errors, retries, and updating sync status.
-*   **Detailed Data Model:** Implementation of data models for Players, Games, and GameEvents to manage structured data locally and for synchronization.
-*   **Enhanced Plus/Minus Tracking:** Improve the user interface for selecting players on ice, add line combination presets, and provide visual analytics for plus/minus statistics.
-
-## Getting Started
-
-*(Add installation and setup instructions here once available)*
+*   **Simplified Shot Logging:** Streamlined shot logging process that focuses on essential information, automatically considering all logged shots as on goal.
+*   **Standardized Google Sheets Integration:** Consistent 13-column structure in the Events sheet for reliable data synchronization and analysis.
 
 ## Data Model
 
 The application manages data based on the following entities:
 
-*   **Player:** Stores player information (jersey number, name).
+*   **Player:** Stores player information (jersey number, name, team ID, position).
 *   **Game:** Stores game details (date, opponent, location).
 *   **Team:** Stores team data including name, logo information (from `assets/data/team_logos.json`), and colors.
-*   **GameEvent:** Records individual game events (shots, penalties) with associated details, linked to a specific game and player(s). Includes a sync status flag.
+*   **GameEvent:** Records individual game events with:
+    - Core fields: ID, GameID, Timestamp, Period, EventType, Team
+    - Player fields: PrimaryPlayerID (shooter/penalized player), AssistPlayer1ID, AssistPlayer2ID
+    - Event details: IsGoal, PenaltyType, PenaltyDuration
+    - Additional data: YourTeamPlayersOnIce (for goals)
+    - Sync status: Boolean flag for tracking synchronization state
 
 ## Technical Details
 
 *   Built with the Flutter SDK.
 *   Utilizes a local database (Hive) for offline data persistence.
-*   Integrates with the Google Sheets API for cloud synchronization.
-*   Includes a Synchronization Service to manage the offline-first data flow.
-*   Manages team logos and colors through a JSON configuration file (`assets/data/team_logos.json`) and the `TeamUtils` utility class (`lib/utils/team_utils.dart`).
-*   Assets (logos, data files) are declared in `pubspec.yaml`.
-*   Key UI enhancements include period selection across stat logging screens and an improved game details display.
+*   Integrates with the Google Sheets API for cloud synchronization:
+    - Standardized 13-column structure for Events sheet
+    - Robust data validation and error handling
+    - Detailed logging for troubleshooting
+*   Manages team logos and colors through:
+    - JSON configuration file (`assets/data/team_logos.json`)
+    - TeamUtils utility class (`lib/utils/team_utils.dart`)
+*   Assets (logos, data files) are declared in `pubspec.yaml`
+*   Key UI enhancements include:
+    - Period selection across stat logging screens
+    - Improved game details display
+    - Simplified shot logging interface
+    - Real-time stats updates
+
+## Getting Started
+
+1. Clone the repository
+2. Install Flutter dependencies:
+   ```
+   flutter pub get
+   ```
+3. Set up your Google Sheets document following the structure in `GOOGLE_SHEETS_SETUP.md`
+4. Run the app:
+   ```
+   flutter run
+   ```
+
+For detailed setup instructions and documentation:
+- See `HOW_TO_RUN.md` for running the app
+- See `GOOGLE_SHEETS_SETUP.md` for Google Sheets configuration
+- See `IMPLEMENTATION_SUMMARY.md` for technical details
+- See `LOGO_INSTRUCTIONS.md` for customizing team logos

@@ -50,18 +50,40 @@ game_2023_05_15_rivals  | 2023-05-15 | Rivals   | Home Arena
 game_2023_05_22_chiefs  | 2023-05-22 | Chiefs   | Away Arena
 ```
 
-## Events Sheet
+## Events Sheet Setup
 
-This sheet will be populated automatically by the app as you log shots and penalties. You don't need to create any data here.
+The Events sheet is populated automatically by the app as you log shots and penalties. The sheet has the following columns:
+
+1. **Column A: ID** - Unique identifier for each event
+2. **Column B: GameID** - ID of the game this event belongs to
+3. **Column C: Timestamp** - When the event occurred
+4. **Column D: Period** - Game period (1, 2, 3, or 4 for OT)
+5. **Column E: EventType** - Type of event ("Shot" or "Penalty")
+6. **Column F: Team** - Team involved ("your_team" or "opponent")
+7. **Column G: PrimaryPlayerID** - ID of the shooter or penalized player
+8. **Column H: AssistPlayer1ID** - First assist player ID (for goals)
+9. **Column I: AssistPlayer2ID** - Second assist player ID (for goals)
+10. **Column J: IsGoal** - Whether the shot was a goal (true/false)
+11. **Column K: PenaltyType** - Type of penalty (for penalty events)
+12. **Column L: PenaltyDuration** - Duration in minutes (for penalty events)
+13. **Column M: YourTeamPlayersOnIce** - Comma-separated list of player IDs on ice for goals
+
+### Example Events Sheet:
+```
+ID          | GameID    | Timestamp           | Period | EventType | Team      | PrimaryPlayerID | AssistPlayer1ID | AssistPlayer2ID | IsGoal | PenaltyType | PenaltyDuration | YourTeamPlayersOnIce
+event_001   | game_001  | 2023-05-15 19:15:00 | 1      | Shot      | your_team | player_1       | player_2        | player_3        | true   |             |                | player_1,player_2,player_3,player_4,player_5
+event_002   | game_001  | 2023-05-15 19:20:00 | 1      | Penalty   | opponent  | opp_player_1   |                 |                 |        | Tripping    | 2              |
+event_003   | game_001  | 2023-05-15 19:25:00 | 2      | Shot      | your_team | player_4       |                 |                 | false  |             |                |
+```
 
 ## Important Notes
 
-1. **The ID column is critical** - Each player and game must have a unique ID in column A
+1. **The ID column is critical** - Each player, game, and event must have a unique ID in column A
 2. **Headers** - Include headers in row 1 (the app reads from row 2 onward)
-3. **Empty cells** - The app can handle some empty cells, but required fields must be present
+3. **Empty cells** - The app can handle empty cells for optional fields
 4. **Data types** - Jersey numbers must be numeric values
-
-If you're seeing errors like "Skipping invalid player row", it's likely because your sheet is missing the ID column or has columns in a different order than expected.
+5. **Players on Ice** - Only tracked for goals scored by your team
+6. **Timestamps** - Must be in a format parseable by DateTime.parse()
 
 ## Troubleshooting
 
@@ -77,3 +99,4 @@ Common errors and their solutions:
 ## Recent Updates
 
 - **Jersey number 0 is now supported**: The app has been updated to support players with jersey number 0.
+- **Events sheet structure updated**: The Events sheet now uses a standardized 13-column structure for better data organization.

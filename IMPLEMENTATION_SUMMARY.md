@@ -63,6 +63,32 @@ Key implementations:
 - Enhanced logging for better debugging and tracking
 - Improved state management for loading indicators
 
+### 6. Shot Logging Simplification
+
+Streamlined the shot logging process by removing redundant data entry.
+
+Key implementations:
+- Removed the "Was it on goal?" checkbox since all logged shots are considered on goal
+- Updated the GameEvent model to reflect this simplification
+- Simplified the shot logging UI to focus on essential information
+- Updated Google Sheets integration to match the simplified data structure
+- Enhanced the shot logging workflow for better usability
+
+### 7. Google Sheets Integration Enhancement
+
+Improved the Google Sheets integration with a standardized column structure.
+
+Key implementations:
+- Implemented a consistent 13-column structure in the Events sheet:
+  - ID, GameID, Timestamp, Period, EventType, Team
+  - PrimaryPlayerID, AssistPlayer1ID, AssistPlayer2ID
+  - IsGoal, PenaltyType, PenaltyDuration
+  - YourTeamPlayersOnIce
+- Enhanced data validation and error handling
+- Improved sync reliability with better error messages
+- Updated documentation to reflect the exact column structure
+- Added example data in the documentation for clarity
+
 ## Technical Details
 
 ### Files Modified
@@ -78,6 +104,7 @@ Key implementations:
    - Updated to accept and use period parameter
    - Added period change functionality
    - Enhanced team selection UI with logos
+   - Removed "Was it on goal?" checkbox
    - Updated team identifiers and event creation
 
 3. `lib/screens/log_penalty_screen.dart`
@@ -95,8 +122,16 @@ Key implementations:
    - Enhanced shot list UI with proper team attribution
 
 6. `lib/services/sheets_service.dart`
-   - Updated documentation to use standardized team identifiers
-   - Enhanced sync functionality
+   - Updated to use standardized 13-column structure
+   - Enhanced sync functionality with better error handling
+   - Improved data validation and parsing
+   - Added detailed logging for troubleshooting
+
+7. `lib/models/data_models.dart`
+   - Updated GameEvent model to remove isOnGoal field
+   - Renamed yourTeamPlayersOnIceIds to yourTeamPlayersOnIce
+   - Enhanced data validation in constructors
+   - Updated Hive type adapters
 
 ### Files Created
 
