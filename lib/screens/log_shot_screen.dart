@@ -313,7 +313,16 @@ class _LogShotScreenState extends State<LogShotScreen> {
                         setState(() {
                           if (value == true) {
                             if (!tempSelectedPlayers.contains(player)) {
-                              tempSelectedPlayers.add(player);
+                              if (tempSelectedPlayers.length < 5) {
+                                tempSelectedPlayers.add(player);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Maximum 5 players can be selected'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
                             }
                           } else {
                             tempSelectedPlayers.remove(player);
