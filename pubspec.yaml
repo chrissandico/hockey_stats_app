@@ -41,10 +41,10 @@ dependencies:
   hive_flutter: ^1.1.0 # Hive integration for Flutter (initialization, etc.)
   uuid: ^4.1.0
 
-  # Google Sign-In and APIs
+  # Google Sign-In and APIs - Optimized imports
   google_sign_in: ^6.2.1
-  googleapis: ^14.0.0
-  extension_google_sign_in_as_googleapis_auth: ^2.0.13 # Using suggested version
+  googleapis_auth: ^1.4.1 # More focused auth package
+  extension_google_sign_in_as_googleapis_auth: ^2.0.13
 
   data_table_2: ^2.5.10 # For advanced data tables with frozen columns/rows
   flutter_svg: ^2.0.10 # For rendering SVG images
@@ -53,7 +53,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_launcher_icons: ^0.13.1
+  flutter_launcher_icons: ^0.13.1 # Moved from dependencies since it's only needed during development
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

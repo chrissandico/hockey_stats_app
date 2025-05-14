@@ -1,0 +1,11 @@
+{
+  "client_id": "289512536326-h5on26oqbhvdu1b1h4j46qj6ic1cuc26.apps.googleusercontent.com",
+  "project_id": "hockey-stats-app-459200",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "android_info": {
+    "package_name": "io.professormeta.hockeystatsapp",
+    "certificate_hash": "73644ce266d0408bc3bd28e7c43905a5a2aa20df"
+  }
+}
