@@ -119,6 +119,7 @@ class SheetsService {
       event.penaltyType ?? '',
       event.penaltyDuration ?? 0,
       event.yourTeamPlayersOnIce?.join(',') ?? '',
+      event.version,
     ];
 
     final Map<String, dynamic> body = {
@@ -464,6 +465,7 @@ class SheetsService {
               penaltyDuration: penaltyDuration,
               yourTeamPlayersOnIce: playersOnIce,
               isSynced: true,
+              version: 1, // Initialize version for events from sheet
             ));
           }
         } catch (e) {

@@ -113,6 +113,9 @@ class GameEvent extends HiveObject {
 
   @HiveField(13)
   bool isSynced;
+  
+  @HiveField(14)
+  int version = 1;
 
   GameEvent({
     required this.id,
@@ -129,7 +132,8 @@ class GameEvent extends HiveObject {
     this.penaltyDuration,
     this.yourTeamPlayersOnIce,
     this.isSynced = false,
-  }) {
+    int? version,
+  }) : version = version ?? 1 {
     this.isGoal = isGoal ?? false;
   }
 }
