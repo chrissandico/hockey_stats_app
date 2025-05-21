@@ -17,14 +17,60 @@ To enable users to easily record hockey game events (Shots and Penalties) on a m
 ## Current Features
 
 *   **Game Selection:** Users can select the current game they are tracking stats for.
-*   **Log Shots:** Record shot events, including whether it was a goal, who the shooter was, optional assists, and players on ice for goals. All data entry functions fully offline.
+*   **Log Shots:** Record shot events (all shots are considered on goal by default), including the shooter, optional assists, and players on ice for goals. All data entry functions fully offline.
 *   **Log Penalties:** Record penalty events, including the penalized player, penalty type, and duration. All data entry functions fully offline.
 *   **View Local Stats:** Review events logged for the current game and view basic statistics based on locally stored data.
+*   **Real-time Stats Updates:** View real-time score and shot count updates during game tracking.
 *   **Period Selection:** Users can select the current period (P1, P2, P3, OT) for tracking shots and penalties, with the selected period persisting across relevant screens and clearly indicated in the UI.
 *   **Enhanced Game Details Display:** Game information on the stats tracking screen is presented in an improved card-based layout, featuring team logos, informational icons, and better data formatting.
 *   **Team Logo Integration:** Team logos are displayed in key areas like game details and team selection, enhancing visual appeal. Logos are managed via a JSON configuration (`assets/data/team_logos.json`) and a dedicated utility (`lib/utils/team_utils.dart`), also supporting team-specific colors.
 *   **Simplified Shot Logging:** Streamlined shot logging process that focuses on essential information, automatically considering all logged shots as on goal.
 *   **Standardized Google Sheets Integration:** Consistent 13-column structure in the Events sheet for reliable data synchronization and analysis.
+
+## Planned Features
+
+### Enhanced Stats Tracking
+*   Implement shot location tracking with a visual rink diagram
+*   Add shot type classification (wrist shot, slap shot, etc.)
+*   Track time on ice for players
+*   Add face-off tracking and win/loss statistics
+
+### Team Management
+*   Create a team management interface for adding/editing teams
+*   Implement roster management with player positions and numbers
+*   Add line combination presets for quick player selection
+*   Support multiple teams in the same app instance
+
+### Advanced Analytics
+*   Implement heat maps for shot locations
+*   Add advanced statistics (Corsi, Fenwick, etc.)
+*   Create detailed player performance reports
+*   Add trend analysis over multiple games
+
+### UI/UX Improvements
+*   Add dark mode support
+*   Implement customizable color themes per team
+*   Add animations for stat updates
+*   Create a more intuitive player selection interface
+*   Add quick action shortcuts for common operations
+
+### Data Management
+*   Implement data export to CSV/Excel
+*   Add backup/restore functionality
+*   Create a web dashboard for viewing stats
+*   Add support for importing data from other sources
+
+### Sync and Sharing
+*   Add real-time sync between multiple devices
+*   Implement team sharing functionality
+*   Add support for exporting game reports
+*   Create a coach's view for team management
+
+### Game Management
+*   Add game clock functionality
+*   Implement period duration tracking
+*   Add support for tracking timeouts
+*   Create a game summary report generator
 
 ## Data Model
 
@@ -56,7 +102,6 @@ The application manages data based on the following entities:
     - Period selection across stat logging screens
     - Improved game details display
     - Simplified shot logging interface
-    - Real-time stats updates
 
 ## Getting Started
 
