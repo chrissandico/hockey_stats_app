@@ -150,17 +150,14 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
         Navigator.pop(context, _selectedPeriod);
       } else {
         // Show error but keep form data for retry
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Penalty saved locally but sync failed: $syncError'),
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Retry Sync',
-              onPressed: _logPenalty,
+          Navigator.pop(context, _selectedPeriod);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Penalty saved locally - will sync when online'),
+              duration: const Duration(seconds: 3),
             ),
-          ),
-        );
-        setState(() { _isLogging = false; });
+          );
+          setState(() { _isLogging = false; });
       }
 
     } catch (e) {

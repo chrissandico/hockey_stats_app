@@ -257,21 +257,18 @@ class _LogShotScreenState extends State<LogShotScreen> {
         if (!mounted) return;
 
         if (syncSuccess) {
+          Navigator.pop(context, _selectedPeriod);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('$successMessage and synced.')),
           );
-          Navigator.pop(context, _selectedPeriod);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Shot saved locally but sync failed: $syncError'),
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: 'Retry Sync',
-                onPressed: _logShot,
-              ),
+              content: const Text('Shot saved locally - will sync when online'),
+              duration: const Duration(seconds: 3),
             ),
           );
+          Navigator.pop(context, _selectedPeriod);
         }
       }
 
