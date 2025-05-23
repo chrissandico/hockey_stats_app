@@ -38,6 +38,7 @@ dependencies:
 
   # Add Hive database dependencies
   hive: ^2.0.4 # Core Hive library
+  provider: ^6.1.5
   hive_flutter: ^1.1.0 # Hive integration for Flutter (initialization, etc.)
   uuid: ^4.1.0
 

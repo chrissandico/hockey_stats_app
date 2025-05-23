@@ -105,10 +105,13 @@ class SheetsService {
       return false;
     }
 
+    // Format the timestamp in a more readable format: YYYY-MM-DD HH:MM:SS
+    String formattedTimestamp = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}-${event.timestamp.day.toString().padLeft(2, '0')} ${event.timestamp.hour.toString().padLeft(2, '0')}:${event.timestamp.minute.toString().padLeft(2, '0')}:${event.timestamp.second.toString().padLeft(2, '0')}";
+
     final List<Object> values = [
       event.id,
       event.gameId,
-      event.timestamp.toIso8601String(),
+      formattedTimestamp,
       event.period,
       event.eventType,
       event.team,
@@ -169,10 +172,13 @@ class SheetsService {
       return await syncGameEvent(event);
     }
 
+    // Format the timestamp in a more readable format: YYYY-MM-DD HH:MM:SS
+    String formattedTimestamp = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}-${event.timestamp.day.toString().padLeft(2, '0')} ${event.timestamp.hour.toString().padLeft(2, '0')}:${event.timestamp.minute.toString().padLeft(2, '0')}:${event.timestamp.second.toString().padLeft(2, '0')}";
+
     final List<Object> values = [
       event.id,
       event.gameId,
-      event.timestamp.toIso8601String(),
+      formattedTimestamp,
       event.period,
       event.eventType,
       event.team,
@@ -384,6 +390,33 @@ class SheetsService {
     return games;
   }
 
+  // Helper method to convert Excel numeric date to DateTime
+  DateTime _excelDateToDateTime(double excelDate) {
+    // Excel dates start from January 1, 1900
+    // 1 = January 1, 1900
+    // Excel has a leap year bug where it thinks 1900 was a leap year
+    // So we need to adjust for dates after February 28, 1900
+    
+    // First, convert to days since 1899-12-30 (Excel epoch)
+    final int days = excelDate.floor();
+    
+    // Convert days to DateTime (1899-12-30 + days)
+    final DateTime dateTime = DateTime(1899, 12, 30).add(Duration(days: days));
+    
+    // Calculate time from the fractional part
+    final double fractionalDay = excelDate - days;
+    final int millisInDay = (fractionalDay * 24 * 60 * 60 * 1000).round();
+    
+    // Combine date and time
+    return DateTime(
+      dateTime.year, 
+      dateTime.month, 
+      dateTime.day,
+      0, 0, 0, 
+      millisInDay
+    );
+  }
+
   Future<List<GameEvent>?> fetchEvents() async {
     bool isAuthenticated = await ensureAuthenticated();
     if (!isAuthenticated) {
@@ -411,7 +444,15 @@ class SheetsService {
           DateTime timestamp;
           try {
             String dateStr = row[2]?.toString() ?? '';
-            if (dateStr.contains(' ')) {
+            
+            // Check if the date string is a numeric Excel date
+            double? excelDate = double.tryParse(dateStr);
+            if (excelDate != null) {
+              // Convert Excel numeric date to DateTime
+              timestamp = _excelDateToDateTime(excelDate);
+              print('Converted Excel date $excelDate to ${timestamp.toIso8601String()}');
+            } else if (dateStr.contains(' ')) {
+              // Handle standard date format with space (e.g., "2023-05-22 14:30:00")
               var parts = dateStr.split(' ');
               var datePart = parts[0];
               var timePart = parts[1];
@@ -420,10 +461,13 @@ class SheetsService {
                 timeComponents[0] = '0${timeComponents[0]}';
               }
               dateStr = '$datePart ${timeComponents.join(':')}';
+              timestamp = DateTime.parse(dateStr);
+            } else {
+              // Try standard parsing for other formats
+              timestamp = DateTime.parse(dateStr);
             }
-            timestamp = DateTime.parse(dateStr);
           } catch (e) {
-            print('Error parsing timestamp: ${row[2]}');
+            print('Error parsing timestamp: ${row[2]}, Error: $e');
             continue;
           }
           
@@ -547,11 +591,22 @@ class SheetsService {
     final unsyncedEvents = eventsBox.values.where((event) => !event.isSynced).toList();
     print('Found ${unsyncedEvents.length} unsynced local events');
     
-    final syncedEvents = eventsBox.values.where((event) => event.isSynced).toList();
-    for (final event in syncedEvents) {
+    // Instead of deleting all synced events, we'll keep track of which events we've processed
+    // from the Google Sheet and only delete events that are no longer in the sheet
+    Set<String> remoteEventIds = events.map((e) => e.id).toSet();
+    
+    // Get all synced events that are not in the remote events list
+    final syncedEventsToDelete = eventsBox.values
+        .where((event) => event.isSynced && !remoteEventIds.contains(event.id))
+        .toList();
+    
+    // Delete events that are no longer in the Google Sheet
+    for (final event in syncedEventsToDelete) {
+      print('Deleting event ${event.id} as it no longer exists in Google Sheets');
       await event.delete();
     }
     
+    // Add or update events from Google Sheets
     for (final event in events) {
       if (!unsyncedEvents.any((e) => e.id == event.id)) {
         await eventsBox.put(event.id, event);

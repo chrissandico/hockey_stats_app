@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart'; // Import Hive
+import 'package:hive/hive.dart';
+import 'package:provider/provider.dart';
 import 'package:hockey_stats_app/models/data_models.dart'; // Import your data models
 import 'package:hockey_stats_app/screens/log_stats_screen.dart'; // We'll create a new screen to hold the logging buttons
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import SheetsService for syncing
@@ -630,6 +631,40 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
       appBar: AppBar(
         title: const Text('Home'),
         actions: [
+          StreamBuilder<int>(
+            stream: Hive.box<GameEvent>('gameEvents')
+                .watch()
+                .map((_) => Hive.box<GameEvent>('gameEvents')
+                    .values
+                    .where((e) => !e.isSynced)
+                    .length),
+            builder: (context, snapshot) {
+              final count = snapshot.data ?? 0;
+              return Badge(
+                label: Text(count.toString()),
+                isLabelVisible: count > 0,
+                child: IconButton(
+                  icon: Icon(Icons.cloud_sync),
+                  onPressed: () async {
+                    final result = await context.read<SheetsService>().syncPendingEvents();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['failed']! > 0 
+                            ? 'Synced ${result['success']} events (${result['failed']} failed)'
+                            : 'Successfully synced ${result['success']} events'),
+                        action: result['failed']! > 0
+                            ? SnackBarAction(
+                                label: 'Retry',
+                                onPressed: () => context.read<SheetsService>().syncPendingEvents(),
+                              )
+                            : null,
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
           _buildAuthIndicator(),
         ],
       ),

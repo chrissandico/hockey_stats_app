@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/screens/game_selection_screen.dart'; // Import the new Game Selection screen
 import 'package:hockey_stats_app/utils/team_utils.dart'; // Import TeamUtils
@@ -139,7 +140,12 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
       ),
       // The home screen is now the GameSelectionScreen
-      home: const GameSelectionScreen(),
+      home: MultiProvider(
+        providers: [
+          Provider(create: (_) => SheetsService()),
+        ],
+        child: const GameSelectionScreen(),
+      ),
     );
   }
 }

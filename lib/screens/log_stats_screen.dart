@@ -392,7 +392,6 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 );
               },
             ),
-            _buildAuthIndicator(),
           ],
         ],
       ),

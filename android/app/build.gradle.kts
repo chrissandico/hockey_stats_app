@@ -14,7 +14,7 @@ dependencies {
 android {
     namespace = "io.professormeta.hockeystatsapp"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973" // Use NDK version required by plugins
+    ndkVersion = "27.0.12077973" // Required by plugins
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -38,28 +38,15 @@ android {
 
     buildTypes {
         release {
-            // Enable R8 optimization and code shrinking
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            // Signing with the debug keys for now
-            signingConfig = signingConfigs.getByName("debug")
-        }
-        debug {
             isMinifyEnabled = false
             isShrinkResources = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
     splits {
         abi {
-            isEnable = gradle.startParameter.taskNames.any { it.contains("Release") }
-            reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64")
-            isUniversalApk = !isEnable
+            isEnable = false
         }
     }
 }
