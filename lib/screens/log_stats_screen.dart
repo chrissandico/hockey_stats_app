@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hockey_stats_app/screens/log_shot_screen.dart';
 import 'package:hockey_stats_app/screens/log_penalty_screen.dart';
@@ -53,12 +52,23 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   GoogleSignInAccount? _currentUser;
   bool _isSigningIn = false;
   bool _isLoadingInitialData = true;
+  
+  // Players on ice tracking
+  List<Player> _yourTeamPlayers = [];
+  List<Player> _selectedPlayersOnIce = [];
+  bool _isLoadingPlayers = false;
+  
+  // Attendance tracking
+  Set<String> _absentPlayerIds = {}; // Track absent players
+  bool _isLoadingAttendance = false;
 
   @override
   void initState() {
     super.initState();
     _loadInitialData();
     _checkSignInStatus();
+    _loadPlayers();
+    _loadAttendanceData();
   }
 
   Future<void> _checkSignInStatus() async {
@@ -102,6 +112,136 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
         });
       }
     }
+  }
+  
+  Future<void> _loadPlayers() async {
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoadingPlayers = true;
+    });
+    
+    try {
+      final playersBox = Hive.box<Player>('players');
+      // Filter out goalies (players with position "G")
+      final players = playersBox.values
+          .where((p) => p.teamId == 'your_team' && p.position != 'G')
+          .toList();
+      
+      if (mounted) {
+        setState(() {
+          _yourTeamPlayers = players;
+          _isLoadingPlayers = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading players: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingPlayers = false;
+        });
+      }
+    }
+  }
+  
+  // Load attendance data for the current game
+  Future<void> _loadAttendanceData() async {
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoadingAttendance = true;
+    });
+    
+    try {
+      final rosterBox = Hive.box<GameRoster>('gameRoster');
+      final existingRoster = rosterBox.values
+          .where((r) => r.gameId == widget.gameId)
+          .toList();
+
+      if (existingRoster.isNotEmpty) {
+        setState(() {
+          _absentPlayerIds = existingRoster
+              .where((r) => r.status == 'Absent')
+              .map((r) => r.playerId)
+              .toSet();
+        });
+      }
+    } catch (e) {
+      print('Error loading attendance data: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingAttendance = false;
+        });
+      }
+    }
+  }
+  
+  // Check if a player is absent
+  bool _isPlayerAbsent(Player player) {
+    return _absentPlayerIds.contains(player.id);
+  }
+  
+  List<Player> _getForwards() {
+    final forwards = _yourTeamPlayers.where((player) => 
+      player.position == 'C' || 
+      player.position == 'LW' || 
+      player.position == 'RW' ||
+      player.position == 'F'
+    ).toList();
+    
+    // Sort by jersey number
+    forwards.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    return forwards;
+  }
+  
+  List<Player> _getDefensemen() {
+    final defensemen = _yourTeamPlayers.where((player) => 
+      player.position == 'D' || 
+      player.position == 'LD' || 
+      player.position == 'RD'
+    ).toList();
+    
+    // Sort by jersey number
+    defensemen.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    return defensemen;
+  }
+  
+  void _togglePlayerOnIce(Player player) {
+    // Don't allow selecting absent players
+    if (_isPlayerAbsent(player)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot select absent player'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    
+    setState(() {
+      if (_selectedPlayersOnIce.contains(player)) {
+        _selectedPlayersOnIce.remove(player);
+      } else {
+        if (_selectedPlayersOnIce.length < 5) {
+          _selectedPlayersOnIce.add(player);
+        } else {
+          // Show a snackbar if trying to add more than 5 players
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Maximum 5 players can be on ice'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    });
+  }
+  
+  void _clearPlayersOnIce() {
+    setState(() {
+      _selectedPlayersOnIce.clear();
+    });
   }
 
   Future<void> _handleSignIn() async {
@@ -404,6 +544,9 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                 _buildPeriodSelector(),
+                
+                // Players On Ice Panel
+                _buildPlayersOnIcePanel(),
 
                 const SizedBox(height: 24),
 
@@ -421,6 +564,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             builder: (context) => LogShotScreen(
                               gameId: widget.gameId,
                               period: _selectedPeriod,
+                              playersOnIce: _selectedPlayersOnIce,
                             ),
                           ),
                         ).then((value) {
@@ -680,6 +824,159 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
           : _currentUser == null
               ? _handleSignIn
               : _showSignOutDialog,
+    );
+  }
+  
+  Widget _buildPlayersOnIcePanel() {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12.0),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with player count and clear button
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Row(
+              children: [
+                const Text(
+                  'PLAYERS ON ICE',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${_selectedPlayersOnIce.length}/5',
+                  style: TextStyle(
+                    color: _selectedPlayersOnIce.length == 5 
+                        ? Colors.green 
+                        : Theme.of(context).textTheme.bodyMedium?.color,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                TextButton(
+                  onPressed: _clearPlayersOnIce,
+                  child: const Text('Clear'),
+                ),
+              ],
+            ),
+          ),
+          
+          // Player selection content
+          if (_isLoadingPlayers)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else
+            DefaultTabController(
+              length: 2,
+              child: Column(
+                children: [
+                  const TabBar(
+                    tabs: [
+                      Tab(text: 'FORWARDS'),
+                      Tab(text: 'DEFENSE'),
+                    ],
+                    labelColor: Colors.blue,
+                    unselectedLabelColor: Colors.grey,
+                  ),
+                  SizedBox(
+                    height: 200, // Increased height for better visibility
+                    child: TabBarView(
+                      children: [
+                        // Forwards Tab
+                        _buildPlayerGrid(_getForwards()),
+                        
+                        // Defense Tab
+                        _buildPlayerGrid(_getDefensemen()),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildPlayerGrid(List<Player> players) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: players.isEmpty
+          ? const Center(child: Text('No players found'))
+          : GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 5,
+                childAspectRatio: 1.0,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: players.length,
+              itemBuilder: (context, index) {
+                final player = players[index];
+                final isSelected = _selectedPlayersOnIce.contains(player);
+                final isAbsent = _isPlayerAbsent(player);
+                
+                return InkWell(
+                  onTap: isAbsent ? null : () => _togglePlayerOnIce(player),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isAbsent 
+                          ? Colors.grey.withOpacity(0.3) 
+                          : isSelected 
+                              ? Colors.blue.withOpacity(0.2) 
+                              : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isAbsent 
+                            ? Colors.grey 
+                            : isSelected 
+                                ? Colors.blue 
+                                : Colors.grey.withOpacity(0.5),
+                        width: 2,
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        Center(
+                          child: Text(
+                            '#${player.jerseyNumber}',
+                            style: TextStyle(
+                              fontSize: 20, // Slightly larger font size for better visibility
+                              fontWeight: FontWeight.bold,
+                              color: isAbsent 
+                                  ? Colors.grey 
+                                  : isSelected 
+                                      ? Colors.blue 
+                                      : Colors.black87,
+                            ),
+                          ),
+                        ),
+                        if (isAbsent)
+                          const Positioned(
+                            top: 2,
+                            right: 2,
+                            child: Icon(
+                              Icons.person_off,
+                              size: 14,
+                              color: Colors.grey,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }

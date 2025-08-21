@@ -10,12 +10,14 @@ class LogShotScreen extends StatefulWidget {
   final String gameId;
   final int period;
   final String? eventIdToEdit;
+  final List<Player>? playersOnIce;
 
   const LogShotScreen({
     super.key, 
     required this.gameId,
     required this.period,
     this.eventIdToEdit,
+    this.playersOnIce,
   });
 
   @override
@@ -27,10 +29,17 @@ class _LogShotScreenState extends State<LogShotScreen> {
   late int _selectedPeriod;
   bool _isGoal = false;
   String _selectedTeam = 'your_team';
-  Player? _selectedShooter;
+  Player? _selectedShooter; // Represents the Goal Scorer
   Player? _selectedAssist1;
   Player? _selectedAssist2;
   List<Player> _selectedYourTeamPlayersOnIce = [];
+  
+  // Attendance tracking
+  Set<String> _absentPlayerIds = {}; // Track absent players
+  bool _isLoadingAttendance = false;
+  
+  // Tab controller for player selection
+  late TabController _tabController;
 
   // Hive Box for GameEvents
   late Box<GameEvent> gameEventsBox;
@@ -59,6 +68,12 @@ class _LogShotScreenState extends State<LogShotScreen> {
     _loadPlayers();
     _removeOpponentPlayers();
     _filterPlayersByTeam();
+    _loadAttendanceData();
+    
+    // Initialize players on ice from the passed parameter if available
+    if (widget.playersOnIce != null && widget.playersOnIce!.isNotEmpty) {
+      _selectedYourTeamPlayersOnIce = List.from(widget.playersOnIce!);
+    }
     
     if (widget.eventIdToEdit != null) {
       _loadEventForEditing();
@@ -73,7 +88,47 @@ class _LogShotScreenState extends State<LogShotScreen> {
 
   void _loadPlayers() {
     final playersBox = Hive.box<Player>('players');
-    _yourTeamPlayers = playersBox.values.where((p) => p.teamId == 'your_team').toList();
+    // Filter out goalies (players with position "G")
+    _yourTeamPlayers = playersBox.values
+        .where((p) => p.teamId == 'your_team' && p.position != 'G')
+        .toList();
+    
+    // Sort players by jersey number
+    _yourTeamPlayers.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+  }
+  
+  // Load attendance data for the current game
+  Future<void> _loadAttendanceData() async {
+    setState(() {
+      _isLoadingAttendance = true;
+    });
+    
+    try {
+      final rosterBox = Hive.box<GameRoster>('gameRoster');
+      final existingRoster = rosterBox.values
+          .where((r) => r.gameId == widget.gameId)
+          .toList();
+
+      if (existingRoster.isNotEmpty) {
+        setState(() {
+          _absentPlayerIds = existingRoster
+              .where((r) => r.status == 'Absent')
+              .map((r) => r.playerId)
+              .toSet();
+        });
+      }
+    } catch (e) {
+      print('Error loading attendance data: $e');
+    } finally {
+      setState(() {
+        _isLoadingAttendance = false;
+      });
+    }
+  }
+  
+  // Check if a player is absent
+  bool _isPlayerAbsent(Player player) {
+    return _absentPlayerIds.contains(player.id);
   }
 
   void _filterPlayersByTeam() {
@@ -81,6 +136,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
       final playersBox = Hive.box<Player>('players');
       if (_selectedTeam == 'your_team') {
         _playersForTeam = playersBox.values.where((p) => p.teamId == 'your_team').toList();
+        // Sort players by jersey number
+        _playersForTeam.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
       } else {
         _playersForTeam.clear();
         _selectedShooter = null;
@@ -138,8 +195,20 @@ class _LogShotScreenState extends State<LogShotScreen> {
   Future<void> _logShot() async {
     if (_selectedTeam == 'your_team' && _selectedShooter == null && _isGoal == true) {
       if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a goal scorer.')),
+      );
+      return;
+    }
+    
+    // Validate that exactly 5 players are on ice for a goal
+    if (_isGoal && _selectedYourTeamPlayersOnIce.length != 5) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a shooter.')),
+        const SnackBar(
+          content: Text('You must select exactly 5 players on ice for a goal.'),
+          duration: Duration(seconds: 3),
+        ),
       );
       return;
     }
@@ -166,7 +235,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
         print('  IsGoal after: ${_eventBeingEdited!.isGoal}');
         
         eventToProcess = _eventBeingEdited!;
-        successMessage = 'Shot updated for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
+        successMessage = 'Shot updated for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}$_selectedTeam${_isGoal ? " (Goal)" : ""}';
         
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
         print('Event updated in Hive');
@@ -229,7 +298,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
         );
         
         eventToProcess = newShotEvent;
-        successMessage = 'Shot logged for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}${_selectedTeam}${_isGoal ? " (Goal)" : ""}';
+        successMessage = 'Shot logged for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}$_selectedTeam${_isGoal ? " (Goal)" : ""}';
 
         print('Saving new event to Hive:');
         print('  ID: ${eventToProcess.id}');
@@ -303,29 +372,58 @@ class _LogShotScreenState extends State<LogShotScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: _yourTeamPlayers.map((player) {
+                    final isAbsent = _isPlayerAbsent(player);
                     return CheckboxListTile(
-                      title: Text('#${player.jerseyNumber}'),
+                      title: Row(
+                        children: [
+                          Text(
+                            '#${player.jerseyNumber}',
+                            style: TextStyle(
+                              color: isAbsent ? Colors.grey : null,
+                            ),
+                          ),
+                          if (isAbsent) ...[
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.person_off,
+                              size: 16,
+                              color: Colors.grey,
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              '(Absent)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontStyle: FontStyle.italic,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                       value: tempSelectedPlayers.contains(player),
-                      onChanged: (bool? value) {
-                        setState(() {
-                          if (value == true) {
-                            if (!tempSelectedPlayers.contains(player)) {
-                              if (tempSelectedPlayers.length < 5) {
-                                tempSelectedPlayers.add(player);
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Maximum 5 players can be selected'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              }
-                            }
-                          } else {
-                            tempSelectedPlayers.remove(player);
-                          }
-                        });
-                      },
+                      onChanged: isAbsent 
+                          ? null  // Disable checkbox for absent players
+                          : (bool? value) {
+                              setState(() {
+                                if (value == true) {
+                                  if (!tempSelectedPlayers.contains(player)) {
+                                    if (tempSelectedPlayers.length < 5) {
+                                      tempSelectedPlayers.add(player);
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Maximum 5 players can be selected'),
+                                          duration: Duration(seconds: 2),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                } else {
+                                  tempSelectedPlayers.remove(player);
+                                }
+                              });
+                            },
                     );
                   }).toList(),
                 ),
@@ -378,7 +476,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
             padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 10.0),
             backgroundColor: isSelected 
                 ? (teamIdentifier == 'your_team' ? Colors.blue.withOpacity(0.3) : Colors.red.withOpacity(0.3)) 
-                : Theme.of(context).colorScheme.surfaceVariant,
+                : Theme.of(context).colorScheme.surfaceContainerHighest,
             foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12.0),
@@ -458,6 +556,199 @@ class _LogShotScreenState extends State<LogShotScreen> {
       ),
     );
   }
+  
+  // Helper methods for the integrated player selection UI
+  
+  Widget _buildRoleIndicator(String label, IconData icon, Color color, int count, [String? subtitle]) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.5)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            if (subtitle != null)
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
+                  color: color,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Color _getPlayerBackgroundColor(bool isOnIce, bool isShooter, bool isAssist, bool isAbsent) {
+    if (isAbsent) return Colors.grey.withOpacity(0.3);
+    if (isShooter) return Colors.green.withOpacity(0.2);
+    if (isAssist) return Colors.orange.withOpacity(0.2);
+    if (isOnIce) return Colors.blue.withOpacity(0.2);
+    return Colors.grey.withOpacity(0.1);
+  }
+  
+  Color _getPlayerBorderColor(bool isOnIce, bool isShooter, bool isAssist, bool isAbsent) {
+    if (isAbsent) return Colors.grey;
+    if (isShooter) return Colors.green;
+    if (isAssist) return Colors.orange;
+    if (isOnIce) return Colors.blue;
+    return Colors.grey.withOpacity(0.5);
+  }
+  
+  Color _getPlayerTextColor(bool isOnIce, bool isShooter, bool isAssist, bool isAbsent) {
+    if (isAbsent) return Colors.grey;
+    if (isShooter) return Colors.green;
+    if (isAssist) return Colors.orange;
+    if (isOnIce) return Colors.blue;
+    return Colors.black87;
+  }
+  
+  void _showPlayerRoleDialog(Player player) {
+    final isOnIce = _selectedYourTeamPlayersOnIce.contains(player);
+    final isShooter = _selectedShooter == player;
+    final isAssist = _selectedAssist1 == player;
+    final isAbsent = _isPlayerAbsent(player);
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Text('Player #${player.jerseyNumber}'),
+              if (isAbsent) ...[
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.person_off,
+                  size: 16,
+                  color: Colors.grey,
+                ),
+                const Text(
+                  ' (Absent)',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isAbsent)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 16.0),
+                  child: Text(
+                    'This player is marked as absent and cannot be selected.',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              ListTile(
+                leading: const Icon(Icons.sports_hockey, color: Colors.blue),
+                title: const Text('On Ice'),
+                trailing: Switch(
+                  value: isOnIce,
+                  activeColor: Colors.blue,
+                  onChanged: isAbsent ? null : (value) {
+                    setState(() {
+                      if (value) {
+                        if (_selectedYourTeamPlayersOnIce.length < 5) {
+                          _selectedYourTeamPlayersOnIce.add(player);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Maximum 5 players can be on ice'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      } else {
+                        _selectedYourTeamPlayersOnIce.remove(player);
+                      }
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.sports_score, color: Colors.green),
+                title: const Text('Goal Scorer'),
+                trailing: Switch(
+                  value: isShooter,
+                  activeColor: Colors.green,
+                  onChanged: isAbsent ? null : (value) {
+                    setState(() {
+                      if (value) {
+                        _selectedShooter = player;
+                      } else if (_selectedShooter == player) {
+                        _selectedShooter = null;
+                      }
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.handshake, color: Colors.orange),
+                title: const Text('Assist'),
+                trailing: Switch(
+                  value: isAssist,
+                  activeColor: Colors.orange,
+                  onChanged: isAbsent ? null : (value) {
+                    setState(() {
+                      if (value) {
+                        _selectedAssist1 = player;
+                      } else if (_selectedAssist1 == player) {
+                        _selectedAssist1 = null;
+                      }
+                    });
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -532,52 +823,168 @@ class _LogShotScreenState extends State<LogShotScreen> {
                   },
                 ),
 
-                if (_selectedTeam == 'your_team')
-                  DropdownButtonFormField<Player>(
-                    decoration: const InputDecoration(labelText: 'Who shot it?'),
-                    value: _selectedShooter,
-                    items: _playersForTeam
-                        .map((player) => DropdownMenuItem(
-                              value: player,
-                              child: Text('#${player.jerseyNumber}', style: const TextStyle(fontSize: 16),),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedShooter = value;
-                      });
-                    },
-                  ),
-
-                if (_isGoal && _selectedTeam == 'your_team')
-                  DropdownButtonFormField<Player>(
-                    decoration: const InputDecoration(labelText: 'Who assisted it?'),
-                    value: _selectedAssist1,
-                    items: _yourTeamPlayers
-                        .map((player) => DropdownMenuItem(
-                              value: player,
-                              child: Text('#${player.jerseyNumber}', style: const TextStyle(fontSize: 16),),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedAssist1 = value;
-                      });
-                    },
-                  ),
-
-                if (_isGoal)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 16.0),
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.people),
-                      label: Text(
-                        'Select Players On Ice (${_selectedYourTeamPlayersOnIce.length})',
-                        style: const TextStyle(fontSize: 16),
+                if (_isGoal) ...[
+                  const SizedBox(height: 16),
+                  
+                  // Integrated player selection UI
+                  Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12.0),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Player Roles',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          
+                          // Player role indicators
+                          Row(
+                            children: [
+                              _buildRoleIndicator(
+                                'On Ice', 
+                                Icons.sports_hockey, 
+                                _selectedYourTeamPlayersOnIce.length == 5 ? Colors.green : Colors.red, 
+                                _selectedYourTeamPlayersOnIce.length,
+                                '5 required'
+                              ),
+                              const SizedBox(width: 16),
+                              _buildRoleIndicator(
+                'Goal Scorer', 
+                Icons.sports_score, 
+                Colors.green, 
+                _selectedShooter != null ? 1 : 0
+                              ),
+                              const SizedBox(width: 16),
+                              _buildRoleIndicator(
+                                'Assist', 
+                                Icons.handshake, 
+                                Colors.orange, 
+                                _selectedAssist1 != null ? 1 : 0
+                              ),
+                            ],
+                          ),
+                          
+                          const SizedBox(height: 16),
+                          
+                          // Player grid
+                          const Text(
+                            'Tap players to assign roles:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 5,
+                              childAspectRatio: 1.0,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                            ),
+                            itemCount: _yourTeamPlayers.length,
+                            itemBuilder: (context, index) {
+                              final player = _yourTeamPlayers[index];
+                              final isOnIce = _selectedYourTeamPlayersOnIce.contains(player);
+                              final isShooter = _selectedShooter == player;
+                              final isAssist = _selectedAssist1 == player;
+                              final isAbsent = _isPlayerAbsent(player);
+                              
+                              return InkWell(
+                                onTap: () => _showPlayerRoleDialog(player),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: _getPlayerBackgroundColor(isOnIce, isShooter, isAssist, isAbsent),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: _getPlayerBorderColor(isOnIce, isShooter, isAssist, isAbsent),
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      Center(
+                                        child: Text(
+                                          '#${player.jerseyNumber}',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: _getPlayerTextColor(isOnIce, isShooter, isAssist, isAbsent),
+                                          ),
+                                        ),
+                                      ),
+                                      if (isShooter)
+                                        const Positioned(
+                                          top: 2,
+                                          right: 2,
+                                          child: Icon(
+                                            Icons.sports_score,
+                                            size: 14,
+                                            color: Colors.green,
+                                          ),
+                                        ),
+                                      if (isAssist)
+                                        const Positioned(
+                                          bottom: 2,
+                                          right: 2,
+                                          child: Icon(
+                                            Icons.handshake,
+                                            size: 14,
+                                            color: Colors.orange,
+                                          ),
+                                        ),
+                                      if (isAbsent)
+                                        const Positioned(
+                                          top: 2,
+                                          left: 2,
+                                          child: Icon(
+                                            Icons.person_off,
+                                            size: 14,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          
+                          const SizedBox(height: 16),
+                          
+                          // Clear all button
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton.icon(
+                                icon: const Icon(Icons.clear_all),
+                                label: const Text('Clear All'),
+                                onPressed: () {
+                                  setState(() {
+                                    _selectedYourTeamPlayersOnIce.clear();
+                                    _selectedShooter = null;
+                                    _selectedAssist1 = null;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      onPressed: _selectPlayersOnIce,
                     ),
                   ),
+                ],
 
                 const SizedBox(height: 16.0),
 
