@@ -148,6 +148,36 @@ class EmailSettings extends HiveObject {
   });
 }
 
+@HiveType(typeId: 4)
+class GameRoster extends HiveObject {
+  @HiveField(0)
+  String id;
+
+  @HiveField(1)
+  String gameId;
+
+  @HiveField(2)
+  String playerId;
+
+  @HiveField(3)
+  String status; // 'Present' or 'Absent'
+
+  @HiveField(4)
+  DateTime timestamp;
+
+  @HiveField(5)
+  bool isSynced;
+
+  GameRoster({
+    required this.id,
+    required this.gameId,
+    required this.playerId,
+    required this.status,
+    required this.timestamp,
+    this.isSynced = false,
+  });
+}
+
 class PlayerSeasonStats {
   final String playerId; 
   String playerName;

@@ -6,6 +6,7 @@ import 'package:hockey_stats_app/screens/log_stats_screen.dart'; // We'll create
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import SheetsService for syncing
 import 'package:uuid/uuid.dart'; // Import for generating UUIDs
 import 'package:hockey_stats_app/main.dart' as main_logic; // To access functions from main.dart
+import 'package:hockey_stats_app/screens/attendance_dialog.dart'; // Import attendance dialog
 // Enum for different screen states
 enum _ScreenState { initialLoading, needsSignIn, signInFailed, syncFailed, dataLoaded, noGamesFound }
 
@@ -145,14 +146,24 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
   // Function to handle game selection and navigation
   void _selectGameAndNavigate() {
     if (_selectedGame != null) {
-      // Navigate to a screen where stats can be logged for the selected game.
-      // We'll create a new screen called LogStatsScreen which will contain
-      // the "Log Shot" and "Log Penalty" buttons, passing the selected game ID.
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => LogStatsScreen(gameId: _selectedGame!.id),
-        ),
+      // Show attendance dialog first
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AttendanceDialog(
+            gameId: _selectedGame!.id,
+            onComplete: () {
+              // After attendance is saved, navigate to stats screen
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => LogStatsScreen(gameId: _selectedGame!.id),
+                ),
+              );
+            },
+          );
+        },
       );
     } else {
       // Show a message if no game is available or selected
@@ -176,7 +187,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
         return StatefulBuilder( // Added StatefulBuilder
           builder: (BuildContext context, StateSetter setStateDialog) { // Renamed context and added setStateDialog
             // Show date picker
-            Future<void> _selectDateInDialog() async { // Renamed and adapted _selectDate
+            Future<void> selectDateInDialog() async { // Renamed and adapted _selectDate
               final DateTime? picked = await showDatePicker(
                 context: context, // Use StatefulBuilder's context
                 initialDate: selectedDate,
@@ -202,7 +213,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
                       title: const Text('Game Date'), // const added
                       subtitle: Text(selectedDate.toLocal().toString().split(' ')[0]),
                       trailing: const Icon(Icons.calendar_today), // const added
-                      onTap: _selectDateInDialog, // Use the new method
+                      onTap: selectDateInDialog, // Use the new method
                     ),
                     const SizedBox(height: 16),
                     
@@ -266,7 +277,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
         return StatefulBuilder( // Added StatefulBuilder
           builder: (BuildContext context, StateSetter setStateDialog) { // Renamed context and added setStateDialog
             // Show date picker
-            Future<void> _selectDateInDialog() async { // Renamed and adapted _selectDate
+            Future<void> selectDateInDialog() async { // Renamed and adapted _selectDate
               final DateTime? picked = await showDatePicker(
                 context: context, // Use StatefulBuilder's context
                 initialDate: selectedDate,
@@ -292,7 +303,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
                       title: const Text('Game Date'), // const added
                       subtitle: Text(selectedDate.toLocal().toString().split(' ')[0]),
                       trailing: const Icon(Icons.calendar_today), // const added
-                      onTap: _selectDateInDialog, // Use the new method
+                      onTap: selectDateInDialog, // Use the new method
                     ),
                     const SizedBox(height: 16),
                     

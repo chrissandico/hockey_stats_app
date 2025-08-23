@@ -36,8 +36,9 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
   // Uuid generator for unique IDs
   final uuid = Uuid();
 
-  // List of players for the dropdown
+  // List of players
   List<Player> _yourTeamPlayers = [];
+  bool _isLoadingPlayers = false;
 
   // List of common penalty types
   final List<String> _commonPenaltyTypes = [
@@ -73,13 +74,104 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
   }
 
   void _loadPlayers() {
-    // Fetch players from Hive 'players' box for "your_team"
-    _yourTeamPlayers = playersBox.values.where((p) => p.teamId == 'your_team').toList();
-    if (_yourTeamPlayers.isNotEmpty) {
-      // Optionally set a default selected player or leave it null
-      // _selectedPlayer = _yourTeamPlayers.first;
+    setState(() {
+      _isLoadingPlayers = true;
+    });
+    
+    try {
+      // Fetch players from Hive 'players' box for "your_team"
+      _yourTeamPlayers = playersBox.values.where((p) => p.teamId == 'your_team').toList();
+      
+      // Sort players by jersey number
+      _yourTeamPlayers.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+      
+      if (mounted) {
+        setState(() {
+          _isLoadingPlayers = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading players: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingPlayers = false;
+        });
+      }
     }
-     setState(() {}); // Update the UI after loading players
+  }
+  
+  List<Player> _getForwards() {
+    final forwards = _yourTeamPlayers.where((player) => 
+      player.position == 'C' || 
+      player.position == 'LW' || 
+      player.position == 'RW' ||
+      player.position == 'F'
+    ).toList();
+    
+    // Sort by jersey number
+    forwards.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    return forwards;
+  }
+  
+  List<Player> _getDefensemen() {
+    final defensemen = _yourTeamPlayers.where((player) => 
+      player.position == 'D' || 
+      player.position == 'LD' || 
+      player.position == 'RD'
+    ).toList();
+    
+    // Sort by jersey number
+    defensemen.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    return defensemen;
+  }
+  
+  Widget _buildPlayerGrid(List<Player> players) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: players.isEmpty
+          ? const Center(child: Text('No players found'))
+          : GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 5,
+                childAspectRatio: 1.0,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemCount: players.length,
+              itemBuilder: (context, index) {
+                final player = players[index];
+                final isSelected = _selectedPlayer == player;
+                
+                return InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedPlayer = player;
+                    });
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.blue.withOpacity(0.2) : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected ? Colors.blue : Colors.grey.withOpacity(0.5),
+                        width: 2,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        '#${player.jerseyNumber}',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected ? Colors.blue : Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
   }
 
   // State variable for loading indicator
@@ -203,22 +295,78 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
                 _buildPeriodSelector(),
                 const SizedBox(height: 16.0), // Add some spacing after the period selector
 
-                // Player Selection
-                DropdownButtonFormField<Player>(
-                  decoration: const InputDecoration(labelText: 'Penalized Player'),
-                  value: _selectedPlayer,
-                  items: _yourTeamPlayers.map((player) {
-                    return DropdownMenuItem<Player>(
-                      value: player,
-                      child: Text('#${player.jerseyNumber}', style: const TextStyle(fontSize: 16)),
-                    );
-                  }).toList(),
-                  onChanged: (Player? newValue) {
-                    setState(() {
-                      _selectedPlayer = newValue;
-                    });
-                  },
-                  isExpanded: true,
+                // Player Selection Card
+                Card(
+                  margin: const EdgeInsets.symmetric(vertical: 8.0),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12.0),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Row(
+                          children: [
+                            const Text(
+                              'SELECT PENALIZED PLAYER',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (_selectedPlayer != null)
+                              Text(
+                                '#${_selectedPlayer!.jerseyNumber}',
+                                style: const TextStyle(
+                                  color: Colors.blue,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      
+                      // Player selection content
+                      if (_isLoadingPlayers)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(16.0),
+                            child: CircularProgressIndicator(),
+                          ),
+                        )
+                      else
+                        DefaultTabController(
+                          length: 2,
+                          child: Column(
+                            children: [
+                              const TabBar(
+                                tabs: [
+                                  Tab(text: 'FORWARDS'),
+                                  Tab(text: 'DEFENSE'),
+                                ],
+                                labelColor: Colors.blue,
+                                unselectedLabelColor: Colors.grey,
+                              ),
+                              SizedBox(
+                                height: 200, // Height for the player grid
+                                child: TabBarView(
+                                  children: [
+                                    // Forwards Tab
+                                    _buildPlayerGrid(_getForwards()),
+                                    
+                                    // Defense Tab
+                                    _buildPlayerGrid(_getDefensemen()),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 16.0),
 

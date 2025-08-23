@@ -40,10 +40,24 @@ class EmailService {
     );
 
     final formattedDate = _formatDate(game.date);
+    
+    // Calculate the score for the email body
+    int yourTeamScore = gameEvents.where((event) => 
+      event.eventType == 'Shot' && 
+      event.isGoal == true && 
+      event.team == 'your_team'
+    ).length;
+
+    int opponentScore = gameEvents.where((event) => 
+      event.eventType == 'Shot' && 
+      event.isGoal == true && 
+      event.team == 'opponent'
+    ).length;
+    
     final Email email = Email(
       recipients: recipients,
       subject: 'Hockey Game Stats - ${game.opponent} - $formattedDate',
-      body: 'Game stats attached as PDF.',
+      body: 'Game stats for Waxers vs ${game.opponent} on $formattedDate.\n\nFinal Score: $yourTeamScore - $opponentScore\n\nDetailed stats attached as PDF.',
       attachmentPaths: [pdfFile.path],
       isHTML: false,
     );
@@ -61,6 +75,11 @@ class EmailService {
 
   // Helper method to calculate plus/minus
   int _calculatePlusMinus(Player player, List<GameEvent> gameEvents) {
+    // Skip plus/minus calculation for goalies
+    if (player.position == 'G') {
+      return 0;
+    }
+    
     int plusMinus = 0;
 
     for (var event in gameEvents) {

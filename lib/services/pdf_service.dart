@@ -35,7 +35,7 @@ class PdfService {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              // Header with logo and game details
+              // Header with logo
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
@@ -45,17 +45,46 @@ class PdfService {
                       width: 60,
                       child: pw.Image(logoImage),
                     ),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Text('Game Stats', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
-                      pw.Text('vs ${game.opponent}'),
-                      pw.Text('Date: ${_formatDate(game.date)}'),
-                      if (game.location != null)
-                        pw.Text('Location: ${game.location}'),
-                    ],
-                  ),
+                  pw.Text('Game Stats', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
                 ],
+              ),
+              pw.SizedBox(height: 10),
+              
+              // Prominent game information section
+              pw.Container(
+                padding: const pw.EdgeInsets.all(10),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.grey200,
+                  borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+                ),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    pw.Text(
+                      'vs ${game.opponent}',
+                      style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                    pw.SizedBox(height: 5),
+                    pw.Text(
+                      _formatDate(game.date),
+                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                    if (game.location != null) ...[
+                      pw.SizedBox(height: 5),
+                      pw.Text(
+                        'Location: ${game.location}',
+                        style: const pw.TextStyle(fontSize: 14),
+                        textAlign: pw.TextAlign.center,
+                      ),
+                    ],
+                    
+                    // Add game score if available
+                    pw.SizedBox(height: 10),
+                    _buildScoreSummary(gameEvents),
+                  ],
+                ),
               ),
               pw.SizedBox(height: 20),
 
@@ -124,7 +153,7 @@ class PdfService {
                         pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(shots.toString())),
                       ],
                     );
-                  }).toList(),
+                  }),
                 ],
               ),
             ],
@@ -141,8 +170,63 @@ class PdfService {
     return file;
   }
 
+  // Build a score summary widget for the PDF
+  pw.Widget _buildScoreSummary(List<GameEvent> gameEvents) {
+    // Calculate the score
+    int yourTeamScore = gameEvents.where((event) => 
+      event.eventType == 'Shot' && 
+      event.isGoal == true && 
+      event.team == 'your_team'
+    ).length;
+
+    int opponentScore = gameEvents.where((event) => 
+      event.eventType == 'Shot' && 
+      event.isGoal == true && 
+      event.team == 'opponent'
+    ).length;
+
+    // Return a row with the score
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.center,
+      children: [
+        pw.Text(
+          'Score: ',
+          style: const pw.TextStyle(fontSize: 14),
+        ),
+        pw.Text(
+          '$yourTeamScore',
+          style: pw.TextStyle(
+            fontSize: 16, 
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColors.blue,
+          ),
+        ),
+        pw.Text(
+          ' - ',
+          style: pw.TextStyle(
+            fontSize: 16, 
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+        pw.Text(
+          '$opponentScore',
+          style: pw.TextStyle(
+            fontSize: 16, 
+            fontWeight: pw.FontWeight.bold,
+            color: PdfColors.red,
+          ),
+        ),
+      ],
+    );
+  }
+
   // Helper method to calculate plus/minus
   int _calculatePlusMinus(Player player, List<GameEvent> gameEvents) {
+    // Skip plus/minus calculation for goalies
+    if (player.position == 'G') {
+      return 0;
+    }
+    
     int plusMinus = 0;
 
     for (var event in gameEvents) {

@@ -201,3 +201,52 @@ class EmailSettingsAdapter extends TypeAdapter<EmailSettings> {
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
+
+class GameRosterAdapter extends TypeAdapter<GameRoster> {
+  @override
+  final int typeId = 4;
+
+  @override
+  GameRoster read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return GameRoster(
+      id: fields[0] as String,
+      gameId: fields[1] as String,
+      playerId: fields[2] as String,
+      status: fields[3] as String,
+      timestamp: fields[4] as DateTime,
+      isSynced: fields[5] as bool,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, GameRoster obj) {
+    writer
+      ..writeByte(6)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.gameId)
+      ..writeByte(2)
+      ..write(obj.playerId)
+      ..writeByte(3)
+      ..write(obj.status)
+      ..writeByte(4)
+      ..write(obj.timestamp)
+      ..writeByte(5)
+      ..write(obj.isSynced);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GameRosterAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}

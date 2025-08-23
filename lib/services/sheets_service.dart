@@ -6,8 +6,19 @@ import 'package:hive/hive.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+/// The scopes required for Google Sheets API access
 final List<String> _scopes = ['https://www.googleapis.com/auth/spreadsheets'];
 
+/// Service for interacting with Google Sheets to sync hockey stats data.
+///
+/// This service handles:
+/// - Authentication with Google Sign-In
+/// - Reading data from Google Sheets (players, games, events)
+/// - Writing data to Google Sheets (game events, attendance)
+/// - Syncing local data with remote data
+///
+/// The service maintains a connection to a specific Google Spreadsheet that
+/// serves as the central database for the hockey stats application.
 class SheetsService {
   final String _spreadsheetId = '1u4olfiYFjXW0Z88U3Q1wOxI7gz04KYbg6LNn8h-rfno';
   final String _sheetsApiBase = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -19,14 +30,25 @@ class SheetsService {
   GoogleSignInAccount? _currentUser;
   auth.AuthClient? _authClient;
 
+  /// Checks if a user is currently signed in to Google.
+  ///
+  /// @return A Future that resolves to true if the user is signed in, false otherwise
   Future<bool> isSignedIn() async {
     return await _googleSignIn.isSignedIn();
   }
 
+  /// Gets the currently signed-in Google user account.
+  ///
+  /// @return The current GoogleSignInAccount or null if no user is signed in
   GoogleSignInAccount? getCurrentUser() {
     return _currentUser;
   }
 
+  /// Attempts to sign in silently without user interaction.
+  ///
+  /// This is useful for restoring a previous session when the app starts.
+  ///
+  /// @return A Future that resolves to true if silent sign-in was successful, false otherwise
   Future<bool> signInSilently() async {
     _currentUser = await _googleSignIn.signInSilently();
     if (_currentUser != null) {
@@ -36,6 +58,11 @@ class SheetsService {
     return false;
   }
 
+  /// Initiates the Google Sign-In flow to authenticate the user.
+  ///
+  /// This will display the Google Sign-In UI to the user.
+  ///
+  /// @return A Future that resolves to true if sign-in was successful, false otherwise
   Future<bool> signIn() async {
     try {
       _currentUser = await _googleSignIn.signIn();
@@ -50,6 +77,7 @@ class SheetsService {
     }
   }
 
+  /// Signs out the current user and clears authentication state.
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     _currentUser = null;
@@ -145,6 +173,79 @@ class SheetsService {
       return true;
     }
     return false;
+  }
+
+  Future<bool> syncGameRoster(GameRoster roster) async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot sync roster: Authentication failed.');
+      return false;
+    }
+
+    final List<Object> values = [
+      roster.gameId,
+      roster.playerId,
+      roster.status,
+    ];
+
+    final Map<String, dynamic> body = {
+      'values': [values],
+      'majorDimension': 'ROWS',
+    };
+
+    final result = await _makeRequest(
+      'POST',
+      'values/GameRoster!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+      body: body,
+    );
+
+    if (result != null) {
+      print('Successfully synced roster entry for player ${roster.playerId} in game ${roster.gameId}');
+      if (roster.isInBox) {
+        roster.isSynced = true;
+        await roster.save();
+      }
+      return true;
+    }
+    return false;
+  }
+
+  Future<Map<String, int>> syncPendingRoster() async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot sync pending roster: Authentication failed.');
+      return {'success': 0, 'failed': 0, 'pending': -1};
+    }
+
+    final gameRosterBox = Hive.box<GameRoster>('gameRoster');
+    final pendingRoster = gameRosterBox.values.where((roster) => !roster.isSynced).toList();
+
+    if (pendingRoster.isEmpty) {
+      print('No pending roster entries to sync.');
+      return {'success': 0, 'failed': 0, 'pending': 0};
+    }
+
+    print('Found ${pendingRoster.length} pending roster entries to sync.');
+    int successCount = 0;
+    int failureCount = 0;
+
+    for (final roster in pendingRoster) {
+      if (_authClient == null) {
+         print('Authentication lost during batch sync.');
+         failureCount = pendingRoster.length - successCount;
+         break;
+      }
+      
+      bool success = await syncGameRoster(roster);
+      if (success) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    }
+
+    print('Roster sync complete. Success: $successCount, Failed: $failureCount');
+    return {'success': successCount, 'failed': failureCount, 'pending': failureCount};
   }
 
   Future<bool> updateEventInSheet(GameEvent event) async {
@@ -522,6 +623,14 @@ class SheetsService {
     return events;
   }
 
+  /// Synchronizes all data from Google Sheets to the local database.
+  ///
+  /// This method:
+  /// 1. Fetches players, games, and events from Google Sheets
+  /// 2. Updates the local database with the fetched data
+  /// 3. Attempts to sync any unsynced local events to Google Sheets
+  ///
+  /// @return A map containing the sync results, including success status and counts
   Future<Map<String, dynamic>> syncDataFromSheets() async {
     print('Starting full data sync from Google Sheets...');
     

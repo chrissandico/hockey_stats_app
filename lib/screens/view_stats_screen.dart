@@ -75,7 +75,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                   child: Theme(
                     data: Theme.of(context).copyWith(
                       dataTableTheme: DataTableThemeData(
-                        headingRowColor: MaterialStateProperty.all(Colors.black),
+                        headingRowColor: WidgetStateProperty.all(Colors.black),
                         headingTextStyle: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
@@ -102,9 +102,9 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                         final player = entry.value;
                         final plusMinus = calculatePlusMinus(player, gameEvents);
                         return DataRow(
-                          color: MaterialStateProperty.resolveWith<Color?>(
-                            (Set<MaterialState> states) {
-                              if (states.contains(MaterialState.hovered)) {
+                          color: WidgetStateProperty.resolveWith<Color?>(
+                            (Set<WidgetState> states) {
+                              if (states.contains(WidgetState.hovered)) {
                                 return Colors.blue.withOpacity(0.1);
                               }
                               return index.isEven ? Colors.grey.shade100 : null;
@@ -220,6 +220,11 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
 }
 
 int calculatePlusMinus(Player player, List<GameEvent> gameEvents) {
+  // Skip plus/minus calculation for goalies
+  if (player.position == 'G') {
+    return 0;
+  }
+  
   int plusMinus = 0;
 
   // Calculate plus/minus for when the player is on the ice when a goal is scored

@@ -49,11 +49,13 @@ void main() async {
   Hive.registerAdapter(GameAdapter());
   Hive.registerAdapter(GameEventAdapter());
   Hive.registerAdapter(EmailSettingsAdapter());
+  Hive.registerAdapter(GameRosterAdapter());
 
   await Hive.openBox<Player>('players');
   await Hive.openBox<Game>('games');
   await Hive.openBox<GameEvent>('gameEvents');
   await Hive.openBox<EmailSettings>('emailSettings');
+  await Hive.openBox<GameRoster>('gameRoster');
 
   // DO NOT call attemptInitialDataSyncIfSignedIn() or addDummyDataIfNeeded() here anymore.
   // The GameSelectionScreen (or a new AuthWrapperScreen) will handle this.
