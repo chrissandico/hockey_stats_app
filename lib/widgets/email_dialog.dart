@@ -8,12 +8,14 @@ class EmailDialog extends StatefulWidget {
   final List<Player> players;
   final List<GameEvent> gameEvents;
   final Game game;
+  final String teamId;
 
   const EmailDialog({
     super.key,
     required this.players,
     required this.gameEvents,
     required this.game,
+    required this.teamId,
   });
 
   @override
@@ -70,6 +72,7 @@ class _EmailDialogState extends State<EmailDialog> {
         players: widget.players,
         gameEvents: widget.gameEvents,
         game: widget.game,
+        teamId: widget.teamId,
       );
 
       if (mounted) {
@@ -173,6 +176,7 @@ class _EmailDialogState extends State<EmailDialog> {
                     players: widget.players,
                     gameEvents: widget.gameEvents,
                     game: widget.game,
+                    teamId: widget.teamId,
                   ).then((file) => file.readAsBytes()),
                   maxPageWidth: 700,
                   canChangePageFormat: false,

@@ -12,7 +12,14 @@ enum _ScreenState { initialLoading, needsSignIn, signInFailed, syncFailed, dataL
 
 // This screen will allow the user to select a game from the local database.
 class GameSelectionScreen extends StatefulWidget {
-  const GameSelectionScreen({super.key});
+  final String teamId;
+  final VoidCallback? onSignOut;
+
+  const GameSelectionScreen({
+    super.key, 
+    required this.teamId,
+    this.onSignOut,
+  });
 
   @override
   State<GameSelectionScreen> createState() => _GameSelectionScreenState();
@@ -88,7 +95,11 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
   void _loadGamesInternal() {
     // This method doesn't call setState directly.
     // The calling method (_initializeScreen or after add/edit/delete) is responsible for setState.
-    availableGames = gamesBox.values.toList();
+    
+    // Filter games by the current team ID
+    availableGames = gamesBox.values
+        .where((game) => game.teamId == widget.teamId)
+        .toList();
     if (availableGames.isNotEmpty && _selectedGame == null) {
       _selectedGame = availableGames.first;
     } else if (availableGames.isEmpty) {
@@ -153,12 +164,16 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
         builder: (BuildContext context) {
           return AttendanceDialog(
             gameId: _selectedGame!.id,
+            teamId: widget.teamId,
             onComplete: () {
               // After attendance is saved, navigate to stats screen
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => LogStatsScreen(gameId: _selectedGame!.id),
+                  builder: (context) => LogStatsScreen(
+                    gameId: _selectedGame!.id,
+                    teamId: widget.teamId,
+                  ),
                 ),
               );
             },
@@ -399,12 +414,13 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     });
     
     try {
-      // Create an updated Game object
+      // Create an updated Game object with the current team ID
       final Game updatedGame = Game(
         id: gameId,
         date: date,
         opponent: opponent,
         location: location.isNotEmpty ? location : null,
+        teamId: widget.teamId, // Set the team ID to the current team
       );
       
       // Update in local database
@@ -519,12 +535,13 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
       // Generate a unique ID for the game
       final String gameId = const Uuid().v4();
       
-      // Create a new Game object
+      // Create a new Game object with the current team ID
       final Game newGame = Game(
         id: gameId,
         date: date,
         opponent: opponent,
         location: location.isNotEmpty ? location : null,
+        teamId: widget.teamId, // Set the team ID to the current team
       );
       
       // Save to local database
@@ -634,6 +651,11 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Signed out successfully')),
     );
+    
+    // Call the onSignOut callback if provided
+    if (widget.onSignOut != null) {
+      widget.onSignOut!();
+    }
   }
 
   @override

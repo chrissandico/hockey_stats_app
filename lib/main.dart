@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
+import 'package:hockey_stats_app/models/custom_adapters.dart'; // Import our custom adapters
 import 'package:hockey_stats_app/screens/game_selection_screen.dart'; // Import the new Game Selection screen
+import 'package:hockey_stats_app/screens/auth_wrapper_screen.dart'; // Import the Auth Wrapper screen
 import 'package:hockey_stats_app/utils/team_utils.dart'; // Import TeamUtils
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import SheetsService for initial sync
+import 'package:hockey_stats_app/services/team_auth_service.dart'; // Import TeamAuthService
 // Removed imports for log_shot_screen and log_penalty_screen as we navigate via GameSelectionScreen now
 
 // Define the dummyGameId here to be used across files (still needed for dummy data creation)
@@ -42,25 +45,125 @@ void main() async {
   }
   // --- END TEMPORARY RESET LOGIC ---
 
-  // Normal app initialization starts here for subsequent (non-reset) runs
-  await Hive.initFlutter();
+  // Wrap the entire initialization in a try-catch for better error handling
+  try {
+    print('Starting app initialization...');
+    
+    // Normal app initialization starts here for subsequent (non-reset) runs
+    await Hive.initFlutter();
+    
+    // Initialize our migration manager first
+    await HiveMigrationManager.initialize();
+    
+    // Register standard adapters
+    // Note: Game adapter is registered by HiveMigrationManager
+    Hive.registerAdapter(PlayerAdapter());
+    Hive.registerAdapter(GameEventAdapter());
+    Hive.registerAdapter(EmailSettingsAdapter());
+    Hive.registerAdapter(GameRosterAdapter());
+    
+    // Open boxes with error handling
+    await _safelyOpenHiveBoxes();
+    
+    print('App initialization completed successfully');
+    
+    // DO NOT call attemptInitialDataSyncIfSignedIn() or addDummyDataIfNeeded() here anymore.
+    // The GameSelectionScreen (or a new AuthWrapperScreen) will handle this.
+    
+    runApp(const MyApp());
+  } catch (e, stackTrace) {
+    print('CRITICAL ERROR during app initialization: $e');
+    print('Stack trace: $stackTrace');
+    
+    // Show error UI instead of crashing
+    runApp(const AppErrorScreen());
+  }
+}
 
-  Hive.registerAdapter(PlayerAdapter());
-  Hive.registerAdapter(GameAdapter());
-  Hive.registerAdapter(GameEventAdapter());
-  Hive.registerAdapter(EmailSettingsAdapter());
-  Hive.registerAdapter(GameRosterAdapter());
+/// Safely open all Hive boxes with error recovery
+Future<void> _safelyOpenHiveBoxes() async {
+  print('Opening Hive boxes with error handling...');
+  
+  // List of box names to open
+  final boxNames = ['players', 'games', 'gameEvents', 'emailSettings', 'gameRoster'];
+  
+  for (final boxName in boxNames) {
+    try {
+      print('Opening box: $boxName');
+      
+      if (boxName == 'games') {
+        // Special handling for games box which has migration
+        await Hive.openBox<Game>(boxName);
+      } else if (boxName == 'players') {
+        await Hive.openBox<Player>(boxName);
+      } else if (boxName == 'gameEvents') {
+        await Hive.openBox<GameEvent>(boxName);
+      } else if (boxName == 'emailSettings') {
+        await Hive.openBox<EmailSettings>(boxName);
+      } else if (boxName == 'gameRoster') {
+        await Hive.openBox<GameRoster>(boxName);
+      }
+      
+      print('Successfully opened box: $boxName');
+    } catch (e) {
+      print('Error opening box $boxName: $e');
+      print('Attempting recovery...');
+      
+      try {
+        // Try to recover the corrupted box
+        await HiveMigrationManager.recoverCorruptedBox(boxName);
+        print('Recovery successful for box: $boxName');
+      } catch (recoveryError) {
+        print('Recovery failed for box $boxName: $recoveryError');
+        // Continue with other boxes even if one fails
+      }
+    }
+  }
+}
 
-  await Hive.openBox<Player>('players');
-  await Hive.openBox<Game>('games');
-  await Hive.openBox<GameEvent>('gameEvents');
-  await Hive.openBox<EmailSettings>('emailSettings');
-  await Hive.openBox<GameRoster>('gameRoster');
+/// Error screen shown when app initialization fails
+class AppErrorScreen extends StatelessWidget {
+  const AppErrorScreen({Key? key}) : super(key: key);
 
-  // DO NOT call attemptInitialDataSyncIfSignedIn() or addDummyDataIfNeeded() here anymore.
-  // The GameSelectionScreen (or a new AuthWrapperScreen) will handle this.
-
-  runApp(const MyApp());
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 80),
+                const SizedBox(height: 20),
+                const Text(
+                  'App Initialization Error',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'There was a problem loading the app data. This might be due to corrupted data or a version mismatch.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 30),
+                ElevatedButton(
+                  onPressed: () async {
+                    // Reset all data and restart the app
+                    await _resetAllHiveData();
+                    // This is a simple way to "restart" - just rebuild from scratch
+                    main();
+                  },
+                  child: const Text('Reset Data & Restart'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // This function tries to sync if the user is already authenticated.
@@ -141,12 +244,13 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      // The home screen is now the GameSelectionScreen
+      // The home screen is now the AuthWrapperScreen
       home: MultiProvider(
         providers: [
           Provider(create: (_) => SheetsService()),
+          Provider(create: (_) => TeamAuthService()),
         ],
-        child: const GameSelectionScreen(),
+        child: const AuthWrapperScreen(),
       ),
     );
   }

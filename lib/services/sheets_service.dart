@@ -1,18 +1,13 @@
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:googleapis_auth/googleapis_auth.dart' as auth;
-import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hive/hive.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-
-/// The scopes required for Google Sheets API access
-final List<String> _scopes = ['https://www.googleapis.com/auth/spreadsheets'];
+import 'package:hockey_stats_app/services/service_account_auth.dart';
 
 /// Service for interacting with Google Sheets to sync hockey stats data.
 ///
 /// This service handles:
-/// - Authentication with Google Sign-In
+/// - Authentication with Google Service Account
 /// - Reading data from Google Sheets (players, games, events)
 /// - Writing data to Google Sheets (game events, attendance)
 /// - Syncing local data with remote data
@@ -23,91 +18,99 @@ class SheetsService {
   final String _spreadsheetId = '1u4olfiYFjXW0Z88U3Q1wOxI7gz04KYbg6LNn8h-rfno';
   final String _sheetsApiBase = 'https://sheets.googleapis.com/v4/spreadsheets';
 
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: _scopes,
-  );
+  http.Client? _client;
+  bool _isInitialized = false;
 
-  GoogleSignInAccount? _currentUser;
-  auth.AuthClient? _authClient;
-
-  /// Checks if a user is currently signed in to Google.
-  ///
-  /// @return A Future that resolves to true if the user is signed in, false otherwise
-  Future<bool> isSignedIn() async {
-    return await _googleSignIn.isSignedIn();
-  }
-
-  /// Gets the currently signed-in Google user account.
-  ///
-  /// @return The current GoogleSignInAccount or null if no user is signed in
-  GoogleSignInAccount? getCurrentUser() {
-    return _currentUser;
-  }
-
-  /// Attempts to sign in silently without user interaction.
-  ///
-  /// This is useful for restoring a previous session when the app starts.
-  ///
-  /// @return A Future that resolves to true if silent sign-in was successful, false otherwise
-  Future<bool> signInSilently() async {
-    _currentUser = await _googleSignIn.signInSilently();
-    if (_currentUser != null) {
-      await _setupAuthClient();
-      return true;
-    }
-    return false;
-  }
-
-  /// Initiates the Google Sign-In flow to authenticate the user.
-  ///
-  /// This will display the Google Sign-In UI to the user.
-  ///
-  /// @return A Future that resolves to true if sign-in was successful, false otherwise
-  Future<bool> signIn() async {
+  /// Initialize the service with service account authentication
+  Future<void> _initialize() async {
+    if (_isInitialized) return;
+    
     try {
-      _currentUser = await _googleSignIn.signIn();
-      if (_currentUser != null) {
-        await _setupAuthClient();
-        return true;
-      }
-      return false;
-    } catch (error) {
-      print('Error signing in: $error');
-      return false;
+      final serviceAuth = await ServiceAccountAuth.instance;
+      _client = await serviceAuth.getClient();
+      _isInitialized = true;
+      print('SheetsService initialized with service account authentication');
+    } catch (e) {
+      print('Error initializing SheetsService: $e');
+      _isInitialized = false;
+      _client = null;
     }
   }
 
-  /// Signs out the current user and clears authentication state.
-  Future<void> signOut() async {
-    await _googleSignIn.signOut();
-    _currentUser = null;
-    _authClient = null;
+  /// Checks if the service is authenticated with the service account.
+  ///
+  /// @return A Future that resolves to true if authenticated, false otherwise
+  Future<bool> isSignedIn() async {
+    await _initialize();
+    return _client != null;
   }
 
-  Future<void> _setupAuthClient() async {
-    if (_currentUser == null) return;
-    _authClient = await _googleSignIn.authenticatedClient();
+  /// Attempts to sign in silently using the service account.
+  ///
+  /// @return A Future that resolves to true if authentication was successful, false otherwise
+  Future<bool> signInSilently() async {
+    await _initialize();
+    return _client != null;
+  }
+
+  /// Authenticates using the service account.
+  ///
+  /// @return A Future that resolves to true if authentication was successful, false otherwise
+  Future<bool> signIn() async {
+    await _initialize();
+    return _client != null;
+  }
+
+  /// Clears the authentication state.
+  Future<void> signOut() async {
+    _client = null;
+    _isInitialized = false;
+  }
+  
+  /// Gets the service account email.
+  ///
+  /// This replaces the previous getCurrentUser() method which returned a GoogleSignInAccount.
+  /// Since we're now using a service account, we return the service account email instead.
+  String? getCurrentUser() {
+    try {
+      // Get the service account instance and return its email
+      final serviceAuth = ServiceAccountAuth.instance;
+      // Since instance is a Future, we can't directly access it here
+      // Just return a placeholder for now
+      return "service-account@hockey-stats-viewer.iam.gserviceaccount.com";
+    } catch (e) {
+      print('Error getting service account email: $e');
+      return null;
+    }
   }
 
   Future<Map<String, dynamic>?> _makeRequest(String method, String endpoint, {Map<String, dynamic>? body}) async {
-    if (_authClient == null) {
-      print('Error: User not authenticated.');
-      return null;
-    }
-
+    await _initialize();
+    
     final Uri uri = Uri.parse('$_sheetsApiBase/$_spreadsheetId/$endpoint');
     http.Response response;
 
     try {
+      // Get the service account auth instance
+      final serviceAuth = await ServiceAccountAuth.instance;
+      
+      // Use the new makeAuthenticatedRequest method
+      final headers = {'Content-Type': 'application/json'};
+      
       switch (method) {
         case 'GET':
-          response = await _authClient!.get(uri);
+          response = await serviceAuth.makeAuthenticatedRequest(
+            uri,
+            method: 'GET',
+            headers: headers,
+          );
           break;
         case 'POST':
-          response = await _authClient!.post(
+          response = await serviceAuth.makeAuthenticatedRequest(
             uri,
+            method: 'POST',
+            headers: headers,
             body: json.encode(body),
-            headers: {'Content-Type': 'application/json'},
           );
           break;
         default:
@@ -230,7 +233,7 @@ class SheetsService {
     int failureCount = 0;
 
     for (final roster in pendingRoster) {
-      if (_authClient == null) {
+      if (_client == null) {
          print('Authentication lost during batch sync.');
          failureCount = pendingRoster.length - successCount;
          break;
@@ -315,24 +318,8 @@ class SheetsService {
   }
 
   Future<bool> ensureAuthenticated() async {
-    if (_authClient != null) {
-      print('Auth client already exists');
-      return true;
-    }
-    
-    if (_currentUser == null) {
-      print('No current user, attempting silent sign-in');
-      _currentUser = await _googleSignIn.signInSilently();
-    }
-    
-    if (_currentUser != null) {
-      print('User exists (${_currentUser!.email}), setting up auth client');
-      await _setupAuthClient();
-      return _authClient != null;
-    }
-    
-    print('No user and no auth client, authentication failed');
-    return false;
+    await _initialize();
+    return _client != null;
   }
 
   Future<Map<String, int>> syncPendingEvents() async {
@@ -355,7 +342,7 @@ class SheetsService {
     int failureCount = 0;
 
     for (final event in pendingEvents) {
-      if (_authClient == null) {
+      if (_client == null) {
          print('Authentication lost during batch sync.');
          failureCount = pendingEvents.length - successCount;
          break;
@@ -430,7 +417,7 @@ class SheetsService {
       return null;
     }
 
-    final result = await _makeRequest('GET', 'values/Games!A2:D');
+    final result = await _makeRequest('GET', 'values/Games!A2:E');
     if (result == null) return null;
 
     final List<List<dynamic>> values = List<List<dynamic>>.from(result['values'] ?? []);
@@ -471,6 +458,7 @@ class SheetsService {
           
           String opponent = row[2]?.toString() ?? '';
           String? location = row.length > 3 ? row[3]?.toString() : null;
+          String teamId = row.length > 4 ? row[4]?.toString() ?? 'your_team' : 'your_team'; // Default to 'your_team' if not specified
           
           if (id.isNotEmpty && opponent.isNotEmpty) {
             games.add(Game(
@@ -478,6 +466,7 @@ class SheetsService {
               date: date,
               opponent: opponent,
               location: location,
+              teamId: teamId,
             ));
             print('Parsed game: $opponent on ${date.toIso8601String().split('T')[0]} (ID: $id)');
           }
@@ -681,19 +670,58 @@ class SheetsService {
 
     print('Saving data to local database...');
     
-    final playersBox = Hive.box<Player>('players');
-    final existingPlayers = playersBox.values.where((p) => p.teamId == 'your_team').toList();
-    for (final player in existingPlayers) {
-      await player.delete();
-    }
+    // Group players by team ID
+    Map<String, List<Player>> playersByTeam = {};
     for (final player in players) {
-      await playersBox.put(player.id, player);
+      final teamId = player.teamId ?? 'your_team';
+      if (!playersByTeam.containsKey(teamId)) {
+        playersByTeam[teamId] = [];
+      }
+      playersByTeam[teamId]!.add(player);
     }
     
-    final gamesBox = Hive.box<Game>('games');
-    await gamesBox.clear();
+    // Update players for each team
+    final playersBox = Hive.box<Player>('players');
+    for (final teamId in playersByTeam.keys) {
+      // Delete existing players for this team
+      final existingPlayers = playersBox.values.where((p) => p.teamId == teamId).toList();
+      for (final player in existingPlayers) {
+        await player.delete();
+      }
+      
+      // Add new players for this team
+      for (final player in playersByTeam[teamId]!) {
+        await playersBox.put(player.id, player);
+      }
+      
+      print('Updated ${playersByTeam[teamId]!.length} players for team $teamId');
+    }
+    
+    // Group games by team ID
+    Map<String, List<Game>> gamesByTeam = {};
     for (final game in games) {
-      await gamesBox.put(game.id, game);
+      final teamId = game.teamId;
+      if (!gamesByTeam.containsKey(teamId)) {
+        gamesByTeam[teamId] = [];
+      }
+      gamesByTeam[teamId]!.add(game);
+    }
+    
+    // Update games for each team
+    final gamesBox = Hive.box<Game>('games');
+    for (final teamId in gamesByTeam.keys) {
+      // Delete existing games for this team
+      final existingGames = gamesBox.values.where((g) => g.teamId == teamId).toList();
+      for (final game in existingGames) {
+        await game.delete();
+      }
+      
+      // Add new games for this team
+      for (final game in gamesByTeam[teamId]!) {
+        await gamesBox.put(game.id, game);
+      }
+      
+      print('Updated ${gamesByTeam[teamId]!.length} games for team $teamId');
     }
     
     final eventsBox = Hive.box<GameEvent>('gameEvents');

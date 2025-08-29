@@ -11,11 +11,13 @@ import 'package:hockey_stats_app/services/sheets_service.dart';
 /// is saved locally and can be synced to Google Sheets if the user is signed in.
 class AttendanceDialog extends StatefulWidget {
   final String gameId;
+  final String teamId;
   final VoidCallback onComplete;
 
   const AttendanceDialog({
     super.key,
     required this.gameId,
+    required this.teamId,
     required this.onComplete,
   });
 
@@ -59,7 +61,7 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
       final playersBox = Hive.box<Player>('players');
       // Get all players from your team (excluding goalies)
       final players = playersBox.values
-          .where((p) => p.teamId == 'your_team' && p.position != 'G')
+          .where((p) => p.teamId == widget.teamId && p.position != 'G')
           .toList();
 
       // Sort by jersey number

@@ -16,6 +16,7 @@ class PdfService {
     required List<Player> players,
     required List<GameEvent> gameEvents,
     required Game game,
+    required String teamId,
   }) async {
     final pdf = pw.Document();
     
@@ -82,7 +83,7 @@ class PdfService {
                     
                     // Add game score if available
                     pw.SizedBox(height: 10),
-                    _buildScoreSummary(gameEvents),
+                    _buildScoreSummary(gameEvents, teamId),
                   ],
                 ),
               ),
@@ -130,7 +131,7 @@ class PdfService {
                       (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)
                     ).length;
 
-                    final plusMinus = _calculatePlusMinus(player, gameEvents);
+                    final plusMinus = _calculatePlusMinus(player, gameEvents, teamId);
 
                     final pim = gameEvents
                       .where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id)
@@ -171,12 +172,12 @@ class PdfService {
   }
 
   // Build a score summary widget for the PDF
-  pw.Widget _buildScoreSummary(List<GameEvent> gameEvents) {
+  pw.Widget _buildScoreSummary(List<GameEvent> gameEvents, String teamId) {
     // Calculate the score
     int yourTeamScore = gameEvents.where((event) => 
       event.eventType == 'Shot' && 
       event.isGoal == true && 
-      event.team == 'your_team'
+      event.team == teamId
     ).length;
 
     int opponentScore = gameEvents.where((event) => 
@@ -221,7 +222,7 @@ class PdfService {
   }
 
   // Helper method to calculate plus/minus
-  int _calculatePlusMinus(Player player, List<GameEvent> gameEvents) {
+  int _calculatePlusMinus(Player player, List<GameEvent> gameEvents, String teamId) {
     // Skip plus/minus calculation for goalies
     if (player.position == 'G') {
       return 0;
@@ -233,7 +234,7 @@ class PdfService {
       if (event.eventType == 'Shot' && event.isGoal == true) {
         bool playerWasOnIce = false;
 
-        if (event.team == 'your_team') {
+        if (event.team == teamId) {
           if (event.yourTeamPlayersOnIce != null && event.yourTeamPlayersOnIce!.isNotEmpty) {
             playerWasOnIce = event.yourTeamPlayersOnIce!.contains(player.id);
           } else {

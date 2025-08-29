@@ -6,8 +6,9 @@ import 'package:intl/intl.dart'; // For date formatting
 
 class EditShotListScreen extends StatefulWidget {
   final String gameId;
+  final String teamId;
 
-  const EditShotListScreen({super.key, required this.gameId});
+  const EditShotListScreen({super.key, required this.gameId, required this.teamId});
 
   @override
   _EditShotListScreenState createState() => _EditShotListScreenState();
@@ -80,7 +81,7 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                   itemBuilder: (context, index) {
                     final event = shotEvents[index];
                     final isGoal = event.isGoal ?? false;
-                    final isYourTeam = event.team == 'your_team';
+                    final isYourTeam = event.team == widget.teamId;
                     
                     // Determine shooter display text
                     String shooterText = isYourTeam 
@@ -123,6 +124,7 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                                 builder: (context) => LogShotScreen(
                                   gameId: widget.gameId,
                                   period: event.period,
+                                  teamId: widget.teamId,
                                   eventIdToEdit: event.id,
                                 ),
                               ),

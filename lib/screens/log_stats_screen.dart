@@ -7,15 +7,14 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 
-Map<String, int> _calculateScore(List<GameEvent> events) {
+Map<String, int> _calculateScore(List<GameEvent> events, String teamId) {
   print('Calculating score from ${events.length} events');
   
   int yourTeamScore = events.where((event) => 
     event.eventType == 'Shot' && 
     event.isGoal == true && 
-    event.team == 'your_team'
+    event.team == teamId
   ).length;
 
   int opponentScore = events.where((event) => 
@@ -36,8 +35,9 @@ Map<String, int> _calculateScore(List<GameEvent> events) {
 
 class LogStatsScreen extends StatefulWidget {
   final String gameId;
+  final String teamId;
 
-  const LogStatsScreen({super.key, required this.gameId});
+  const LogStatsScreen({super.key, required this.gameId, required this.teamId});
 
   @override
   State<LogStatsScreen> createState() => _LogStatsScreenState();
@@ -49,7 +49,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   bool _isLoadingScore = false;
 
   final SheetsService _sheetsService = SheetsService();
-  GoogleSignInAccount? _currentUser;
+  String? _currentUser; // Changed from GoogleSignInAccount? to String?
   bool _isSigningIn = false;
   bool _isLoadingInitialData = true;
   
@@ -125,7 +125,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
       final playersBox = Hive.box<Player>('players');
       // Filter out goalies (players with position "G")
       final players = playersBox.values
-          .where((p) => p.teamId == 'your_team' && p.position != 'G')
+          .where((p) => p.teamId == widget.teamId && p.position != 'G')
           .toList();
       
       if (mounted) {
@@ -513,7 +513,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => EditShotListScreen(gameId: widget.gameId)),
+                  MaterialPageRoute(builder: (context) => EditShotListScreen(gameId: widget.gameId, teamId: widget.teamId)),
                 ).then((_) {
                   print('Returned from EditShotListScreen, refreshing score...');
                   _refreshScore().then((_) {
@@ -528,7 +528,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId)),
+                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId, teamId: widget.teamId)),
                 );
               },
             ),
@@ -564,6 +564,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             builder: (context) => LogShotScreen(
                               gameId: widget.gameId,
                               period: _selectedPeriod,
+                              teamId: widget.teamId,
                               playersOnIce: _selectedPlayersOnIce,
                             ),
                           ),
@@ -591,6 +592,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             builder: (context) => LogPenaltyScreen(
                               gameId: widget.gameId,
                               period: _selectedPeriod,
+                              teamId: widget.teamId,
                             ),
                           ),
                         ).then((value) {
@@ -648,7 +650,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             valueListenable: Hive.box<GameEvent>('gameEvents').listenable(),
                             builder: (context, Box<GameEvent> box, _) {
                               final gameEvents = box.values.where((event) => event.gameId == widget.gameId).toList();
-                              final score = _calculateScore(gameEvents);
+                              final score = _calculateScore(gameEvents, widget.teamId);
                               
                               return Center(
                                 child: _isLoadingScore
@@ -695,7 +697,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                               
                               final yourTeamShots = gameEvents.where((event) => 
                                 event.eventType == 'Shot' && 
-                                event.team == 'your_team'
+                                event.team == widget.teamId
                               ).length;
                               
                               final opponentShots = gameEvents.where((event) => 
@@ -818,7 +820,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
           : const Icon(Icons.account_circle, color: Colors.green),
       tooltip: _currentUser == null
           ? 'Sign in with Google'
-          : 'Signed in as ${_currentUser!.email}. Tap to sign out.',
+          : 'Signed in as $_currentUser. Tap to sign out.',
       onPressed: _isSigningIn
           ? null
           : _currentUser == null

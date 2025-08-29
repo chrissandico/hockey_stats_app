@@ -47,25 +47,52 @@ class Game extends HiveObject {
 
   @HiveField(3)
   String? location;
+  
+  @HiveField(4)
+  String teamId;
+  
+  @HiveField(5)
+  int version;
 
   Game({
     required this.id,
     required this.date,
     required this.opponent,
     this.location,
+    this.teamId = 'your_team',
+    this.version = 1,
   });
+  
+  /// Factory constructor for migrating from older versions
+  factory Game.migrate(Map<int, dynamic> fields) {
+    // Handle missing teamId field (added in version 1)
+    final String teamId = fields[4] as String? ?? 'your_team';
+    
+    return Game(
+      id: fields[0] as String,
+      date: fields[1] as DateTime,
+      opponent: fields[2] as String,
+      location: fields[3] as String?,
+      teamId: teamId,
+      version: 1, // Set to current version
+    );
+  }
   
   Game copyWith({
     String? id,
     DateTime? date,
     String? opponent,
     String? location,
+    String? teamId,
+    int? version,
   }) {
     return Game(
       id: id ?? this.id,
       date: date ?? this.date,
       opponent: opponent ?? this.opponent,
       location: location ?? this.location,
+      teamId: teamId ?? this.teamId,
+      version: version ?? this.version,
     );
   }
 }

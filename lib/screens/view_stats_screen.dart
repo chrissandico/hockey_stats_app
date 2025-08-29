@@ -5,9 +5,10 @@ import 'package:data_table_2/data_table_2.dart';
 import 'package:hockey_stats_app/widgets/email_dialog.dart';
 
 class ViewStatsScreen extends StatefulWidget {
-  const ViewStatsScreen({super.key, this.gameId});
+  const ViewStatsScreen({super.key, this.gameId, required this.teamId});
 
   final String? gameId;
+  final String teamId;
 
   @override
   State<ViewStatsScreen> createState() => _ViewStatsScreenState();
@@ -21,7 +22,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
     super.initState();
     // Get all players, filter out opponent players
     final playersBox = Hive.box<Player>('players');
-    players = playersBox.values.where((player) => player.teamId == 'your_team').toList();
+    players = playersBox.values.where((player) => player.teamId == widget.teamId).toList();
     // Sort players by jersey number in ascending order
     players.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
   }
@@ -51,6 +52,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                     players: players,
                     gameEvents: gameEvents,
                     game: game,
+                    teamId: widget.teamId,
                   ),
                 );
               }
@@ -100,7 +102,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                       rows: players.asMap().entries.map((entry) {
                         final index = entry.key;
                         final player = entry.value;
-                        final plusMinus = calculatePlusMinus(player, gameEvents);
+                        final plusMinus = calculatePlusMinus(player, gameEvents, widget.teamId);
                         return DataRow(
                           color: WidgetStateProperty.resolveWith<Color?>(
                             (Set<WidgetState> states) {
@@ -219,7 +221,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
   }
 }
 
-int calculatePlusMinus(Player player, List<GameEvent> gameEvents) {
+int calculatePlusMinus(Player player, List<GameEvent> gameEvents, String teamId) {
   // Skip plus/minus calculation for goalies
   if (player.position == 'G') {
     return 0;
@@ -232,7 +234,7 @@ int calculatePlusMinus(Player player, List<GameEvent> gameEvents) {
     if (event.eventType == 'Shot' && event.isGoal == true) {
       bool playerWasOnIce = false;
 
-      if (event.team == 'your_team') {
+      if (event.team == teamId) {
         // For your team's goals, check players on ice or involvement in the play
         if (event.yourTeamPlayersOnIce != null && event.yourTeamPlayersOnIce!.isNotEmpty) {
           playerWasOnIce = event.yourTeamPlayersOnIce!.contains(player.id);

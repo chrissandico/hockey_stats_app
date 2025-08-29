@@ -31,12 +31,14 @@ class EmailService {
     required List<Player> players,
     required List<GameEvent> gameEvents,
     required Game game,
+    required String teamId,
   }) async {
     final pdfService = PdfService();
     final pdfFile = await pdfService.generateGameStatsPdf(
       players: players,
       gameEvents: gameEvents,
       game: game,
+      teamId: teamId,
     );
 
     final formattedDate = _formatDate(game.date);
@@ -45,7 +47,7 @@ class EmailService {
     int yourTeamScore = gameEvents.where((event) => 
       event.eventType == 'Shot' && 
       event.isGoal == true && 
-      event.team == 'your_team'
+      event.team == teamId
     ).length;
 
     int opponentScore = gameEvents.where((event) => 

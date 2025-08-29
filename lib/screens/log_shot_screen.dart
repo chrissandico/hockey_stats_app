@@ -9,6 +9,7 @@ import 'package:hockey_stats_app/services/sheets_service.dart';
 class LogShotScreen extends StatefulWidget {
   final String gameId;
   final int period;
+  final String teamId;
   final String? eventIdToEdit;
   final List<Player>? playersOnIce;
 
@@ -16,6 +17,7 @@ class LogShotScreen extends StatefulWidget {
     super.key, 
     required this.gameId,
     required this.period,
+    required this.teamId,
     this.eventIdToEdit,
     this.playersOnIce,
   });
@@ -28,7 +30,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
   // State variables to hold the input values
   late int _selectedPeriod;
   bool _isGoal = false;
-  String _selectedTeam = 'your_team';
+  String _selectedTeam = '';
   Player? _selectedShooter; // Represents the Goal Scorer
   Player? _selectedAssist1;
   Player? _selectedAssist2;
@@ -63,6 +65,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
   void initState() {
     super.initState();
     _selectedPeriod = widget.period;
+    _selectedTeam = widget.teamId; // Initialize with the actual team ID
     gameEventsBox = Hive.box<GameEvent>('gameEvents');
     _sheetsService = SheetsService();
     _loadPlayers();
@@ -90,7 +93,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
     final playersBox = Hive.box<Player>('players');
     // Filter out goalies (players with position "G")
     _yourTeamPlayers = playersBox.values
-        .where((p) => p.teamId == 'your_team' && p.position != 'G')
+        .where((p) => p.teamId == widget.teamId && p.position != 'G')
         .toList();
     
     // Sort players by jersey number
@@ -134,8 +137,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
   void _filterPlayersByTeam() {
     setState(() {
       final playersBox = Hive.box<Player>('players');
-      if (_selectedTeam == 'your_team') {
-        _playersForTeam = playersBox.values.where((p) => p.teamId == 'your_team').toList();
+      if (_selectedTeam == widget.teamId) {
+        _playersForTeam = playersBox.values.where((p) => p.teamId == widget.teamId).toList();
         // Sort players by jersey number
         _playersForTeam.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
       } else {
@@ -157,7 +160,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
           _isGoal = _eventBeingEdited!.isGoal ?? false;
           _selectedTeam = _eventBeingEdited!.team;
           
-          if (_selectedTeam == 'your_team' && _eventBeingEdited!.primaryPlayerId.isNotEmpty) {
+          if (_selectedTeam == widget.teamId && _eventBeingEdited!.primaryPlayerId.isNotEmpty) {
             try {
               _selectedShooter = _yourTeamPlayers.firstWhere(
                 (player) => player.id == _eventBeingEdited!.primaryPlayerId
@@ -193,7 +196,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
   }
 
   Future<void> _logShot() async {
-    if (_selectedTeam == 'your_team' && _selectedShooter == null && _isGoal == true) {
+    if (_selectedTeam == widget.teamId && _selectedShooter == null && _isGoal == true) {
       if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a goal scorer.')),
@@ -226,7 +229,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
         
         _eventBeingEdited!.period = _selectedPeriod;
         _eventBeingEdited!.team = _selectedTeam;
-        _eventBeingEdited!.primaryPlayerId = _selectedTeam == 'your_team' ? _selectedShooter?.id ?? '' : '';
+        _eventBeingEdited!.primaryPlayerId = _selectedTeam == widget.teamId ? _selectedShooter?.id ?? '' : '';
         _eventBeingEdited!.assistPlayer1Id = _isGoal ? _selectedAssist1?.id : null;
         _eventBeingEdited!.isGoal = _isGoal;
         _eventBeingEdited!.isSynced = false;
@@ -235,7 +238,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
         print('  IsGoal after: ${_eventBeingEdited!.isGoal}');
         
         eventToProcess = _eventBeingEdited!;
-        successMessage = 'Shot updated for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}$_selectedTeam${_isGoal ? " (Goal)" : ""}';
+        successMessage = 'Shot updated for ${(_selectedTeam == widget.teamId && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}$_selectedTeam${_isGoal ? " (Goal)" : ""}';
         
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
         print('Event updated in Hive');
@@ -289,7 +292,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
           period: _selectedPeriod,
           eventType: 'Shot',
           team: _selectedTeam,
-          primaryPlayerId: _selectedTeam == 'your_team' ? _selectedShooter?.id ?? '' : '',
+          primaryPlayerId: _selectedTeam == widget.teamId ? _selectedShooter?.id ?? '' : '',
           assistPlayer1Id: _isGoal ? _selectedAssist1?.id : null,
           assistPlayer2Id: null, 
           isGoal: _isGoal,
@@ -298,7 +301,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
         );
         
         eventToProcess = newShotEvent;
-        successMessage = 'Shot logged for ${(_selectedTeam == 'your_team' && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}$_selectedTeam${_isGoal ? " (Goal)" : ""}';
+        successMessage = 'Shot logged for ${(_selectedTeam == widget.teamId && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}$_selectedTeam${_isGoal ? " (Goal)" : ""}';
 
         print('Saving new event to Hive:');
         print('  ID: ${eventToProcess.id}');
@@ -454,7 +457,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
 
   void _removeOpponentPlayers() {
     final playersBox = Hive.box<Player>('players');
-    final opponentPlayers = playersBox.values.where((player) => player.teamId != 'your_team').toList();
+    final opponentPlayers = playersBox.values.where((player) => player.teamId != widget.teamId).toList();
     for (var player in opponentPlayers) {
       player.delete();
     }
@@ -475,14 +478,14 @@ class _LogShotScreenState extends State<LogShotScreen> {
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 10.0),
             backgroundColor: isSelected 
-                ? (teamIdentifier == 'your_team' ? Colors.blue.withOpacity(0.3) : Colors.red.withOpacity(0.3)) 
+                ? (teamIdentifier == widget.teamId ? Colors.blue.withOpacity(0.3) : Colors.red.withOpacity(0.3)) 
                 : Theme.of(context).colorScheme.surfaceContainerHighest,
             foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12.0),
               side: BorderSide(
                 color: isSelected 
-                    ? (teamIdentifier == 'your_team' ? Colors.blue : Colors.red) 
+                    ? (teamIdentifier == widget.teamId ? Colors.blue : Colors.red) 
                     : Colors.grey.withOpacity(0.5),
                 width: 2.0,
               ),
@@ -766,7 +769,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId)),
+                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId, teamId: widget.teamId)),
                 );
               },
             ),
@@ -786,12 +789,12 @@ class _LogShotScreenState extends State<LogShotScreen> {
                   children: [
                     _buildTeamSelectionButton(
                       teamName: 'Waxers',
-                      teamIdentifier: 'your_team',
+                      teamIdentifier: widget.teamId,
                       logo: TeamUtils.getTeamLogo('Waxers', size: 52),
-                      isSelected: _selectedTeam == 'your_team',
+                      isSelected: _selectedTeam == widget.teamId,
                       onPressed: () {
                         setState(() {
-                          _selectedTeam = 'your_team';
+                          _selectedTeam = widget.teamId;
                           _filterPlayersByTeam();
                         });
                       },

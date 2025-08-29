@@ -64,13 +64,14 @@ class GameAdapter extends TypeAdapter<Game> {
       date: fields[1] as DateTime,
       opponent: fields[2] as String,
       location: fields[3] as String?,
+      teamId: fields[4] as String,
     );
   }
 
   @override
   void write(BinaryWriter writer, Game obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(5)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -78,7 +79,9 @@ class GameAdapter extends TypeAdapter<Game> {
       ..writeByte(2)
       ..write(obj.opponent)
       ..writeByte(3)
-      ..write(obj.location);
+      ..write(obj.location)
+      ..writeByte(4)
+      ..write(obj.teamId);
   }
 
   @override

@@ -46,6 +46,9 @@ dependencies:
   google_sign_in: ^6.2.1
   googleapis_auth: ^1.4.1 # More focused auth package
   extension_google_sign_in_as_googleapis_auth: ^2.0.13
+  googleapis: ^12.0.0 # For direct API access
+  flutter_secure_storage: ^9.0.0 # For securely storing team passwords
+  dart_jsonwebtoken: ^2.12.1 # For JWT token generation and signing
 
   data_table_2: ^2.5.10 # For advanced data tables with frozen columns/rows
   flutter_svg: ^2.0.10 # For rendering SVG images
@@ -87,6 +90,7 @@ flutter:
   assets:
     - assets/logos/
     - assets/data/
+    - assets/config/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

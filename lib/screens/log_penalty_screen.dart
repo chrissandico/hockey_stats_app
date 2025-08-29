@@ -8,11 +8,13 @@ import 'package:hockey_stats_app/services/sheets_service.dart'; // Import the se
 class LogPenaltyScreen extends StatefulWidget {
   final String gameId;
   final int period; // Add period parameter
+  final String teamId;
 
   const LogPenaltyScreen({
     super.key, 
     required this.gameId,
     required this.period,
+    required this.teamId,
   });
 
   @override
@@ -79,8 +81,8 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
     });
     
     try {
-      // Fetch players from Hive 'players' box for "your_team"
-      _yourTeamPlayers = playersBox.values.where((p) => p.teamId == 'your_team').toList();
+      // Fetch players from Hive 'players' box for the authenticated team
+      _yourTeamPlayers = playersBox.values.where((p) => p.teamId == widget.teamId).toList();
       
       // Sort players by jersey number
       _yourTeamPlayers.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
@@ -196,7 +198,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
         timestamp: DateTime.now(),
         period: _selectedPeriod,
         eventType: 'Penalty',
-        team: 'your_team', // Assuming penalties are only for 'Your Team'
+        team: widget.teamId, // Use the authenticated team's ID
         primaryPlayerId: _selectedPlayer!.id,
         penaltyType: _penaltyType,
         penaltyDuration: _penaltyDuration,
@@ -279,7 +281,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId)),
+                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId, teamId: widget.teamId)),
                 );
               },
             ),
