@@ -46,3 +46,11 @@ app.*.map.json
 
 # Sensitive configuration files
 assets/config/service_account.json
+
+# Android signing files
+key.properties
+*.keystore
+
+# Build artifacts
+*.apk
+*.aab
