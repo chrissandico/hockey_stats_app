@@ -84,8 +84,17 @@ class TeamAuthService {
         throw Exception('Failed to fetch teams: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error fetching teams: $e');
-      rethrow;
+      print('Error fetching teams from Google Sheets: $e');
+      print('This could be due to:');
+      print('1. Service account configuration issues');
+      print('2. Network connectivity problems');
+      print('3. Google Sheets API access issues');
+      print('4. Missing or incorrect spreadsheet permissions');
+      
+      // Don't rethrow - instead return empty list to allow offline operation
+      // The team password validation will still work with cached data or fallback
+      _cachedTeams = [];
+      return _cachedTeams!;
     }
     
     return _cachedTeams!;

@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart'; // Import flutter_svg
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:hockey_stats_app/models/team_model.dart';
 
 class TeamUtils {
@@ -17,7 +17,7 @@ class TeamUtils {
       final jsonString = await DefaultAssetBundle.of(context).loadString('assets/data/team_logos.json');
       final jsonData = json.decode(jsonString) as Map<String, dynamic>;
 
-      // Parse the teams
+      // Parse the teams array
       _teams = (jsonData['teams'] as List)
           .map((teamJson) => Team.fromJson(teamJson as Map<String, dynamic>))
           .toList();
@@ -26,16 +26,43 @@ class TeamUtils {
       _defaultTeam = Team.fromJson(jsonData['default'] as Map<String, dynamic>);
 
       _isInitialized = true;
+      debugPrint('TeamUtils initialized successfully with ${_teams?.length} teams');
     } catch (e) {
       debugPrint('Error initializing TeamUtils: $e');
-      // Create a fallback default team in case of error
+      // Create fallback teams and default in case of error
+      _teams = [
+        Team(
+          id: 'waxers',
+          name: 'Waxers',
+          logoPath: 'assets/logos/waxers_logo.png',
+          primaryColor: const Color(0xFF1E3A8A),
+          secondaryColor: Colors.white,
+        ),
+        Team(
+          id: 'your_team',
+          name: 'Your Team',
+          logoPath: 'assets/logos/your_team_logo.svg',
+          primaryColor: const Color(0xFF059669),
+          secondaryColor: Colors.white,
+        ),
+        Team(
+          id: 'opponent',
+          name: 'Opponent',
+          logoPath: 'assets/logos/generic_logo.svg',
+          primaryColor: const Color(0xFFDC2626),
+          secondaryColor: Colors.white,
+        ),
+      ];
+      
       _defaultTeam = Team(
-        id: 'default',
-        name: 'Default',
+        id: 'generic',
+        name: 'Generic Team',
         logoPath: 'assets/logos/generic_logo.svg',
         primaryColor: Colors.grey,
         secondaryColor: Colors.white,
       );
+      
+      _isInitialized = true;
     }
   }
 
@@ -52,7 +79,7 @@ class TeamUtils {
       return _getFallbackTeam(teamIdentifier);
     }
 
-    final identifier = teamIdentifier.toLowerCase();
+    final identifier = teamIdentifier.toLowerCase().trim();
 
     // Try to match by ID first
     for (final team in _teams!) {
@@ -61,9 +88,17 @@ class TeamUtils {
       }
     }
 
-    // If no match by ID, try to match by name
+    // If no match by ID, try to match by name (exact match first)
     for (final team in _teams!) {
-      if (team.name.toLowerCase().contains(identifier)) {
+      if (team.name.toLowerCase() == identifier) {
+        return team;
+      }
+    }
+
+    // If still no exact match, try partial name matching
+    for (final team in _teams!) {
+      if (team.name.toLowerCase().contains(identifier) || 
+          identifier.contains(team.name.toLowerCase())) {
         return team;
       }
     }
@@ -74,29 +109,45 @@ class TeamUtils {
 
   /// Create a fallback team based on the team identifier
   static Team _getFallbackTeam(String teamIdentifier) {
-    final firstLetter = teamIdentifier.isNotEmpty ? teamIdentifier[0].toUpperCase() : 'T';
-    final isYourTeam = teamIdentifier.toLowerCase().contains('your') || 
-                       teamIdentifier.toLowerCase().contains('waxers');
+    final cleanIdentifier = teamIdentifier.toLowerCase().trim();
+    
+    // Determine colors based on team type
+    Color primaryColor;
+    Color secondaryColor = Colors.white;
+    
+    if (cleanIdentifier.contains('waxers')) {
+      primaryColor = const Color(0xFF1E3A8A); // Blue
+    } else if (cleanIdentifier.contains('your') || cleanIdentifier.contains('home')) {
+      primaryColor = const Color(0xFF059669); // Green
+    } else if (cleanIdentifier.contains('opponent') || cleanIdentifier.contains('away')) {
+      primaryColor = const Color(0xFFDC2626); // Red
+    } else {
+      primaryColor = const Color(0xFF6B7280); // Gray
+    }
 
     return Team(
-      id: teamIdentifier.toLowerCase().replaceAll(' ', '_'),
+      id: cleanIdentifier.replaceAll(' ', '_'),
       name: teamIdentifier,
       logoPath: 'assets/logos/generic_logo.svg',
-      primaryColor: isYourTeam ? Colors.blue : Colors.red,
-      secondaryColor: Colors.white,
+      primaryColor: primaryColor,
+      secondaryColor: secondaryColor,
     );
   }
 
   /// Returns a widget representing the team logo based on the team name
   static Widget getTeamLogo(String teamName, {double size = 40.0, BuildContext? context}) {
-    // Special case for 'Opponent' or any opponent team - always return a simple "O" logo
-    if (teamName == 'Opponent' || 
-        (teamName != 'Waxers' && teamName != 'Your Team' && !teamName.toLowerCase().contains('waxers'))) {
+    // Ensure initialization
+    if (!_isInitialized && context != null) {
+      initialize(context);
+    }
+
+    // Special case for 'Opponent' - always return a simple "O" logo
+    if (teamName.toLowerCase().trim() == 'opponent') {
       return Container(
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: Colors.red,
+          color: const Color(0xFFDC2626), // Red color for opponent
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
@@ -119,64 +170,63 @@ class TeamUtils {
       );
     }
     
-    // For all other teams, use the existing logic
+    // For all other teams, get the team data and use the logo
     final team = getTeam(teamName, context: context);
     
+    return _buildTeamLogoWidget(team, size);
+  }
+
+  /// Build the actual logo widget with proper error handling
+  static Widget _buildTeamLogoWidget(Team team, double size) {
     if (team.logoPath.toLowerCase().endsWith('.svg')) {
       return SvgPicture.asset(
         team.logoPath,
         width: size,
         height: size,
         fit: BoxFit.contain,
-        placeholderBuilder: (BuildContext context) => Container( // Fallback for SVG loading issue
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: team.primaryColor.withOpacity(0.1), // Lighter fallback color
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Icon(Icons.broken_image, size: size * 0.6, color: team.primaryColor),
-          )
-        ),
+        placeholderBuilder: (BuildContext context) => _buildFallbackLogo(team, size),
       );
-    } else { // This is for non-SVG images like PNG
+    } else {
+      // Handle PNG and other image formats
       return Image.asset(
         team.logoPath,
         width: size,
         height: size,
         fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) {
-          // Fallback to the current letter-based logo if image fails to load
-          final firstLetter = teamName.isNotEmpty ? teamName[0].toUpperCase() : 'T';
-          return Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              color: team.primaryColor,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 5,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Center(
-              child: Text(
-                firstLetter,
-                style: TextStyle(
-                  color: team.secondaryColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: size * 0.5,
-                ),
-              ),
-            ),
-          );
-        },
+        errorBuilder: (context, error, stackTrace) => _buildFallbackLogo(team, size),
       );
-    } // This closing brace was missing for the 'else' block of the if-svg condition
+    }
+  }
+
+  /// Build a fallback logo when the image fails to load
+  static Widget _buildFallbackLogo(Team team, double size) {
+    final firstLetter = team.name.isNotEmpty ? team.name[0].toUpperCase() : 'T';
+    
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: team.primaryColor,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          firstLetter,
+          style: TextStyle(
+            color: team.secondaryColor,
+            fontWeight: FontWeight.bold,
+            fontSize: size * 0.5,
+          ),
+        ),
+      ),
+    );
   }
 
   /// Returns a widget with both team logos for a game
@@ -192,6 +242,7 @@ class TeamUtils {
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: size * 0.4,
+              color: Colors.grey[600],
             ),
           ),
         ),
@@ -208,5 +259,40 @@ class TeamUtils {
   /// Get the secondary color for a team
   static Color getSecondaryColor(String teamName, {BuildContext? context}) {
     return getTeam(teamName, context: context).secondaryColor;
+  }
+
+  /// Get all available teams
+  static List<Team> getAllTeams({BuildContext? context}) {
+    if (!_isInitialized && context != null) {
+      initialize(context);
+    }
+    return _teams ?? [];
+  }
+
+  /// Add a new team (useful for adding teams with different icons)
+  static void addTeam(Team team) {
+    if (_teams == null) {
+      _teams = [];
+    }
+    
+    // Remove existing team with same ID if it exists
+    _teams!.removeWhere((existingTeam) => existingTeam.id == team.id);
+    
+    // Add the new team
+    _teams!.add(team);
+    
+    debugPrint('Added team: ${team.name} with logo: ${team.logoPath}');
+  }
+
+  /// Check if a team exists
+  static bool teamExists(String teamIdentifier) {
+    if (_teams == null) return false;
+    
+    final identifier = teamIdentifier.toLowerCase().trim();
+    
+    return _teams!.any((team) => 
+      team.id.toLowerCase() == identifier || 
+      team.name.toLowerCase() == identifier
+    );
   }
 }

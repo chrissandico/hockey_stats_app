@@ -61,6 +61,7 @@ void main() async {
     Hive.registerAdapter(GameEventAdapter());
     Hive.registerAdapter(EmailSettingsAdapter());
     Hive.registerAdapter(GameRosterAdapter());
+    Hive.registerAdapter(GoalSituationAdapter());
     
     // Open boxes with error handling
     await _safelyOpenHiveBoxes();

@@ -150,10 +150,10 @@ class SheetsService {
       event.assistPlayer1Id ?? '',
       event.assistPlayer2Id ?? '',
       event.isGoal ?? false,
+      _goalSituationToString(event.goalSituation),
       event.penaltyType ?? '',
       event.penaltyDuration ?? 0,
       event.yourTeamPlayersOnIce?.join(',') ?? '',
-      event.version,
     ];
 
     final Map<String, dynamic> body = {
@@ -290,6 +290,7 @@ class SheetsService {
       event.assistPlayer1Id ?? '',
       event.assistPlayer2Id ?? '',
       event.isGoal ?? false,
+      _goalSituationToString(event.goalSituation),
       event.penaltyType ?? '',
       event.penaltyDuration ?? 0,
       event.yourTeamPlayersOnIce?.join(',') ?? '',
@@ -302,7 +303,7 @@ class SheetsService {
 
     final result = await _makeRequest(
       'POST',
-      'values/Events!A$rowIndex:M$rowIndex?valueInputOption=USER_ENTERED',
+      'values/Events!A$rowIndex:N$rowIndex?valueInputOption=USER_ENTERED',
       body: body,
     );
 
@@ -315,6 +316,32 @@ class SheetsService {
       return true;
     }
     return false;
+  }
+
+  String _goalSituationToString(GoalSituation? goalSituation) {
+    if (goalSituation == null) return '';
+    switch (goalSituation) {
+      case GoalSituation.evenStrength:
+        return 'Even Strength';
+      case GoalSituation.powerPlay:
+        return 'Power Play';
+      case GoalSituation.shortHanded:
+        return 'Short Handed';
+    }
+  }
+
+  GoalSituation? _stringToGoalSituation(String? situationString) {
+    if (situationString == null || situationString.isEmpty) return null;
+    switch (situationString.toLowerCase()) {
+      case 'even strength':
+        return GoalSituation.evenStrength;
+      case 'power play':
+        return GoalSituation.powerPlay;
+      case 'short handed':
+        return GoalSituation.shortHanded;
+      default:
+        return null;
+    }
   }
 
   Future<bool> ensureAuthenticated() async {
@@ -514,7 +541,7 @@ class SheetsService {
       return null;
     }
 
-    final result = await _makeRequest('GET', 'values/Events!A2:M');
+    final result = await _makeRequest('GET', 'values/Events!A2:N');
     if (result == null) return null;
 
     final List<List<dynamic>> values = List<List<dynamic>>.from(result['values'] ?? []);
@@ -574,13 +601,15 @@ class SheetsService {
           
           bool isGoal = row.length > 9 ? (row[9]?.toString().toLowerCase() == 'true') : false;
           
-          String? penaltyType = row.length > 10 ? row[10]?.toString() : null;
+          GoalSituation? goalSituation = row.length > 10 ? _stringToGoalSituation(row[10]?.toString()) : null;
+          
+          String? penaltyType = row.length > 11 ? row[11]?.toString() : null;
           if (penaltyType?.isEmpty ?? true) penaltyType = null;
           
-          int? penaltyDuration = row.length > 11 ? int.tryParse(row[11]?.toString() ?? '') : null;
+          int? penaltyDuration = row.length > 12 ? int.tryParse(row[12]?.toString() ?? '') : null;
           
-          List<String>? playersOnIce = row.length > 12 && row[12]?.toString().isNotEmpty == true 
-              ? row[12].toString().split(',')
+          List<String>? playersOnIce = row.length > 13 && row[13]?.toString().isNotEmpty == true 
+              ? row[13].toString().split(',')
               : null;
 
           if (id.isNotEmpty && gameId.isNotEmpty && (team == 'opponent' || primaryPlayerId.isNotEmpty)) {
@@ -600,6 +629,7 @@ class SheetsService {
               yourTeamPlayersOnIce: playersOnIce,
               isSynced: true,
               version: 1, // Initialize version for events from sheet
+              goalSituation: goalSituation,
             ));
           }
         } catch (e) {

@@ -22,6 +22,7 @@ class _TeamLoginScreenState extends State<TeamLoginScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   bool _rememberPassword = true;
+  bool _isPasswordVisible = false;
 
   @override
   void initState() {
@@ -141,12 +142,22 @@ class _TeamLoginScreenState extends State<TeamLoginScreen> {
                     // Password field
                     TextFormField(
                       controller: _passwordController,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Team Password',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.lock),
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.lock),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _isPasswordVisible = !_isPasswordVisible;
+                            });
+                          },
+                        ),
                       ),
-                      obscureText: true,
+                      obscureText: !_isPasswordVisible,
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'Please enter your team password';

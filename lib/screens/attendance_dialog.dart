@@ -50,8 +50,8 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
     });
   }
 
-  /// Loads all players from the local database, filtering for players on your team
-  /// and excluding goalies. Players are sorted by jersey number.
+  /// Loads all players from the local database, filtering for players on your team.
+  /// Players are sorted by jersey number.
   Future<void> _loadPlayers() async {
     setState(() {
       _isLoadingPlayers = true;
@@ -59,9 +59,9 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
 
     try {
       final playersBox = Hive.box<Player>('players');
-      // Get all players from your team (excluding goalies)
+      // Get all players from your team (including goalies)
       final players = playersBox.values
-          .where((p) => p.teamId == widget.teamId && p.position != 'G')
+          .where((p) => p.teamId == widget.teamId)
           .toList();
 
       // Sort by jersey number
@@ -197,6 +197,12 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
         player.position == 'RD').toList();
   }
 
+  /// Returns a filtered list of players who are goalies (G position).
+  List<Player> _getGoalies() {
+    return _yourTeamPlayers.where((player) =>
+        player.position == 'G').toList();
+  }
+
   /// Builds a grid of player tiles that can be tapped to toggle attendance status.
   /// 
   /// @param players The list of players to display in the grid
@@ -270,7 +276,7 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
     String gameTitle = 'Game Attendance';
     if (_currentGame != null) {
       final dateStr = _currentGame!.date.toLocal().toString().split(' ')[0];
-      gameTitle = 'Attendance: $dateStr vs ${_currentGame!.opponent}';
+      gameTitle = 'Attendance: $dateStr ${_currentGame!.opponent}';
     }
 
     return Dialog(
@@ -323,13 +329,14 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
               child: _isLoadingPlayers
                   ? const Center(child: CircularProgressIndicator())
                   : DefaultTabController(
-                      length: 2,
+                      length: 3,
                       child: Column(
                         children: [
                           const TabBar(
                             tabs: [
                               Tab(text: 'FORWARDS'),
                               Tab(text: 'DEFENSE'),
+                              Tab(text: 'GOALIES'),
                             ],
                             labelColor: Colors.blue,
                             unselectedLabelColor: Colors.grey,
@@ -339,6 +346,7 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
                               children: [
                                 _buildPlayerGrid(_getForwards()),
                                 _buildPlayerGrid(_getDefensemen()),
+                                _buildPlayerGrid(_getGoalies()),
                               ],
                             ),
                           ),

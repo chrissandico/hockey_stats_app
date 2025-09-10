@@ -49,6 +49,7 @@ dependencies:
   googleapis: ^12.0.0 # For direct API access
   flutter_secure_storage: ^9.0.0 # For securely storing team passwords
   dart_jsonwebtoken: ^2.12.1 # For JWT token generation and signing
+  http: ^1.1.0 # For HTTP requests
 
   data_table_2: ^2.5.10 # For advanced data tables with frozen columns/rows
   flutter_svg: ^2.0.10 # For rendering SVG images

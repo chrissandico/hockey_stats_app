@@ -207,6 +207,41 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     return defensemen;
   }
   
+  List<Player> _getAllSkaters() {
+    // Get forwards and sort by jersey number
+    final forwards = _yourTeamPlayers.where((player) => 
+      player.position == 'C' || 
+      player.position == 'LW' || 
+      player.position == 'RW' ||
+      player.position == 'F'
+    ).toList();
+    forwards.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    
+    // Get defensemen and sort by jersey number
+    final defensemen = _yourTeamPlayers.where((player) => 
+      player.position == 'D' || 
+      player.position == 'LD' || 
+      player.position == 'RD'
+    ).toList();
+    defensemen.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    
+    // Combine with forwards first, then defensemen
+    return [...forwards, ...defensemen];
+  }
+  
+  bool _isForward(Player player) {
+    return player.position == 'C' || 
+           player.position == 'LW' || 
+           player.position == 'RW' ||
+           player.position == 'F';
+  }
+  
+  bool _isDefenseman(Player player) {
+    return player.position == 'D' || 
+           player.position == 'LD' || 
+           player.position == 'RD';
+  }
+  
   void _togglePlayerOnIce(Player player) {
     // Don't allow selecting absent players
     if (_isPlayerAbsent(player)) {
@@ -878,32 +913,9 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
               ),
             )
           else
-            DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  const TabBar(
-                    tabs: [
-                      Tab(text: 'FORWARDS'),
-                      Tab(text: 'DEFENSE'),
-                    ],
-                    labelColor: Colors.blue,
-                    unselectedLabelColor: Colors.grey,
-                  ),
-                  SizedBox(
-                    height: 200, // Increased height for better visibility
-                    child: TabBarView(
-                      children: [
-                        // Forwards Tab
-                        _buildPlayerGrid(_getForwards()),
-                        
-                        // Defense Tab
-                        _buildPlayerGrid(_getDefensemen()),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            SizedBox(
+              height: 250, // Increased height to accommodate all players
+              child: _buildPlayerGrid(_getAllSkaters()),
             ),
         ],
       ),
@@ -927,6 +939,8 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 final player = players[index];
                 final isSelected = _selectedPlayersOnIce.contains(player);
                 final isAbsent = _isPlayerAbsent(player);
+                final isForward = _isForward(player);
+                final positionLabel = isForward ? 'F' : 'D';
                 
                 return InkWell(
                   onTap: isAbsent ? null : () => _togglePlayerOnIce(player),
@@ -953,13 +967,35 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                           child: Text(
                             '#${player.jerseyNumber}',
                             style: TextStyle(
-                              fontSize: 20, // Slightly larger font size for better visibility
+                              fontSize: 18, // Slightly smaller to make room for position badge
                               fontWeight: FontWeight.bold,
                               color: isAbsent 
                                   ? Colors.grey 
                                   : isSelected 
                                       ? Colors.blue 
                                       : Colors.black87,
+                            ),
+                          ),
+                        ),
+                        // Position indicator badge
+                        Positioned(
+                          top: 2,
+                          left: 2,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isForward 
+                                  ? Colors.orange.withOpacity(0.8) 
+                                  : Colors.green.withOpacity(0.8),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              positionLabel,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),

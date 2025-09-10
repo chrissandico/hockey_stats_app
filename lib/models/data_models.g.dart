@@ -65,13 +65,14 @@ class GameAdapter extends TypeAdapter<Game> {
       opponent: fields[2] as String,
       location: fields[3] as String?,
       teamId: fields[4] as String,
+      version: fields[5] as int,
     );
   }
 
   @override
   void write(BinaryWriter writer, Game obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -81,7 +82,9 @@ class GameAdapter extends TypeAdapter<Game> {
       ..writeByte(3)
       ..write(obj.location)
       ..writeByte(4)
-      ..write(obj.teamId);
+      ..write(obj.teamId)
+      ..writeByte(5)
+      ..write(obj.version);
   }
 
   @override
@@ -121,13 +124,14 @@ class GameEventAdapter extends TypeAdapter<GameEvent> {
       yourTeamPlayersOnIce: (fields[12] as List?)?.cast<String>(),
       isSynced: fields[13] as bool,
       version: fields[14] as int?,
+      goalSituation: fields[15] as GoalSituation?,
     );
   }
 
   @override
   void write(BinaryWriter writer, GameEvent obj) {
     writer
-      ..writeByte(15)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -157,7 +161,9 @@ class GameEventAdapter extends TypeAdapter<GameEvent> {
       ..writeByte(13)
       ..write(obj.isSynced)
       ..writeByte(14)
-      ..write(obj.version);
+      ..write(obj.version)
+      ..writeByte(15)
+      ..write(obj.goalSituation);
   }
 
   @override
@@ -250,6 +256,50 @@ class GameRosterAdapter extends TypeAdapter<GameRoster> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is GameRosterAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class GoalSituationAdapter extends TypeAdapter<GoalSituation> {
+  @override
+  final int typeId = 5;
+
+  @override
+  GoalSituation read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return GoalSituation.evenStrength;
+      case 1:
+        return GoalSituation.powerPlay;
+      case 2:
+        return GoalSituation.shortHanded;
+      default:
+        return GoalSituation.evenStrength;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, GoalSituation obj) {
+    switch (obj) {
+      case GoalSituation.evenStrength:
+        writer.writeByte(0);
+        break;
+      case GoalSituation.powerPlay:
+        writer.writeByte(1);
+        break;
+      case GoalSituation.shortHanded:
+        writer.writeByte(2);
+        break;
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GoalSituationAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

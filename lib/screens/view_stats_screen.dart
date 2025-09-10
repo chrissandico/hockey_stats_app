@@ -234,6 +234,12 @@ int calculatePlusMinus(Player player, List<GameEvent> gameEvents, String teamId)
     if (event.eventType == 'Shot' && event.isGoal == true) {
       bool playerWasOnIce = false;
 
+      // Check for special situations - power-play goals don't affect +/-
+      if (event.goalSituation == GoalSituation.powerPlay) {
+        // Power-play goals: No +/- for anyone (scoring team has advantage)
+        continue;
+      }
+
       if (event.team == teamId) {
         // For your team's goals, check players on ice or involvement in the play
         if (event.yourTeamPlayersOnIce != null && event.yourTeamPlayersOnIce!.isNotEmpty) {

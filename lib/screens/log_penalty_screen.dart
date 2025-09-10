@@ -44,6 +44,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
 
   // List of common penalty types
   final List<String> _commonPenaltyTypes = [
+    'Unknown',
     'Tripping',
     'Hooking',
     'Slashing',
@@ -180,10 +181,10 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
   bool _isLogging = false;
 
   Future<void> _logPenalty() async {
-    if (_selectedPlayer == null || _penaltyType == null || _penaltyType!.isEmpty || _penaltyDuration == null || _penaltyDuration! <= 0) {
+    if (_selectedPlayer == null || _penaltyDuration == null || _penaltyDuration! <= 0) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in all penalty details correctly.')),
+        const SnackBar(content: Text('Please select a player and enter penalty duration.')),
       );
       return;
     }
@@ -192,6 +193,9 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
     setState(() { _isLogging = true; });
 
     try {
+      // If penalty type is null or empty, set it to "Unknown"
+      String finalPenaltyType = (_penaltyType == null || _penaltyType!.isEmpty) ? 'Unknown' : _penaltyType!;
+      
       final newPenaltyEvent = GameEvent(
         id: uuid.v4(),
         gameId: widget.gameId,
@@ -200,7 +204,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
         eventType: 'Penalty',
         team: widget.teamId, // Use the authenticated team's ID
         primaryPlayerId: _selectedPlayer!.id,
-        penaltyType: _penaltyType,
+        penaltyType: finalPenaltyType,
         penaltyDuration: _penaltyDuration,
         isSynced: false,
       );
@@ -374,7 +378,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
 
                 // Penalty Type Selection (Dropdown with common types)
                 DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(labelText: 'Penalty Type'),
+                  decoration: const InputDecoration(labelText: 'Penalty Type (Optional)'),
                   value: _penaltyType,
                   items: _commonPenaltyTypes.map((String type) {
                     return DropdownMenuItem<String>(

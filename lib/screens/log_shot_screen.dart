@@ -5,6 +5,7 @@ import 'package:hockey_stats_app/screens/view_stats_screen.dart';
 import 'package:uuid/uuid.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
+import 'package:hockey_stats_app/widgets/goal_situation_dialog.dart';
 
 class LogShotScreen extends StatefulWidget {
   final String gameId;
@@ -81,9 +82,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
     if (widget.eventIdToEdit != null) {
       _loadEventForEditing();
     } else {
-      if (_playersForTeam.isNotEmpty) {
-        _selectedShooter = _playersForTeam.first;
-      }
+      _selectedShooter = null;
       _selectedAssist1 = null;
       _selectedAssist2 = null;
     }
@@ -92,12 +91,29 @@ class _LogShotScreenState extends State<LogShotScreen> {
   void _loadPlayers() {
     final playersBox = Hive.box<Player>('players');
     // Filter out goalies (players with position "G")
-    _yourTeamPlayers = playersBox.values
+    final allSkaters = playersBox.values
         .where((p) => p.teamId == widget.teamId && p.position != 'G')
         .toList();
     
-    // Sort players by jersey number
-    _yourTeamPlayers.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    // Get forwards and sort by jersey number
+    final forwards = allSkaters.where((player) => 
+      player.position == 'C' || 
+      player.position == 'LW' || 
+      player.position == 'RW' ||
+      player.position == 'F'
+    ).toList();
+    forwards.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    
+    // Get defensemen and sort by jersey number
+    final defensemen = allSkaters.where((player) => 
+      player.position == 'D' || 
+      player.position == 'LD' || 
+      player.position == 'RD'
+    ).toList();
+    defensemen.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    
+    // Combine with forwards first, then defensemen
+    _yourTeamPlayers = [...forwards, ...defensemen];
   }
   
   // Load attendance data for the current game
@@ -132,6 +148,20 @@ class _LogShotScreenState extends State<LogShotScreen> {
   // Check if a player is absent
   bool _isPlayerAbsent(Player player) {
     return _absentPlayerIds.contains(player.id);
+  }
+  
+  // Helper methods for position detection
+  bool _isForward(Player player) {
+    return player.position == 'C' || 
+           player.position == 'LW' || 
+           player.position == 'RW' ||
+           player.position == 'F';
+  }
+  
+  bool _isDefenseman(Player player) {
+    return player.position == 'D' || 
+           player.position == 'LD' || 
+           player.position == 'RD';
   }
 
   void _filterPlayersByTeam() {
@@ -204,16 +234,38 @@ class _LogShotScreenState extends State<LogShotScreen> {
       return;
     }
     
-    // Validate that exactly 5 players are on ice for a goal
-    if (_isGoal && _selectedYourTeamPlayersOnIce.length != 5) {
+    // Validate player count for goals (3-5 players allowed)
+    if (_isGoal && (_selectedYourTeamPlayersOnIce.length < 3 || _selectedYourTeamPlayersOnIce.length > 5)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('You must select exactly 5 players on ice for a goal.'),
+          content: Text('You must select between 3-5 players on ice for a goal.'),
           duration: Duration(seconds: 3),
         ),
       );
       return;
+    }
+
+    // Check for special situations and show confirmation dialog
+    if (_isGoal && _selectedYourTeamPlayersOnIce.length < 5) {
+      final detectedSituation = _detectGoalSituation(_selectedYourTeamPlayersOnIce.length);
+      
+      bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return GoalSituationDialog(
+            playerCount: _selectedYourTeamPlayersOnIce.length,
+            detectedSituation: detectedSituation,
+            onConfirm: () => Navigator.of(context).pop(true),
+            onCancel: () => Navigator.of(context).pop(false),
+          );
+        },
+      );
+      
+      if (confirmed != true) {
+        setState(() { _isLogging = false; });
+        return;
+      }
     }
 
     setState(() { _isLogging = true; });
@@ -234,6 +286,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
         _eventBeingEdited!.isGoal = _isGoal;
         _eventBeingEdited!.isSynced = false;
         _eventBeingEdited!.yourTeamPlayersOnIce = _isGoal ? _getPlayersOnIceIds() : null;
+        _eventBeingEdited!.goalSituation = _isGoal ? _detectGoalSituation(_selectedYourTeamPlayersOnIce.length) : null;
         
         print('  IsGoal after: ${_eventBeingEdited!.isGoal}');
         
@@ -298,6 +351,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
           isGoal: _isGoal,
           isSynced: false,
           yourTeamPlayersOnIce: _isGoal ? _getPlayersOnIceIds() : null,
+          goalSituation: _isGoal ? _detectGoalSituation(_selectedYourTeamPlayersOnIce.length) : null,
         );
         
         eventToProcess = newShotEvent;
@@ -359,6 +413,18 @@ class _LogShotScreenState extends State<LogShotScreen> {
 
   List<String> _getPlayersOnIceIds() {
     return _selectedYourTeamPlayersOnIce.map((player) => player.id).toList();
+  }
+
+  GoalSituation _detectGoalSituation(int playerCount) {
+    switch (playerCount) {
+      case 3:
+        return GoalSituation.shortHanded;
+      case 4:
+        return GoalSituation.powerPlay;
+      case 5:
+      default:
+        return GoalSituation.evenStrength;
+    }
   }
 
   void _selectPlayersOnIce() async {
@@ -903,6 +969,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
                               final isShooter = _selectedShooter == player;
                               final isAssist = _selectedAssist1 == player;
                               final isAbsent = _isPlayerAbsent(player);
+                              final isForward = _isForward(player);
+                              final positionLabel = isForward ? 'F' : 'D';
                               
                               return InkWell(
                                 onTap: () => _showPlayerRoleDialog(player),
@@ -921,9 +989,31 @@ class _LogShotScreenState extends State<LogShotScreen> {
                                         child: Text(
                                           '#${player.jerseyNumber}',
                                           style: TextStyle(
-                                            fontSize: 18,
+                                            fontSize: 16, // Slightly smaller to make room for position badge
                                             fontWeight: FontWeight.bold,
                                             color: _getPlayerTextColor(isOnIce, isShooter, isAssist, isAbsent),
+                                          ),
+                                        ),
+                                      ),
+                                      // Position indicator badge
+                                      Positioned(
+                                        top: 2,
+                                        left: 2,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: isForward 
+                                                ? Colors.orange.withOpacity(0.8) 
+                                                : Colors.green.withOpacity(0.8),
+                                            borderRadius: BorderRadius.circular(3),
+                                          ),
+                                          child: Text(
+                                            positionLabel,
+                                            style: const TextStyle(
+                                              fontSize: 8,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -949,11 +1039,11 @@ class _LogShotScreenState extends State<LogShotScreen> {
                                         ),
                                       if (isAbsent)
                                         const Positioned(
-                                          top: 2,
+                                          bottom: 2,
                                           left: 2,
                                           child: Icon(
                                             Icons.person_off,
-                                            size: 14,
+                                            size: 12,
                                             color: Colors.grey,
                                           ),
                                         ),

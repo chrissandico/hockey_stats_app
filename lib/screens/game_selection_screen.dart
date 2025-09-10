@@ -96,10 +96,35 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     // This method doesn't call setState directly.
     // The calling method (_initializeScreen or after add/edit/delete) is responsible for setState.
     
-    // Filter games by the current team ID
+    // Filter games by the current team ID and sort by date proximity to today
     availableGames = gamesBox.values
         .where((game) => game.teamId == widget.teamId)
-        .toList();
+        .toList()
+        ..sort((a, b) {
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+          final dateA = DateTime(a.date.year, a.date.month, a.date.day);
+          final dateB = DateTime(b.date.year, b.date.month, b.date.day);
+          
+          final diffA = dateA.difference(today).inDays;
+          final diffB = dateB.difference(today).inDays;
+          
+          // Prioritize games happening today or in the future
+          if (diffA >= 0 && diffB < 0) return -1; // A is today/future, B is past
+          if (diffA < 0 && diffB >= 0) return 1;  // A is past, B is today/future
+          
+          // If both are in the same category (past or future/today), sort by proximity
+          final absDiffA = diffA.abs();
+          final absDiffB = diffB.abs();
+          
+          if (absDiffA == absDiffB) {
+            // If equidistant, prioritize future games over past games
+            return diffA.compareTo(diffB);
+          }
+          
+          return absDiffA.compareTo(absDiffB);
+        });
+        
     if (availableGames.isNotEmpty && _selectedGame == null) {
       _selectedGame = availableGames.first;
     } else if (availableGames.isEmpty) {
@@ -376,7 +401,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Delete Game'), // const added
-          content: Text('Are you sure you want to delete the game on ${game.date.toLocal().toString().split(' ')[0]} vs ${game.opponent}?'),
+          content: Text('Are you sure you want to delete the game on ${game.date.toLocal().toString().split(' ')[0]} ${game.opponent}?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -833,7 +858,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
                 itemCount: availableGames.length,
                 itemBuilder: (BuildContext context, int index) {
                   final game = availableGames[index];
-                  final gameTitle = '${game.date.toLocal().toString().split(' ')[0]} vs ${game.opponent}';
+                  final gameTitle = '${game.date.toLocal().toString().split(' ')[0]} ${game.opponent}';
                   final isSelected = _selectedGame?.id == game.id;
                   
                   return Card(

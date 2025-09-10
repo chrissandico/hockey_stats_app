@@ -2,6 +2,18 @@ import 'package:hive/hive.dart';
 
 part 'data_models.g.dart';
 
+@HiveType(typeId: 5)
+enum GoalSituation {
+  @HiveField(0)
+  evenStrength,
+  
+  @HiveField(1)
+  powerPlay,
+  
+  @HiveField(2)
+  shortHanded,
+}
+
 @HiveType(typeId: 0)
 class Player extends HiveObject {
   @HiveField(0)
@@ -144,6 +156,9 @@ class GameEvent extends HiveObject {
   @HiveField(14)
   int version = 1;
 
+  @HiveField(15)
+  GoalSituation? goalSituation;
+
   GameEvent({
     required this.id,
     required this.gameId,
@@ -160,6 +175,7 @@ class GameEvent extends HiveObject {
     this.yourTeamPlayersOnIce,
     this.isSynced = false,
     int? version,
+    this.goalSituation,
   }) : version = version ?? 1 {
     this.isGoal = isGoal ?? false;
   }

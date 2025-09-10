@@ -32,7 +32,24 @@ class ServiceAccountAuth {
     try {
       // Load the service account JSON file
       final String serviceAccountJson = await rootBundle.loadString(_serviceAccountPath);
+      
+      if (serviceAccountJson.isEmpty) {
+        throw Exception('Service account file is empty: $_serviceAccountPath');
+      }
+      
       _serviceAccountData = json.decode(serviceAccountJson);
+      
+      if (_serviceAccountData == null || _serviceAccountData!.isEmpty) {
+        throw Exception('Service account data is invalid or empty');
+      }
+      
+      // Validate required fields
+      final requiredFields = ['client_email', 'private_key', 'project_id'];
+      for (final field in requiredFields) {
+        if (_serviceAccountData![field] == null || _serviceAccountData![field].toString().isEmpty) {
+          throw Exception('Missing required field in service account: $field');
+        }
+      }
       
       // Create a basic HTTP client
       _client = http.Client();
@@ -43,6 +60,8 @@ class ServiceAccountAuth {
       print('Service account authentication initialized successfully');
     } catch (e) {
       print('Error initializing service account authentication: $e');
+      print('Service account path: $_serviceAccountPath');
+      print('Make sure the service account JSON file exists and contains valid credentials');
       rethrow;
     }
   }
