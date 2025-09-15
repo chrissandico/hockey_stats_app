@@ -7,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
+import 'package:hockey_stats_app/widgets/share_dialog.dart';
 
 Map<String, int> _calculateScore(List<GameEvent> events, String teamId) {
   print('Calculating score from ${events.length} events');
@@ -558,6 +559,33 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
               },
             ),
             IconButton(
+              icon: const Icon(Icons.share),
+              tooltip: 'Share Game Stats',
+              onPressed: () async {
+                if (_currentGame == null) return;
+
+                final playersBox = Hive.box<Player>('players');
+                final players = playersBox.values.where((player) => player.teamId == widget.teamId).toList();
+
+                final gameEventsBox = Hive.box<GameEvent>('gameEvents');
+                final gameEvents = gameEventsBox.values
+                    .where((event) => event.gameId == widget.gameId)
+                    .toList();
+
+                if (mounted) {
+                  await showDialog(
+                    context: context,
+                    builder: (context) => ShareDialog(
+                      players: players,
+                      gameEvents: gameEvents,
+                      game: _currentGame!,
+                      teamId: widget.teamId,
+                    ),
+                  );
+                }
+              },
+            ),
+            IconButton(
               icon: const Icon(Icons.bar_chart),
               tooltip: 'View Stats',
               onPressed: () {
@@ -728,51 +756,50 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             builder: (context, Box<GameEvent> box, _) {
                               final gameEvents = box.values.where((event) => event.gameId == widget.gameId).toList();
                               
-                              print('Calculating shots for game ${widget.gameId}');
+                              // Filter shot events
+                              final shotEvents = gameEvents.where((event) => event.eventType == 'Shot').toList();
                               
-                              final yourTeamShots = gameEvents.where((event) => 
-                                event.eventType == 'Shot' && 
-                                event.team == widget.teamId
-                              ).length;
-                              
-                              final opponentShots = gameEvents.where((event) => 
-                                event.eventType == 'Shot' && 
-                                event.team == 'opponent'
-                              ).length;
-                              
-                              for (var event in gameEvents.where((e) => e.eventType == 'Shot')) {
-                                print('Shot Event:');
-                                print('  ID: ${event.id}');
-                                print('  Team: ${event.team}');
-                                print('  IsGoal: ${event.isGoal}');
-                              }
-                              
-                              print('Shot totals - Your Team: $yourTeamShots, Opponent: $opponentShots');
+                              // Calculate shots on goal (includes goals)
+                              final yourTeamShots = shotEvents.where((event) => event.team == widget.teamId).length;
+                              final opponentShots = shotEvents.where((event) => event.team == 'opponent').length;
 
-                              return Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
+                              return Column(
                                 children: [
-                                  Text(
-                                    '$yourTeamShots',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        '$yourTeamShots',
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue,
+                                        ),
+                                      ),
+                                      const Text(
+                                        ' shots ',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      Text(
+                                        '$opponentShots',
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.red,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const Text(
-                                    ' shots ',
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Shots on Goal (includes goals)',
                                     style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    '$opponentShots',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.red,
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                      fontStyle: FontStyle.italic,
                                     ),
                                   ),
                                 ],

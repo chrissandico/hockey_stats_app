@@ -9,12 +9,14 @@ class LogPenaltyScreen extends StatefulWidget {
   final String gameId;
   final int period; // Add period parameter
   final String teamId;
+  final String? eventIdToEdit; // Add optional parameter for editing
 
   const LogPenaltyScreen({
     super.key, 
     required this.gameId,
     required this.period,
     required this.teamId,
+    this.eventIdToEdit, // Optional parameter for editing existing penalty
   });
 
   @override
@@ -74,6 +76,42 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
     playersBox = Hive.box<Player>('players');
     _sheetsService = SheetsService(); // Initialize service
     _loadPlayers();
+    
+    // If editing an existing penalty, load its data
+    if (widget.eventIdToEdit != null) {
+      _loadExistingPenaltyData();
+    }
+  }
+
+  void _loadExistingPenaltyData() {
+    try {
+      final existingEvent = gameEventsBox.get(widget.eventIdToEdit!);
+      if (existingEvent != null && existingEvent.eventType == 'Penalty') {
+        setState(() {
+          _selectedPeriod = existingEvent.period;
+          _penaltyType = existingEvent.penaltyType;
+          _penaltyDuration = existingEvent.penaltyDuration;
+          
+          // Find and select the player
+          if (existingEvent.primaryPlayerId.isNotEmpty) {
+            _selectedPlayer = playersBox.values
+                .where((p) => p.teamId == widget.teamId)
+                .firstWhere(
+                  (p) => p.id == existingEvent.primaryPlayerId,
+                  orElse: () => Player(id: '', jerseyNumber: 0, teamId: ''),
+                );
+            
+            // If player not found, set to null
+            if (_selectedPlayer?.id.isEmpty ?? true) {
+              _selectedPlayer = null;
+            }
+          }
+        });
+        print('Loaded existing penalty data for editing: ${existingEvent.id}');
+      }
+    } catch (e) {
+      print('Error loading existing penalty data: $e');
+    }
   }
 
   void _loadPlayers() {
@@ -196,36 +234,67 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       // If penalty type is null or empty, set it to "Unknown"
       String finalPenaltyType = (_penaltyType == null || _penaltyType!.isEmpty) ? 'Unknown' : _penaltyType!;
       
-      final newPenaltyEvent = GameEvent(
-        id: uuid.v4(),
-        gameId: widget.gameId,
-        timestamp: DateTime.now(),
-        period: _selectedPeriod,
-        eventType: 'Penalty',
-        team: widget.teamId, // Use the authenticated team's ID
-        primaryPlayerId: _selectedPlayer!.id,
-        penaltyType: finalPenaltyType,
-        penaltyDuration: _penaltyDuration,
-        isSynced: false,
-      );
+      final bool isEditing = widget.eventIdToEdit != null;
+      GameEvent penaltyEvent;
+      
+      if (isEditing) {
+        // Update existing penalty
+        final existingEvent = gameEventsBox.get(widget.eventIdToEdit!);
+        if (existingEvent == null) {
+          throw Exception('Event to edit not found');
+        }
+        
+        penaltyEvent = GameEvent(
+          id: existingEvent.id, // Keep the same ID
+          gameId: widget.gameId,
+          timestamp: existingEvent.timestamp, // Keep original timestamp
+          period: _selectedPeriod,
+          eventType: 'Penalty',
+          team: widget.teamId,
+          primaryPlayerId: _selectedPlayer!.id,
+          penaltyType: finalPenaltyType,
+          penaltyDuration: _penaltyDuration,
+          isSynced: false, // Mark as needing sync since we modified it
+          version: (existingEvent.version ?? 1) + 1, // Increment version
+        );
+      } else {
+        // Create new penalty
+        penaltyEvent = GameEvent(
+          id: uuid.v4(),
+          gameId: widget.gameId,
+          timestamp: DateTime.now(),
+          period: _selectedPeriod,
+          eventType: 'Penalty',
+          team: widget.teamId,
+          primaryPlayerId: _selectedPlayer!.id,
+          penaltyType: finalPenaltyType,
+          penaltyDuration: _penaltyDuration,
+          isSynced: false,
+        );
+      }
 
       // Save to Hive
-      await gameEventsBox.put(newPenaltyEvent.id, newPenaltyEvent);
+      await gameEventsBox.put(penaltyEvent.id, penaltyEvent);
 
       // Attempt sync to Google Sheets and wait for result
       bool syncSuccess = false;
       String syncError = '';
       try {
-        syncSuccess = await _sheetsService.syncGameEvent(newPenaltyEvent);
+        if (isEditing) {
+          syncSuccess = await _sheetsService.updateEventInSheet(penaltyEvent);
+        } else {
+          syncSuccess = await _sheetsService.syncGameEvent(penaltyEvent);
+        }
+        
         if (syncSuccess) {
-          print("Penalty event ${newPenaltyEvent.id} synced successfully.");
+          print("Penalty event ${penaltyEvent.id} ${isEditing ? 'updated' : 'synced'} successfully.");
         } else {
           syncError = "Sync failed - please try again later.";
-          print("Penalty event ${newPenaltyEvent.id} sync failed.");
+          print("Penalty event ${penaltyEvent.id} sync failed.");
         }
       } catch (error) {
         syncError = error.toString();
-        print("Error during sync for penalty event ${newPenaltyEvent.id}: $error");
+        print("Error during sync for penalty event ${penaltyEvent.id}: $error");
       }
 
       // If all operations are successful
@@ -233,16 +302,18 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
 
       if (syncSuccess) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Penalty logged and synced for #${_selectedPlayer!.jerseyNumber}.')),
+          SnackBar(content: Text('Penalty ${isEditing ? 'updated' : 'logged'} and synced for #${_selectedPlayer!.jerseyNumber}.')),
         );
 
-        // Clear the form
-        setState(() {
-          _selectedPlayer = null;
-          _penaltyType = null;
-          _penaltyDuration = null;
-          _isLogging = false;
-        });
+        // Clear the form only if creating new penalty
+        if (!isEditing) {
+          setState(() {
+            _selectedPlayer = null;
+            _penaltyType = null;
+            _penaltyDuration = null;
+            _isLogging = false;
+          });
+        }
         
         // Navigate back
         Navigator.pop(context, _selectedPeriod);
@@ -251,7 +322,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
           Navigator.pop(context, _selectedPeriod);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Penalty saved locally - will sync when online'),
+              content: Text('Penalty ${isEditing ? 'updated' : 'saved'} locally - will sync when online'),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -261,7 +332,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error logging penalty: ${e.toString()}')),
+        SnackBar(content: Text('Error ${widget.eventIdToEdit != null ? 'updating' : 'logging'} penalty: ${e.toString()}')),
       );
       print('Error in _logPenalty: $e');
       setState(() { _isLogging = false; });
@@ -277,7 +348,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Log Penalty'),
+          title: Text(widget.eventIdToEdit != null ? 'Edit Penalty' : 'Log Penalty'),
           // The default back button in AppBar will trigger onWillPop.
           actions: [ // Ensure actions is part of AppBar
             IconButton(
@@ -409,26 +480,32 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
                 ),
                 const SizedBox(height: 24.0),
 
-                // Log Penalty Button with loading state
+                // Log/Update Penalty Button with loading state
                 ElevatedButton(
                   onPressed: _isLogging ? null : _logPenalty,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16.0),
                   ),
                   child: _isLogging
-                    ? const Row(
+                    ? Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          SizedBox(
+                          const SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
-                          SizedBox(width: 10),
-                          Text('Logging...', style: TextStyle(fontSize: 16)),
+                          const SizedBox(width: 10),
+                          Text(
+                            widget.eventIdToEdit != null ? 'Updating...' : 'Logging...',
+                            style: const TextStyle(fontSize: 16),
+                          ),
                         ],
                       )
-                    : const Text('Log Penalty', style: TextStyle(fontSize: 16)),
+                    : Text(
+                        widget.eventIdToEdit != null ? 'Update Penalty' : 'Log Penalty',
+                        style: const TextStyle(fontSize: 16),
+                      ),
                 ),
               ],
             ),

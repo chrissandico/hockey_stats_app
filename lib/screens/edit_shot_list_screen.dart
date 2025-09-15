@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/screens/log_shot_screen.dart';
+import 'package:hockey_stats_app/screens/log_penalty_screen.dart';
+import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:intl/intl.dart'; // For date formatting
 
 class EditShotListScreen extends StatefulWidget {
@@ -17,7 +19,7 @@ class EditShotListScreen extends StatefulWidget {
 class _EditShotListScreenState extends State<EditShotListScreen> {
   late Box<GameEvent> gameEventsBox;
   late Box<Player> playersBox;
-  List<GameEvent> shotEvents = [];
+  List<GameEvent> gameEvents = [];
   bool isLoading = true;
 
   @override
@@ -25,34 +27,45 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
     super.initState();
     gameEventsBox = Hive.box<GameEvent>('gameEvents');
     playersBox = Hive.box<Player>('players');
-    _loadShotEvents();
+    _loadGameEvents();
   }
 
-  void _loadShotEvents() {
+  void _loadGameEvents() {
     setState(() {
       isLoading = true;
     });
 
-    // Get all shot events for this game
-    shotEvents = gameEventsBox.values
-        .where((event) => event.gameId == widget.gameId && event.eventType == 'Shot')
+    // Get all shot and penalty events for this game
+    gameEvents = gameEventsBox.values
+        .where((event) => 
+          event.gameId == widget.gameId && 
+          (event.eventType == 'Shot' || event.eventType == 'Penalty'))
         .toList();
 
     // Sort by timestamp, most recent first
-    shotEvents.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    gameEvents.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
     setState(() {
       isLoading = false;
     });
   }
 
-  // Helper method to get player jersey number from ID
-  String _getPlayerJerseyNumber(String playerId) {
+  // Helper method to get player display text
+  String _getPlayerDisplayText(String playerId, bool isYourTeam) {
+    if (!isYourTeam) {
+      return 'Opponent';
+    }
+    
+    // Handle empty or null player IDs for your team
+    if (playerId.isEmpty) {
+      return 'Team Event';
+    }
+    
     try {
       final player = playersBox.values.firstWhere((p) => p.id == playerId);
       return '#${player.jerseyNumber}';
     } catch (e) {
-      return 'Unknown';
+      return 'Unknown Player';
     }
   }
 
@@ -66,73 +79,179 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
     return period == 4 ? 'OT' : 'P$period';
   }
 
+  // Delete event with confirmation
+  Future<void> _deleteEvent(GameEvent event) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Event'),
+        content: Text('Are you sure you want to delete this ${event.eventType.toLowerCase()}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // Delete from local database
+        await event.delete();
+        
+        // Refresh the list
+        _loadGameEvents();
+        
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${event.eventType} deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        // Show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting ${event.eventType.toLowerCase()}: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Logged Shots'),
+        title: const Text('Edit Game Events'),
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : shotEvents.isEmpty
-              ? const Center(child: Text('No shots logged for this game yet.'))
+          : gameEvents.isEmpty
+              ? const Center(child: Text('No events logged for this game yet.'))
               : ListView.builder(
-                  itemCount: shotEvents.length,
+                  itemCount: gameEvents.length,
                   itemBuilder: (context, index) {
-                    final event = shotEvents[index];
+                    final event = gameEvents[index];
+                    final isShot = event.eventType == 'Shot';
+                    final isPenalty = event.eventType == 'Penalty';
                     final isGoal = event.isGoal ?? false;
                     final isYourTeam = event.team == widget.teamId;
                     
-                    // Determine shooter display text
-                    String shooterText = isYourTeam 
-                        ? _getPlayerJerseyNumber(event.primaryPlayerId)
-                        : 'opponent';
+                    // Determine event display text
+                    String eventTypeText = '';
+                    String playerText = _getPlayerDisplayText(event.primaryPlayerId, isYourTeam);
+                    String detailText = '';
                     
-                    // Determine assist display text if applicable
-                    String assistText = '';
-                    if (isGoal && isYourTeam && event.assistPlayer1Id != null) {
-                      assistText = ' (Assist: ${_getPlayerJerseyNumber(event.assistPlayer1Id!)})';
+                    if (isShot) {
+                      eventTypeText = isGoal ? 'Goal' : 'Shot';
+                      if (isGoal && isYourTeam && event.assistPlayer1Id != null && event.assistPlayer1Id!.isNotEmpty) {
+                        detailText = ' (Assist: ${_getPlayerDisplayText(event.assistPlayer1Id!, true)})';
+                      }
+                    } else if (isPenalty) {
+                      eventTypeText = 'Penalty';
+                      if (event.penaltyType != null && event.penaltyType!.isNotEmpty) {
+                        detailText = ' - ${event.penaltyType}';
+                        if (event.penaltyDuration != null && event.penaltyDuration! > 0) {
+                          detailText += ' (${event.penaltyDuration} min)';
+                        }
+                      }
+                    }
+
+                    // Choose icon and color based on event type and team
+                    IconData iconData;
+                    Color backgroundColor;
+                    
+                    if (isShot) {
+                      iconData = isGoal ? Icons.sports_score : Icons.sports_hockey;
+                      backgroundColor = isGoal ? Colors.green : Colors.blue;
+                    } else {
+                      iconData = Icons.warning;
+                      backgroundColor = Colors.orange;
+                    }
+                    
+                    // Add team color distinction
+                    if (!isYourTeam) {
+                      backgroundColor = backgroundColor.withOpacity(0.6);
                     }
 
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: isGoal ? Colors.green : Colors.blue,
+                          backgroundColor: backgroundColor,
                           child: Icon(
-                            isGoal ? Icons.sports_score : Icons.sports_hockey,
+                            iconData,
                             color: Colors.white,
                           ),
                         ),
                         title: Text(
-                          '${isGoal ? "Goal" : "Shot"} by $shooterText$assistText',
+                          '$eventTypeText by $playerText$detailText',
                           style: TextStyle(
-                            fontWeight: isGoal ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: (isGoal || isPenalty) ? FontWeight.bold : FontWeight.normal,
                           ),
                         ),
                         subtitle: Text(
-                          '${_getPeriodText(event.period)} - ${_formatTimestamp(event.timestamp)}',
+                          '${_getPeriodText(event.period)} - ${_formatTimestamp(event.timestamp)}${isYourTeam ? '' : ' (Opponent)'}',
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.edit),
-                          tooltip: 'Edit Shot',
-                          onPressed: () {
-                            // Navigate to LogShotScreen in edit mode
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => LogShotScreen(
-                                  gameId: widget.gameId,
-                                  period: event.period,
-                                  teamId: widget.teamId,
-                                  eventIdToEdit: event.id,
-                                ),
-                              ),
-                            ).then((_) {
-                              // Refresh the list when returning from edit screen
-                              _loadShotEvents();
-                            });
-                          },
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit),
+                              tooltip: isShot ? 'Edit Shot' : 'Edit Penalty',
+                              onPressed: () {
+                                // Navigate to appropriate edit screen
+                                if (isShot) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => LogShotScreen(
+                                        gameId: widget.gameId,
+                                        period: event.period,
+                                        teamId: widget.teamId,
+                                        eventIdToEdit: event.id,
+                                      ),
+                                    ),
+                                  ).then((_) {
+                                    _loadGameEvents();
+                                  });
+                                } else if (isPenalty) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => LogPenaltyScreen(
+                                        gameId: widget.gameId,
+                                        period: event.period,
+                                        teamId: widget.teamId,
+                                        eventIdToEdit: event.id,
+                                      ),
+                                    ),
+                                  ).then((_) {
+                                    _loadGameEvents();
+                                  });
+                                }
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete),
+                              tooltip: 'Delete Event',
+                              color: Colors.red,
+                              onPressed: () => _deleteEvent(event),
+                            ),
+                          ],
                         ),
                       ),
                     );

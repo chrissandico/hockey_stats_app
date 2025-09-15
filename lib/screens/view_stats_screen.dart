@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:data_table_2/data_table_2.dart';
-import 'package:hockey_stats_app/widgets/email_dialog.dart';
+import 'package:hockey_stats_app/widgets/share_dialog.dart';
 
 class ViewStatsScreen extends StatefulWidget {
   const ViewStatsScreen({super.key, this.gameId, required this.teamId});
@@ -34,7 +34,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
         title: const Text('View Stats'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.email),
+            icon: const Icon(Icons.share),
             onPressed: () async {
               final gamesBox = Hive.box<Game>('games');
               final game = gamesBox.get(widget.gameId);
@@ -48,7 +48,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
               if (mounted) {
                 await showDialog(
                   context: context,
-                  builder: (context) => EmailDialog(
+                  builder: (context) => ShareDialog(
                     players: players,
                     gameEvents: gameEvents,
                     game: game,
@@ -97,7 +97,6 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                         DataColumn(label: Text('A'), numeric: true),
                         DataColumn(label: Text('+/-'), numeric: true),
                         DataColumn(label: Text('PIM'), numeric: true),
-                        DataColumn(label: Text('SOG'), numeric: true),
                       ],
                       rows: players.asMap().entries.map((entry) {
                         final index = entry.key;
@@ -180,24 +179,6 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                                     .where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id)
                                     .map((event) => event.penaltyDuration ?? 0)
                                     .fold(0, (a, b) => a + b)
-                                    .toString(),
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                child: Text(
-                                  gameEvents
-                                    .where((event) => 
-                                      event.eventType == 'Shot' && 
-                                      event.primaryPlayerId == player.id
-                                    )
-                                    .length
                                     .toString(),
                                   style: const TextStyle(
                                     fontSize: 15,

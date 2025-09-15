@@ -612,7 +612,9 @@ class SheetsService {
               ? row[13].toString().split(',')
               : null;
 
-          if (id.isNotEmpty && gameId.isNotEmpty && (team == 'opponent' || primaryPlayerId.isNotEmpty)) {
+          // Allow events with valid ID and gameId, regardless of primaryPlayerId
+          // This ensures all shot events are imported, even if they don't have a specific player assigned
+          if (id.isNotEmpty && gameId.isNotEmpty && eventType.isNotEmpty) {
             events.add(GameEvent(
               id: id,
               gameId: gameId,
@@ -631,6 +633,7 @@ class SheetsService {
               version: 1, // Initialize version for events from sheet
               goalSituation: goalSituation,
             ));
+            print('Parsed event: ${eventType} for ${team} (ID: $id, IsGoal: $isGoal)');
           }
         } catch (e) {
           print('Error parsing event row: $row, Error: $e');
