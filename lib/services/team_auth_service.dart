@@ -9,11 +9,13 @@ class Team {
   final String id;
   final String name;
   final String password;
+  final String logoFileName;
 
   Team({
     required this.id,
     required this.name,
     required this.password,
+    required this.logoFileName,
   });
 
   factory Team.fromSheetRow(List<dynamic> row) {
@@ -21,11 +23,12 @@ class Team {
       id: row[0]?.toString() ?? '',
       name: row[1]?.toString() ?? '',
       password: row[2]?.toString() ?? '',
+      logoFileName: row[3]?.toString() ?? 'generic_logo.svg',
     );
   }
 
   @override
-  String toString() => 'Team(id: $id, name: $name)';
+  String toString() => 'Team(id: $id, name: $name, logoFileName: $logoFileName)';
 }
 
 /// Service for team authentication and management
@@ -51,7 +54,7 @@ class TeamAuthService {
       
       // Construct the URL to fetch the Teams sheet
       final url = Uri.parse(
-        'https://sheets.googleapis.com/v4/spreadsheets/$_spreadsheetId/values/Teams!A2:C'
+        'https://sheets.googleapis.com/v4/spreadsheets/$_spreadsheetId/values/Teams!A2:D'
       );
       
       // Make the authenticated request using the new method
@@ -109,7 +112,7 @@ class TeamAuthService {
       // Find team with matching password
       final team = teams.firstWhere(
         (team) => team.password == password,
-        orElse: () => Team(id: '', name: '', password: ''),
+        orElse: () => Team(id: '', name: '', password: '', logoFileName: 'generic_logo.svg'),
       );
       
       // Return team ID if found, null otherwise
@@ -155,7 +158,7 @@ class TeamAuthService {
     final teams = await fetchTeams();
     return teams.firstWhere(
       (team) => team.id == teamId,
-      orElse: () => Team(id: '', name: '', password: ''),
+      orElse: () => Team(id: '', name: '', password: '', logoFileName: 'generic_logo.svg'),
     );
   }
 

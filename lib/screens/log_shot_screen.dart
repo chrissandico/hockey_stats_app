@@ -854,9 +854,9 @@ class _LogShotScreenState extends State<LogShotScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _buildTeamSelectionButton(
-                      teamName: 'Waxers',
+                      teamName: 'Your Team',
                       teamIdentifier: widget.teamId,
-                      logo: TeamUtils.getTeamLogo('Waxers', size: 52),
+                      logo: TeamUtils.getTeamLogo('Your Team', size: 52),
                       isSelected: _selectedTeam == widget.teamId,
                       onPressed: () {
                         setState(() {

@@ -4,8 +4,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:hockey_stats_app/models/data_models.dart';
+import 'package:hockey_stats_app/services/team_context_service.dart';
 
 class PdfService {
+  final TeamContextService _teamContextService = TeamContextService();
+
   String _formatDate(DateTime date) {
     final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -20,13 +23,21 @@ class PdfService {
   }) async {
     final pdf = pw.Document();
     
-    // Load the team logo
+    // Load the team logo dynamically
     pw.MemoryImage? logoImage;
     try {
-      final logoBytes = await rootBundle.load('assets/logos/waxers_logo.png');
+      final logoPath = await _teamContextService.getCurrentTeamLogoPath();
+      final logoBytes = await rootBundle.load(logoPath);
       logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
     } catch (e) {
-      print('Failed to load logo: $e');
+      print('Failed to load team logo: $e');
+      // Try fallback to generic logo
+      try {
+        final logoBytes = await rootBundle.load('assets/logos/generic_logo.svg');
+        logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
+      } catch (e2) {
+        print('Failed to load fallback logo: $e2');
+      }
     }
 
     pdf.addPage(

@@ -8,6 +8,7 @@ import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:hockey_stats_app/widgets/share_dialog.dart';
+import 'package:hockey_stats_app/services/team_context_service.dart';
 
 Map<String, int> _calculateScore(List<GameEvent> events, String teamId) {
   print('Calculating score from ${events.length} events');
@@ -50,9 +51,11 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   bool _isLoadingScore = false;
 
   final SheetsService _sheetsService = SheetsService();
+  final TeamContextService _teamContextService = TeamContextService();
   String? _currentUser; // Changed from GoogleSignInAccount? to String?
   bool _isSigningIn = false;
   bool _isLoadingInitialData = true;
+  String _currentTeamName = 'Your Team'; // Dynamic team name
   
   // Players on ice tracking
   List<Player> _yourTeamPlayers = [];
@@ -70,6 +73,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     _checkSignInStatus();
     _loadPlayers();
     _loadAttendanceData();
+    _loadCurrentTeamName();
   }
 
   Future<void> _checkSignInStatus() async {
@@ -178,6 +182,20 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     }
   }
   
+  // Load the current team name
+  Future<void> _loadCurrentTeamName() async {
+    try {
+      final teamName = await _teamContextService.getCurrentTeamName();
+      if (mounted) {
+        setState(() {
+          _currentTeamName = teamName;
+        });
+      }
+    } catch (e) {
+      print('Error loading current team name: $e');
+    }
+  }
+
   // Check if a player is absent
   bool _isPlayerAbsent(Player player) {
     return _absentPlayerIds.contains(player.id);
@@ -702,7 +720,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                         if (_currentGame != null) ...[
                           Center(
                             child: TeamUtils.getGameLogos(
-                              'Waxers',
+                              _currentTeamName,
                               _currentGame!.opponent,
                               size: 50.0,
                             ),

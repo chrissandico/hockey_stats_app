@@ -116,9 +116,13 @@ class _TeamLoginScreenState extends State<TeamLoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const SizedBox(height: 40),
-                    // Logo or team image
+                    // Generic hockey logo
                     Center(
-                      child: TeamUtils.getTeamLogo('your_team', size: 120, context: context),
+                      child: Icon(
+                        Icons.sports_hockey,
+                        size: 120,
+                        color: Theme.of(context).primaryColor,
+                      ),
                     ),
                     const SizedBox(height: 40),
                     const Text(

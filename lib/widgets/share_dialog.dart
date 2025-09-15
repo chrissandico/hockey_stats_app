@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/services/pdf_service.dart';
+import 'package:hockey_stats_app/services/team_context_service.dart';
 import 'package:hockey_stats_app/widgets/email_dialog.dart';
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
@@ -90,7 +91,11 @@ class _ShareDialogState extends State<ShareDialog> {
         event.team == 'opponent'
       ).length;
 
-      final shareText = 'Hockey Game Stats - Waxers vs ${widget.game.opponent} on $formattedDate\n\nFinal Score: $yourTeamScore - $opponentScore\n\nDetailed stats attached.';
+      // Get the current team name dynamically
+      final teamContextService = TeamContextService();
+      final teamName = await teamContextService.getCurrentTeamName();
+      
+      final shareText = 'Hockey Game Stats - $teamName vs ${widget.game.opponent} on $formattedDate\n\nFinal Score: $yourTeamScore - $opponentScore\n\nDetailed stats attached.';
 
       await Share.shareXFiles(
         [XFile(pdfFile.path)],

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:hockey_stats_app/models/team_model.dart';
+import 'package:hockey_stats_app/services/team_context_service.dart';
 
 class TeamUtils {
   static List<Team>? _teams;
@@ -141,39 +142,90 @@ class TeamUtils {
       initialize(context);
     }
 
-    // Special case for 'Opponent' - always return a simple "O" logo
-    if (teamName.toLowerCase().trim() == 'opponent') {
-      return Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: const Color(0xFFDC2626), // Red color for opponent
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 5,
-              offset: const Offset(0, 2),
+    // Check if this matches the current team from the database
+    return FutureBuilder<String>(
+      future: _getCurrentTeamName(),
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          final currentTeamName = snapshot.data!;
+          
+          // If the requested team name matches the current team, use database logo
+          if (teamName.toLowerCase().trim() == currentTeamName.toLowerCase().trim()) {
+            return FutureBuilder<String>(
+              future: _getCurrentTeamLogoPath(),
+              builder: (context, logoSnapshot) {
+                if (logoSnapshot.hasData) {
+                  final logoPath = logoSnapshot.data!;
+                  return _buildTeamLogoFromPath(logoPath, size);
+                }
+                // While loading, show fallback
+                return _buildFallbackLogoForCurrentTeam(teamName, size);
+              },
+            );
+          } else {
+            // For any team that is NOT the current team, always show "O" for opponent
+            return Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                color: const Color(0xFFDC2626), // Red color for opponent
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 5,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  'O',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: size * 0.5,
+                  ),
+                ),
+              ),
+            );
+          }
+        }
+        
+        // While loading current team name, check if it's explicitly "opponent"
+        if (teamName.toLowerCase().trim() == 'opponent') {
+          return Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: const Color(0xFFDC2626), // Red color for opponent
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 5,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Center(
-          child: Text(
-            'O',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: size * 0.5,
+            child: Center(
+              child: Text(
+                'O',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: size * 0.5,
+                ),
+              ),
             ),
-          ),
-        ),
-      );
-    }
-    
-    // For all other teams, get the team data and use the logo
-    final team = getTeam(teamName, context: context);
-    
-    return _buildTeamLogoWidget(team, size);
+          );
+        }
+        
+        // For other cases while loading, use existing JSON-based lookup
+        final team = getTeam(teamName, context: context);
+        return _buildTeamLogoWidget(team, size);
+      },
+    );
   }
 
   /// Build the actual logo widget with proper error handling
@@ -293,6 +345,108 @@ class TeamUtils {
     return _teams!.any((team) => 
       team.id.toLowerCase() == identifier || 
       team.name.toLowerCase() == identifier
+    );
+  }
+
+  /// Get the current team name from the database
+  static Future<String> _getCurrentTeamName() async {
+    try {
+      final teamContextService = TeamContextService();
+      return await teamContextService.getCurrentTeamName();
+    } catch (e) {
+      return 'Your Team'; // Fallback
+    }
+  }
+
+  /// Get the current team logo path from the database
+  static Future<String> _getCurrentTeamLogoPath() async {
+    try {
+      final teamContextService = TeamContextService();
+      return await teamContextService.getCurrentTeamLogoPath();
+    } catch (e) {
+      return 'assets/logos/generic_logo.svg'; // Fallback
+    }
+  }
+
+  /// Build team logo widget from a logo path
+  static Widget _buildTeamLogoFromPath(String logoPath, double size) {
+    if (logoPath.toLowerCase().endsWith('.svg')) {
+      return SvgPicture.asset(
+        logoPath,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        placeholderBuilder: (BuildContext context) => _buildGenericFallbackLogo(size),
+      );
+    } else {
+      // Handle PNG and other image formats
+      return Image.asset(
+        logoPath,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => _buildGenericFallbackLogo(size),
+      );
+    }
+  }
+
+  /// Build a fallback logo for the current team
+  static Widget _buildFallbackLogoForCurrentTeam(String teamName, double size) {
+    final firstLetter = teamName.isNotEmpty ? teamName[0].toUpperCase() : 'T';
+    
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFF059669), // Green for current team
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          firstLetter,
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: size * 0.5,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build a generic fallback logo
+  static Widget _buildGenericFallbackLogo(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFF6B7280), // Gray
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          'T',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: size * 0.5,
+          ),
+        ),
+      ),
     );
   }
 }

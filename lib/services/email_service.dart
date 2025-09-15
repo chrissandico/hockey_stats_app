@@ -2,6 +2,7 @@ import 'package:flutter_email_sender/flutter_email_sender.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/services/pdf_service.dart';
+import 'package:hockey_stats_app/services/team_context_service.dart';
 
 class EmailService {
   static const String _emailSettingsBoxName = 'emailSettings';
@@ -43,6 +44,10 @@ class EmailService {
 
     final formattedDate = _formatDate(game.date);
     
+    // Get the current team name dynamically
+    final teamContextService = TeamContextService();
+    final teamName = await teamContextService.getCurrentTeamName();
+    
     // Calculate the score for the email body
     int yourTeamScore = gameEvents.where((event) => 
       event.eventType == 'Shot' && 
@@ -59,7 +64,7 @@ class EmailService {
     final Email email = Email(
       recipients: recipients,
       subject: 'Hockey Game Stats - ${game.opponent} - $formattedDate',
-      body: 'Game stats for Waxers vs ${game.opponent} on $formattedDate.\n\nFinal Score: $yourTeamScore - $opponentScore\n\nDetailed stats attached as PDF.',
+      body: 'Game stats for $teamName vs ${game.opponent} on $formattedDate.\n\nFinal Score: $yourTeamScore - $opponentScore\n\nDetailed stats attached as PDF.',
       attachmentPaths: [pdfFile.path],
       isHTML: false,
     );
