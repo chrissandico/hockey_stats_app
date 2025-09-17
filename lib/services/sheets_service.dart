@@ -185,6 +185,9 @@ class SheetsService {
       return false;
     }
 
+    // Check if a row already exists for this game + player combination
+    final existingRowIndex = await _findGameRosterRow(roster.gameId, roster.playerId);
+    
     final List<Object> values = [
       roster.gameId,
       roster.playerId,
@@ -196,11 +199,25 @@ class SheetsService {
       'majorDimension': 'ROWS',
     };
 
-    final result = await _makeRequest(
-      'POST',
-      'values/GameRoster!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
-      body: body,
-    );
+    Map<String, dynamic>? result;
+    
+    if (existingRowIndex != -1) {
+      // Update existing row
+      result = await _makeRequest(
+        'POST',
+        'values/GameRoster!A$existingRowIndex:C$existingRowIndex?valueInputOption=USER_ENTERED',
+        body: body,
+      );
+      print('Updated existing roster entry at row $existingRowIndex for player ${roster.playerId} in game ${roster.gameId}');
+    } else {
+      // Append new row
+      result = await _makeRequest(
+        'POST',
+        'values/GameRoster!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+        body: body,
+      );
+      print('Created new roster entry for player ${roster.playerId} in game ${roster.gameId}');
+    }
 
     if (result != null) {
       print('Successfully synced roster entry for player ${roster.playerId} in game ${roster.gameId}');
@@ -341,6 +358,39 @@ class SheetsService {
         return GoalSituation.shortHanded;
       default:
         return null;
+    }
+  }
+
+  /// Helper method to find an existing row in the GameRoster sheet for a specific game + player combination.
+  /// 
+  /// @param gameId The game ID to search for
+  /// @param playerId The player ID to search for
+  /// @return The row index (1-based) if found, -1 if not found
+  Future<int> _findGameRosterRow(String gameId, String playerId) async {
+    try {
+      final result = await _makeRequest('GET', 'values/GameRoster!A:C');
+      if (result == null) return -1;
+
+      final List<List<dynamic>> values = List<List<dynamic>>.from(result['values'] ?? []);
+      
+      // Search through all rows to find matching gameId + playerId combination
+      for (int i = 0; i < values.length; i++) {
+        final row = values[i];
+        if (row.length >= 2) {
+          final rowGameId = row[0]?.toString() ?? '';
+          final rowPlayerId = row[1]?.toString() ?? '';
+          
+          if (rowGameId == gameId && rowPlayerId == playerId) {
+            // Return 1-based row index for Google Sheets API
+            return i + 1;
+          }
+        }
+      }
+      
+      return -1; // Not found
+    } catch (e) {
+      print('Error finding GameRoster row: $e');
+      return -1;
     }
   }
 

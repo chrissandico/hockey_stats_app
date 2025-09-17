@@ -5,6 +5,7 @@ import 'package:hockey_stats_app/screens/view_stats_screen.dart';
 import 'package:uuid/uuid.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
+import 'package:hockey_stats_app/services/team_context_service.dart';
 import 'package:hockey_stats_app/widgets/goal_situation_dialog.dart';
 
 class LogShotScreen extends StatefulWidget {
@@ -850,34 +851,41 @@ class _LogShotScreenState extends State<LogShotScreen> {
                 _buildPeriodSelector(),
                 const SizedBox(height: 20.0),
 
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildTeamSelectionButton(
-                      teamName: 'Your Team',
-                      teamIdentifier: widget.teamId,
-                      logo: TeamUtils.getTeamLogo('Your Team', size: 52),
-                      isSelected: _selectedTeam == widget.teamId,
-                      onPressed: () {
-                        setState(() {
-                          _selectedTeam = widget.teamId;
-                          _filterPlayersByTeam();
-                        });
-                      },
-                    ),
-                    _buildTeamSelectionButton(
-                      teamName: 'Opponent',
-                      teamIdentifier: 'opponent',
-                      logo: TeamUtils.getTeamLogo('Opponent', size: 52),
-                      isSelected: _selectedTeam == 'opponent',
-                      onPressed: () {
-                        setState(() {
-                          _selectedTeam = 'opponent';
-                          _filterPlayersByTeam();
-                        });
-                      },
-                    ),
-                  ],
+                FutureBuilder<String>(
+                  future: TeamContextService().getCurrentTeamName(),
+                  builder: (context, snapshot) {
+                    final currentTeamName = snapshot.data ?? 'Your Team';
+                    
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildTeamSelectionButton(
+                          teamName: currentTeamName,
+                          teamIdentifier: widget.teamId,
+                          logo: TeamUtils.getTeamLogo(currentTeamName, size: 52, context: context),
+                          isSelected: _selectedTeam == widget.teamId,
+                          onPressed: () {
+                            setState(() {
+                              _selectedTeam = widget.teamId;
+                              _filterPlayersByTeam();
+                            });
+                          },
+                        ),
+                        _buildTeamSelectionButton(
+                          teamName: 'Opponent',
+                          teamIdentifier: 'opponent',
+                          logo: TeamUtils.getTeamLogo('Opponent', size: 52, context: context),
+                          isSelected: _selectedTeam == 'opponent',
+                          onPressed: () {
+                            setState(() {
+                              _selectedTeam = 'opponent';
+                              _filterPlayersByTeam();
+                            });
+                          },
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 20.0),
 
