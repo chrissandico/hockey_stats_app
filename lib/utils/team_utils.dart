@@ -96,7 +96,26 @@ class TeamUtils {
       }
     }
 
-    // If still no exact match, try partial name matching
+    // If still no exact match, try partial name matching with priority for specific teams
+    // Priority 1: Check if identifier contains "waxers" - should map to waxers team
+    if (identifier.contains('waxers')) {
+      for (final team in _teams!) {
+        if (team.id.toLowerCase() == 'waxers' || team.name.toLowerCase().contains('waxers')) {
+          return team;
+        }
+      }
+    }
+    
+    // Priority 2: Check if identifier contains "stars" - should map to stars team if it exists
+    if (identifier.contains('stars')) {
+      for (final team in _teams!) {
+        if (team.id.toLowerCase() == 'stars' || team.name.toLowerCase().contains('stars')) {
+          return team;
+        }
+      }
+    }
+
+    // Priority 3: General partial matching
     for (final team in _teams!) {
       if (team.name.toLowerCase().contains(identifier) || 
           identifier.contains(team.name.toLowerCase())) {
@@ -112,24 +131,29 @@ class TeamUtils {
   static Team _getFallbackTeam(String teamIdentifier) {
     final cleanIdentifier = teamIdentifier.toLowerCase().trim();
     
-    // Determine colors based on team type
+    // Determine colors and logo path based on team type
     Color primaryColor;
     Color secondaryColor = Colors.white;
+    String logoPath;
     
     if (cleanIdentifier.contains('waxers')) {
       primaryColor = const Color(0xFF1E3A8A); // Blue
+      logoPath = 'assets/logos/waxers_logo.png'; // Use waxers logo
     } else if (cleanIdentifier.contains('your') || cleanIdentifier.contains('home')) {
       primaryColor = const Color(0xFF059669); // Green
+      logoPath = 'assets/logos/your_team_logo.svg';
     } else if (cleanIdentifier.contains('opponent') || cleanIdentifier.contains('away')) {
       primaryColor = const Color(0xFFDC2626); // Red
+      logoPath = 'assets/logos/generic_logo.svg';
     } else {
       primaryColor = const Color(0xFF6B7280); // Gray
+      logoPath = 'assets/logos/generic_logo.svg';
     }
 
     return Team(
       id: cleanIdentifier.replaceAll(' ', '_'),
       name: teamIdentifier,
-      logoPath: 'assets/logos/generic_logo.svg',
+      logoPath: logoPath,
       primaryColor: primaryColor,
       secondaryColor: secondaryColor,
     );
@@ -393,12 +417,21 @@ class TeamUtils {
   /// Build a fallback logo for the current team
   static Widget _buildFallbackLogoForCurrentTeam(String teamName, double size) {
     final firstLetter = teamName.isNotEmpty ? teamName[0].toUpperCase() : 'T';
+    final cleanTeamName = teamName.toLowerCase().trim();
+    
+    // Use appropriate color based on team name
+    Color backgroundColor;
+    if (cleanTeamName.contains('waxers')) {
+      backgroundColor = const Color(0xFF1E3A8A); // Blue for waxers
+    } else {
+      backgroundColor = const Color(0xFF059669); // Green for other current teams
+    }
     
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: const Color(0xFF059669), // Green for current team
+        color: backgroundColor,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(

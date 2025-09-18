@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:hockey_stats_app/screens/log_shot_screen.dart';
+import 'package:hockey_stats_app/screens/log_goal_screen.dart';
 import 'package:hockey_stats_app/screens/log_penalty_screen.dart';
 import 'package:hockey_stats_app/screens/view_stats_screen.dart';
 import 'package:hockey_stats_app/screens/edit_shot_list_screen.dart';
@@ -9,6 +9,7 @@ import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:hockey_stats_app/widgets/share_dialog.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
+import 'package:uuid/uuid.dart';
 
 Map<String, int> _calculateScore(List<GameEvent> events, String teamId) {
   print('Calculating score from ${events.length} events');
@@ -66,9 +67,15 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   Set<String> _absentPlayerIds = {}; // Track absent players
   bool _isLoadingAttendance = false;
 
+  // Quick shot logging
+  bool _isLogging = false;
+  final uuid = Uuid();
+  late Box<GameEvent> gameEventsBox;
+
   @override
   void initState() {
     super.initState();
+    gameEventsBox = Hive.box<GameEvent>('gameEvents');
     _loadInitialData();
     _checkSignInStatus();
     _loadPlayers();
@@ -496,6 +503,78 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
      }
   }
 
+  Future<void> _logQuickShot(String team) async {
+    setState(() { _isLogging = true; });
+
+    try {
+      final newShotEvent = GameEvent(
+        id: uuid.v4(),
+        gameId: widget.gameId,
+        timestamp: DateTime.now(),
+        period: _selectedPeriod,
+        eventType: 'Shot',
+        team: team,
+        primaryPlayerId: '', // No player details for quick shots
+        assistPlayer1Id: null,
+        assistPlayer2Id: null,
+        isGoal: false,
+        isSynced: false,
+        yourTeamPlayersOnIce: team == 'opponent' ? null : _getPlayersOnIceIds(),
+        goalSituation: null,
+      );
+
+      await gameEventsBox.put(newShotEvent.id, newShotEvent);
+
+      // Attempt to sync
+      bool syncSuccess = false;
+      String syncError = '';
+      try {
+        syncSuccess = await _sheetsService.syncGameEvent(newShotEvent);
+        if (!syncSuccess) {
+          syncError = "Sync failed - will retry when online.";
+        }
+      } catch (error) {
+        syncError = error.toString();
+        print("Error during sync for quick shot: $error");
+      }
+
+      if (!mounted) return;
+
+      String teamDisplayName = team == widget.teamId ? _currentTeamName : 'Opponent';
+      String message = syncSuccess 
+          ? 'Shot logged for $teamDisplayName and synced.'
+          : 'Shot logged for $teamDisplayName locally - $syncError';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: Duration(seconds: syncSuccess ? 2 : 4),
+        ),
+      );
+
+      await _refreshScore();
+
+    } catch (e) {
+      print('Error in _logQuickShot: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error logging shot: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() { _isLogging = false; });
+      }
+    }
+  }
+
+  List<String> _getPlayersOnIceIds() {
+    return _selectedPlayersOnIce.map((player) => player.id).toList();
+  }
+
   Widget _buildLogButton({
     required IconData icon,
     required String label,
@@ -631,63 +710,200 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
 
                 const SizedBox(height: 24),
 
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: <Widget>[
-                    _buildLogButton(
-                      icon: Icons.sports_hockey,
-                      label: 'Log Shot',
-                      context: context,
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => LogShotScreen(
-                              gameId: widget.gameId,
-                              period: _selectedPeriod,
-                              teamId: widget.teamId,
-                              playersOnIce: _selectedPlayersOnIce,
+                // NEW: 5-button layout for streamlined shot logging
+                Column(
+                  children: [
+                    // Top row: Team shot buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: ElevatedButton(
+                              onPressed: _isLogging ? null : () => _logQuickShot(widget.teamId),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 16.0),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16.0),
+                                ),
+                                elevation: 0,
+                                shadowColor: Colors.transparent,
+                                backgroundColor: const Color(0xFF1976D2), // Material Blue 700
+                                foregroundColor: Colors.white,
+                                surfaceTintColor: Colors.transparent,
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.sports_hockey, size: 28.0, color: Colors.white),
+                                  const SizedBox(height: 6.0),
+                                  Text(
+                                    '$_currentTeamName\nShot',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 13.0,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ).then((value) {
-                          print('Returned from LogShotScreen, refreshing score...');
-                          _refreshScore().then((_) {
-                            print('Score refresh complete');
-                            if (value != null && value is int) {
-                              setState(() {
-                                _selectedPeriod = value;
-                              });
-                            }
-                          });
-                        });
-                      },
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: ElevatedButton(
+                              onPressed: _isLogging ? null : () => _logQuickShot('opponent'),
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 16.0),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16.0),
+                                ),
+                                elevation: 0,
+                                shadowColor: Colors.transparent,
+                                backgroundColor: const Color(0xFFD32F2F), // Material Red 700
+                                foregroundColor: Colors.white,
+                                surfaceTintColor: Colors.transparent,
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.sports_hockey, size: 28.0, color: Colors.white),
+                                  const SizedBox(height: 6.0),
+                                  const Text(
+                                    'Opponent\nShot',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 13.0,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    _buildLogButton(
-                      icon: Icons.sports,
-                      label: 'Log Penalty',
-                      context: context,
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => LogPenaltyScreen(
-                              gameId: widget.gameId,
-                              period: _selectedPeriod,
-                              teamId: widget.teamId,
+                    
+                    const SizedBox(height: 12),
+                    
+                    // Middle row: Goal button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => LogGoalScreen(
+                                gameId: widget.gameId,
+                                period: _selectedPeriod,
+                                teamId: widget.teamId,
+                                playersOnIce: _selectedPlayersOnIce,
+                              ),
                             ),
-                          ),
-                        ).then((value) {
-                          print('Returned from LogPenaltyScreen, refreshing score...');
-                          _refreshScore().then((_) {
-                            print('Score refresh complete');
-                            if (value != null && value is int) {
-                              setState(() {
-                                _selectedPeriod = value;
-                              });
-                            }
+                          ).then((value) {
+                            print('Returned from LogGoalScreen, refreshing score...');
+                            _refreshScore().then((_) {
+                              print('Score refresh complete');
+                              if (value != null && value is int) {
+                                setState(() {
+                                  _selectedPeriod = value;
+                                });
+                              }
+                            });
                           });
-                        });
-                      },
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 22.0, horizontal: 20.0),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16.0),
+                          ),
+                          elevation: 0,
+                          shadowColor: Colors.transparent,
+                          backgroundColor: const Color(0xFF388E3C), // Material Green 700
+                          foregroundColor: Colors.white,
+                          surfaceTintColor: Colors.transparent,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.sports_score, size: 32.0, color: Colors.white),
+                            const SizedBox(width: 12.0),
+                            const Text(
+                              'Log Goal',
+                              style: TextStyle(
+                                fontSize: 18.0,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 12),
+                    
+                    // Bottom row: Penalty button (smaller)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => LogPenaltyScreen(
+                                gameId: widget.gameId,
+                                period: _selectedPeriod,
+                                teamId: widget.teamId,
+                              ),
+                            ),
+                          ).then((value) {
+                            print('Returned from LogPenaltyScreen, refreshing score...');
+                            _refreshScore().then((_) {
+                              print('Score refresh complete');
+                              if (value != null && value is int) {
+                                setState(() {
+                                  _selectedPeriod = value;
+                                });
+                              }
+                            });
+                          });
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14.0, horizontal: 18.0),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12.0),
+                          ),
+                          elevation: 0,
+                          shadowColor: Colors.transparent,
+                          backgroundColor: const Color(0xFFFF8F00), // Material Orange 700
+                          foregroundColor: Colors.white,
+                          surfaceTintColor: Colors.transparent,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.sports, size: 24.0, color: Colors.white),
+                            const SizedBox(width: 8.0),
+                            const Text(
+                              'Log Penalty',
+                              style: TextStyle(
+                                fontSize: 15.0,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
