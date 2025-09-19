@@ -113,6 +113,14 @@ class SheetsService {
             body: json.encode(body),
           );
           break;
+        case 'PUT':
+          response = await serviceAuth.makeAuthenticatedRequest(
+            uri,
+            method: 'PUT',
+            headers: headers,
+            body: json.encode(body),
+          );
+          break;
         default:
           throw Exception('Unsupported method: $method');
       }
@@ -277,20 +285,27 @@ class SheetsService {
 
     // First get all IDs to find the row
     final idResult = await _makeRequest('GET', 'values/Events!A:A');
-    if (idResult == null) return false;
+    if (idResult == null) {
+      print('Failed to get event IDs from Google Sheets');
+      return false;
+    }
 
     final List<List<dynamic>> idValues = List<List<dynamic>>.from(idResult['values'] ?? []);
+    
     int rowIndex = -1;
     for (int i = 0; i < idValues.length; i++) {
-      if (idValues[i].isNotEmpty && idValues[i][0] == event.id) {
-        rowIndex = i + 1;
-        break;
+      if (idValues[i].isNotEmpty) {
+        String sheetId = idValues[i][0].toString().trim();
+        if (sheetId == event.id) {
+          rowIndex = i + 1;
+          break;
+        }
       }
     }
 
     if (rowIndex == -1) {
       print('Event ID ${event.id} not found in the sheet. Cannot update.');
-      return await syncGameEvent(event);
+      return false;
     }
 
     // Format the timestamp in a more readable format: YYYY-MM-DD HH:MM:SS
@@ -319,7 +334,7 @@ class SheetsService {
     };
 
     final result = await _makeRequest(
-      'POST',
+      'PUT',
       'values/Events!A$rowIndex:N$rowIndex?valueInputOption=USER_ENTERED',
       body: body,
     );
@@ -331,8 +346,10 @@ class SheetsService {
         await event.save();
       }
       return true;
+    } else {
+      print('Failed to update event ${event.id} in Google Sheets');
+      return false;
     }
-    return false;
   }
 
   String _goalSituationToString(GoalSituation? goalSituation) {
@@ -841,13 +858,22 @@ class SheetsService {
       print('Attempting to sync ${unsyncedEvents.length} unsynced events...');
       for (final event in unsyncedEvents) {
         try {
-          bool syncSuccess = await syncGameEvent(event);
-          if (syncSuccess) {
-            print('Successfully synced event ${event.id}');
+          // Check if event already exists in Google Sheets
+          if (remoteEventIds.contains(event.id)) {
+            // Event exists in Google Sheets, just mark as synced locally
+            print('Event ${event.id} already exists in Google Sheets, marking as synced');
             event.isSynced = true;
             await event.save();
           } else {
-            print('Failed to sync event ${event.id}');
+            // Event doesn't exist in Google Sheets, sync it
+            bool syncSuccess = await syncGameEvent(event);
+            if (syncSuccess) {
+              print('Successfully synced event ${event.id}');
+              event.isSynced = true;
+              await event.save();
+            } else {
+              print('Failed to sync event ${event.id}');
+            }
           }
         } catch (e) {
           print('Error syncing event ${event.id}: $e');

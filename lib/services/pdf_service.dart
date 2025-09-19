@@ -5,6 +5,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
+import 'package:hockey_stats_app/services/stats_service.dart';
 
 class PdfService {
   final TeamContextService _teamContextService = TeamContextService();
@@ -245,7 +246,7 @@ class PdfService {
     for (final player in players) {
       // Only include defensemen
       if (player.position == 'D' || player.position == 'LD' || player.position == 'RD') {
-        final plusMinus = _calculatePlusMinus(player, gameEvents, teamId);
+        final plusMinus = StatsService.calculatePlusMinus(player, gameEvents, teamId);
         defensemanStats.add({
           'player': player,
           'plusminus': plusMinus,
@@ -323,7 +324,7 @@ class PdfService {
             (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)
           ).length;
 
-          final plusMinus = _calculatePlusMinus(player, gameEvents, teamId);
+          final plusMinus = StatsService.calculatePlusMinus(player, gameEvents, teamId);
 
           final pim = gameEvents
             .where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id)
@@ -360,43 +361,6 @@ class PdfService {
     }).join(', ');
   }
 
-  // Helper method to calculate plus/minus
-  int _calculatePlusMinus(Player player, List<GameEvent> gameEvents, String teamId) {
-    // Skip plus/minus calculation for goalies
-    if (player.position == 'G') {
-      return 0;
-    }
-    
-    int plusMinus = 0;
-
-    for (var event in gameEvents) {
-      if (event.eventType == 'Shot' && event.isGoal == true) {
-        bool playerWasOnIce = false;
-
-        if (event.team == teamId) {
-          if (event.yourTeamPlayersOnIce != null && event.yourTeamPlayersOnIce!.isNotEmpty) {
-            playerWasOnIce = event.yourTeamPlayersOnIce!.contains(player.id);
-          } else {
-            playerWasOnIce = event.primaryPlayerId == player.id || 
-                            event.assistPlayer1Id == player.id || 
-                            event.assistPlayer2Id == player.id;
-          }
-          if (playerWasOnIce) {
-            plusMinus++;
-          }
-        } else if (event.team == 'opponent') {
-          if (event.yourTeamPlayersOnIce != null && event.yourTeamPlayersOnIce!.isNotEmpty) {
-            playerWasOnIce = event.yourTeamPlayersOnIce!.contains(player.id);
-            if (playerWasOnIce) {
-              plusMinus--;
-            }
-          }
-        }
-      }
-    }
-
-    return plusMinus;
-  }
 
   // Build compact header with logo and game info in horizontal layout
   pw.Widget _buildCompactHeader(pw.MemoryImage? logoImage, Game game, List<GameEvent> gameEvents, String teamId) {
@@ -656,7 +620,7 @@ class PdfService {
             (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)
           ).length;
 
-          final plusMinus = _calculatePlusMinus(player, gameEvents, teamId);
+          final plusMinus = StatsService.calculatePlusMinus(player, gameEvents, teamId);
 
           final pim = gameEvents
             .where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id)

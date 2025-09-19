@@ -3,6 +3,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:data_table_2/data_table_2.dart';
 import 'package:hockey_stats_app/widgets/share_dialog.dart';
+import 'package:hockey_stats_app/services/stats_service.dart';
 
 class ViewStatsScreen extends StatefulWidget {
   const ViewStatsScreen({super.key, this.gameId, required this.teamId});
@@ -101,7 +102,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                       rows: players.asMap().entries.map((entry) {
                         final index = entry.key;
                         final player = entry.value;
-                        final plusMinus = calculatePlusMinus(player, gameEvents, widget.teamId);
+                        final plusMinus = StatsService.calculatePlusMinus(player, gameEvents, widget.teamId);
                         return DataRow(
                           color: WidgetStateProperty.resolveWith<Color?>(
                             (Set<WidgetState> states) {
@@ -134,7 +135,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                                 child: Text(
-                                  gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.primaryPlayerId == player.id).length.toString(),
+                                  StatsService.calculateGoals(player, gameEvents).toString(),
                                   style: const TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.bold,
@@ -146,7 +147,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                                 child: Text(
-                                  gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)).length.toString(),
+                                  StatsService.calculateAssists(player, gameEvents).toString(),
                                   style: const TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.bold,
@@ -175,11 +176,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                                 child: Text(
-                                  gameEvents
-                                    .where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id)
-                                    .map((event) => event.penaltyDuration ?? 0)
-                                    .fold(0, (a, b) => a + b)
-                                    .toString(),
+                                  StatsService.calculatePenaltyMinutes(player, gameEvents).toString(),
                                   style: const TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.bold,
@@ -200,51 +197,4 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
       ),
     );
   }
-}
-
-int calculatePlusMinus(Player player, List<GameEvent> gameEvents, String teamId) {
-  // Skip plus/minus calculation for goalies
-  if (player.position == 'G') {
-    return 0;
-  }
-  
-  int plusMinus = 0;
-
-  // Calculate plus/minus for when the player is on the ice when a goal is scored
-  for (var event in gameEvents) {
-    if (event.eventType == 'Shot' && event.isGoal == true) {
-      bool playerWasOnIce = false;
-
-      // Check for special situations - power-play goals don't affect +/-
-      if (event.goalSituation == GoalSituation.powerPlay) {
-        // Power-play goals: No +/- for anyone (scoring team has advantage)
-        continue;
-      }
-
-      if (event.team == teamId) {
-        // For your team's goals, check players on ice or involvement in the play
-        if (event.yourTeamPlayersOnIce != null && event.yourTeamPlayersOnIce!.isNotEmpty) {
-          playerWasOnIce = event.yourTeamPlayersOnIce!.contains(player.id);
-        } else {
-          playerWasOnIce = event.primaryPlayerId == player.id || 
-                          event.assistPlayer1Id == player.id || 
-                          event.assistPlayer2Id == player.id;
-        }
-        if (playerWasOnIce) {
-          plusMinus++;
-        }
-      } else if (event.team == 'opponent') {
-        // For opponent goals, all your team players on ice get a minus
-        if (event.yourTeamPlayersOnIce != null && event.yourTeamPlayersOnIce!.isNotEmpty) {
-          playerWasOnIce = event.yourTeamPlayersOnIce!.contains(player.id);
-          if (playerWasOnIce) {
-            plusMinus--;
-          }
-        }
-        // If no players on ice data for opponent goals, we can't determine plus/minus
-      }
-    }
-  }
-
-  return plusMinus;
 }

@@ -38,6 +38,10 @@ class _LogShotScreenState extends State<LogShotScreen> {
   Player? _selectedAssist2;
   List<Player> _selectedYourTeamPlayersOnIce = [];
   
+  // Goal situation tracking
+  bool _isPowerPlay = false;
+  bool _isPenaltyKill = false;
+  
   // Attendance tracking
   Set<String> _absentPlayerIds = {}; // Track absent players
   bool _isLoadingAttendance = false;
@@ -218,6 +222,24 @@ class _LogShotScreenState extends State<LogShotScreen> {
               (player) => _eventBeingEdited!.yourTeamPlayersOnIce!.contains(player.id)
             ).toList();
           }
+          
+          // Load goal situation state from existing event
+          if (_isGoal && _eventBeingEdited!.goalSituation != null) {
+            switch (_eventBeingEdited!.goalSituation!) {
+              case GoalSituation.powerPlay:
+                _isPowerPlay = true;
+                _isPenaltyKill = false;
+                break;
+              case GoalSituation.shortHanded:
+                _isPowerPlay = false;
+                _isPenaltyKill = true;
+                break;
+              case GoalSituation.evenStrength:
+                _isPowerPlay = false;
+                _isPenaltyKill = false;
+                break;
+            }
+          }
         });
       }
     } catch (e) {
@@ -249,7 +271,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
 
     // Check for special situations and show confirmation dialog
     if (_isGoal && _selectedYourTeamPlayersOnIce.length < 5) {
-      final detectedSituation = _detectGoalSituation(_selectedYourTeamPlayersOnIce.length);
+      final detectedSituation = _detectGoalSituation();
       
       bool? confirmed = await showDialog<bool>(
         context: context,
@@ -287,7 +309,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
         _eventBeingEdited!.isGoal = _isGoal;
         _eventBeingEdited!.isSynced = false;
         _eventBeingEdited!.yourTeamPlayersOnIce = _isGoal ? _getPlayersOnIceIds() : null;
-        _eventBeingEdited!.goalSituation = _isGoal ? _detectGoalSituation(_selectedYourTeamPlayersOnIce.length) : null;
+        _eventBeingEdited!.goalSituation = _isGoal ? _detectGoalSituation() : null;
         
         print('  IsGoal after: ${_eventBeingEdited!.isGoal}');
         
@@ -352,7 +374,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
           isGoal: _isGoal,
           isSynced: false,
           yourTeamPlayersOnIce: _isGoal ? _getPlayersOnIceIds() : null,
-          goalSituation: _isGoal ? _detectGoalSituation(_selectedYourTeamPlayersOnIce.length) : null,
+          goalSituation: _isGoal ? _detectGoalSituation() : null,
         );
         
         eventToProcess = newShotEvent;
@@ -416,15 +438,13 @@ class _LogShotScreenState extends State<LogShotScreen> {
     return _selectedYourTeamPlayersOnIce.map((player) => player.id).toList();
   }
 
-  GoalSituation _detectGoalSituation(int playerCount) {
-    switch (playerCount) {
-      case 3:
-        return GoalSituation.shortHanded;
-      case 4:
-        return GoalSituation.powerPlay;
-      case 5:
-      default:
-        return GoalSituation.evenStrength;
+  GoalSituation _detectGoalSituation() {
+    if (_isPowerPlay) {
+      return GoalSituation.powerPlay;
+    } else if (_isPenaltyKill) {
+      return GoalSituation.shortHanded;
+    } else {
+      return GoalSituation.evenStrength;
     }
   }
 
@@ -901,6 +921,73 @@ class _LogShotScreenState extends State<LogShotScreen> {
                 ),
 
                 if (_isGoal) ...[
+                  const SizedBox(height: 16),
+                  
+                  // Goal Situation Selection
+                  Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12.0),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Goal Situation',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: CheckboxListTile(
+                                  title: const Text('Power Play'),
+                                  value: _isPowerPlay,
+                                  onChanged: (bool? value) {
+                                    setState(() {
+                                      _isPowerPlay = value ?? false;
+                                      if (_isPowerPlay) {
+                                        _isPenaltyKill = false; // Only one can be selected
+                                      }
+                                    });
+                                  },
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                ),
+                              ),
+                              Expanded(
+                                child: CheckboxListTile(
+                                  title: const Text('Penalty Kill'),
+                                  value: _isPenaltyKill,
+                                  onChanged: (bool? value) {
+                                    setState(() {
+                                      _isPenaltyKill = value ?? false;
+                                      if (_isPenaltyKill) {
+                                        _isPowerPlay = false; // Only one can be selected
+                                      }
+                                    });
+                                  },
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (!_isPowerPlay && !_isPenaltyKill)
+                            const Text(
+                              'Default: Even Strength',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontStyle: FontStyle.italic,
+                                color: Colors.grey,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   
                   // Integrated player selection UI

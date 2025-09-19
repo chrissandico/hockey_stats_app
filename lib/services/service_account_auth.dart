@@ -183,6 +183,8 @@ class ServiceAccountAuth {
         return await _client!.get(url, headers: authHeaders);
       case 'POST':
         return await _client!.post(url, headers: authHeaders, body: body);
+      case 'PUT':
+        return await _client!.put(url, headers: authHeaders, body: body);
       default:
         throw Exception('Unsupported method: $method');
     }

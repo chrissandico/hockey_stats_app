@@ -3,6 +3,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/services/pdf_service.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
+import 'package:hockey_stats_app/services/stats_service.dart';
 
 class EmailService {
   static const String _emailSettingsBoxName = 'emailSettings';
@@ -80,41 +81,4 @@ class EmailService {
     }
   }
 
-  // Helper method to calculate plus/minus
-  int _calculatePlusMinus(Player player, List<GameEvent> gameEvents) {
-    // Skip plus/minus calculation for goalies
-    if (player.position == 'G') {
-      return 0;
-    }
-    
-    int plusMinus = 0;
-
-    for (var event in gameEvents) {
-      if (event.eventType == 'Shot' && event.isGoal == true) {
-        bool playerWasOnIce = false;
-
-        if (event.team == 'your_team') {
-          if (event.yourTeamPlayersOnIce != null && event.yourTeamPlayersOnIce!.isNotEmpty) {
-            playerWasOnIce = event.yourTeamPlayersOnIce!.contains(player.id);
-          } else {
-            playerWasOnIce = event.primaryPlayerId == player.id || 
-                            event.assistPlayer1Id == player.id || 
-                            event.assistPlayer2Id == player.id;
-          }
-          if (playerWasOnIce) {
-            plusMinus++;
-          }
-        } else if (event.team == 'opponent') {
-          if (event.yourTeamPlayersOnIce != null && event.yourTeamPlayersOnIce!.isNotEmpty) {
-            playerWasOnIce = event.yourTeamPlayersOnIce!.contains(player.id);
-            if (playerWasOnIce) {
-              plusMinus--;
-            }
-          }
-        }
-      }
-    }
-
-    return plusMinus;
-  }
 }

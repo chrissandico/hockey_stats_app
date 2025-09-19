@@ -157,8 +157,31 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                     
                     if (isShot) {
                       eventTypeText = isGoal ? 'Goal' : 'Shot';
-                      if (isGoal && isYourTeam && event.assistPlayer1Id != null && event.assistPlayer1Id!.isNotEmpty) {
-                        detailText = ' (Assist: ${_getPlayerDisplayText(event.assistPlayer1Id!, true)})';
+                      if (isGoal) {
+                        // Add goal situation information
+                        String situationText = '';
+                        if (event.goalSituation != null) {
+                          switch (event.goalSituation!) {
+                            case GoalSituation.powerPlay:
+                              situationText = 'Power Play';
+                              break;
+                            case GoalSituation.shortHanded:
+                              situationText = 'Penalty Kill';
+                              break;
+                            case GoalSituation.evenStrength:
+                              situationText = 'Even Strength';
+                              break;
+                          }
+                        } else {
+                          situationText = 'Even Strength'; // Default for older goals without situation data
+                        }
+                        
+                        // Build detail text with situation and assist
+                        List<String> details = [situationText];
+                        if (isYourTeam && event.assistPlayer1Id != null && event.assistPlayer1Id!.isNotEmpty) {
+                          details.add('Assist: ${_getPlayerDisplayText(event.assistPlayer1Id!, true)}');
+                        }
+                        detailText = ' (${details.join(', ')})';
                       }
                     } else if (isPenalty) {
                       eventTypeText = 'Penalty';
@@ -182,9 +205,9 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                       backgroundColor = Colors.orange;
                     }
                     
-                    // Add team color distinction
+                    // Add team color distinction - make opponent events more visually distinct
                     if (!isYourTeam) {
-                      backgroundColor = backgroundColor.withOpacity(0.6);
+                      backgroundColor = Colors.red.withOpacity(0.7);
                     }
 
                     return Card(
