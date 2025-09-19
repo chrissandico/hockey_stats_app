@@ -27,13 +27,12 @@ class SheetsService {
     
     try {
       final serviceAuth = await ServiceAccountAuth.instance;
-      _client = await serviceAuth.getClient();
+      // We don't need to store the client anymore since we use makeAuthenticatedRequest
       _isInitialized = true;
       print('SheetsService initialized with service account authentication');
     } catch (e) {
       print('Error initializing SheetsService: $e');
       _isInitialized = false;
-      _client = null;
     }
   }
 
@@ -42,7 +41,7 @@ class SheetsService {
   /// @return A Future that resolves to true if authenticated, false otherwise
   Future<bool> isSignedIn() async {
     await _initialize();
-    return _client != null;
+    return await ensureAuthenticated();
   }
 
   /// Attempts to sign in silently using the service account.
@@ -50,7 +49,7 @@ class SheetsService {
   /// @return A Future that resolves to true if authentication was successful, false otherwise
   Future<bool> signInSilently() async {
     await _initialize();
-    return _client != null;
+    return await ensureAuthenticated();
   }
 
   /// Authenticates using the service account.
@@ -58,7 +57,7 @@ class SheetsService {
   /// @return A Future that resolves to true if authentication was successful, false otherwise
   Future<bool> signIn() async {
     await _initialize();
-    return _client != null;
+    return await ensureAuthenticated();
   }
 
   /// Clears the authentication state.
@@ -126,10 +125,38 @@ class SheetsService {
       }
 
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        try {
+          return json.decode(response.body);
+        } catch (e) {
+          print('Error parsing JSON response: $e');
+          print('Response body: ${response.body.substring(0, response.body.length > 500 ? 500 : response.body.length)}...');
+          return null;
+        }
       } else {
-        print('API Error: ${response.statusCode} - ${response.body}');
-        return null;
+        // Check if response is HTML (error page) vs JSON error
+        final responseBody = response.body;
+        if (responseBody.trim().startsWith('<!DOCTYPE html') || responseBody.trim().startsWith('<html')) {
+          print('API Error: ${response.statusCode} - Received HTML error page instead of JSON');
+          print('This usually indicates authentication/permission issues or invalid spreadsheet ID');
+          
+          if (response.statusCode == 404) {
+            print('404 Error: The spreadsheet may not exist or the service account may not have access');
+            print('Service account email: ${serviceAuth.serviceAccountEmail}');
+            print('Spreadsheet ID: $_spreadsheetId');
+            print('Make sure the service account email is added to the spreadsheet with Editor permissions');
+          }
+          
+          return null;
+        } else {
+          // Try to parse JSON error response
+          try {
+            final errorData = json.decode(responseBody);
+            print('API Error: ${response.statusCode} - ${errorData}');
+          } catch (e) {
+            print('API Error: ${response.statusCode} - ${responseBody}');
+          }
+          return null;
+        }
       }
     } catch (e) {
       print('Request error: $e');
@@ -258,7 +285,9 @@ class SheetsService {
     int failureCount = 0;
 
     for (final roster in pendingRoster) {
-      if (_client == null) {
+      // Check authentication before each sync attempt
+      bool isStillAuthenticated = await ensureAuthenticated();
+      if (!isStillAuthenticated) {
          print('Authentication lost during batch sync.');
          failureCount = pendingRoster.length - successCount;
          break;
@@ -274,6 +303,155 @@ class SheetsService {
 
     print('Roster sync complete. Success: $successCount, Failed: $failureCount');
     return {'success': successCount, 'failed': failureCount, 'pending': failureCount};
+  }
+
+  /// Syncs pending roster entries in the background without blocking the UI.
+  /// This method implements retry logic and better error handling.
+  Future<Map<String, int>> syncPendingRosterInBackground() async {
+    print('Starting background roster sync...');
+    
+    try {
+      bool isAuthenticated = await ensureAuthenticated();
+      if (!isAuthenticated) {
+        print('Background roster sync: Authentication failed.');
+        return {'success': 0, 'failed': 0, 'pending': -1};
+      }
+
+      final gameRosterBox = Hive.box<GameRoster>('gameRoster');
+      final pendingRoster = gameRosterBox.values.where((roster) => !roster.isSynced).toList();
+
+      if (pendingRoster.isEmpty) {
+        print('Background roster sync: No pending roster entries to sync.');
+        return {'success': 0, 'failed': 0, 'pending': 0};
+      }
+
+      print('Background roster sync: Found ${pendingRoster.length} pending roster entries to sync.');
+      
+      // Use batch operations for better performance
+      return await _syncRosterBatch(pendingRoster);
+      
+    } catch (e) {
+      print('Background roster sync error: $e');
+      return {'success': 0, 'failed': 0, 'pending': -1};
+    }
+  }
+
+  /// Syncs a batch of roster entries with retry logic and better error handling.
+  Future<Map<String, int>> _syncRosterBatch(List<GameRoster> rosterEntries) async {
+    int successCount = 0;
+    int failureCount = 0;
+    const int maxRetries = 3;
+    int consecutiveFailures = 0;
+    const int circuitBreakerThreshold = 5; // Stop after 5 consecutive failures
+
+    for (final roster in rosterEntries) {
+      // Circuit breaker: stop if too many consecutive failures
+      if (consecutiveFailures >= circuitBreakerThreshold) {
+        print('Circuit breaker activated: Too many consecutive failures. Stopping batch sync.');
+        failureCount += rosterEntries.length - successCount - failureCount;
+        break;
+      }
+
+      bool success = false;
+      int retryCount = 0;
+
+      while (!success && retryCount < maxRetries) {
+        try {
+          // Check authentication before each sync attempt
+          bool isStillAuthenticated = await ensureAuthenticated();
+          if (!isStillAuthenticated) {
+            print('Authentication lost during batch sync.');
+            failureCount = rosterEntries.length - successCount;
+            break;
+          }
+
+          success = await _syncGameRosterWithRetry(roster);
+          
+          if (success) {
+            successCount++;
+            consecutiveFailures = 0; // Reset consecutive failures on success
+            print('Successfully synced roster entry for player ${roster.playerId} in game ${roster.gameId}');
+          } else {
+            retryCount++;
+            if (retryCount < maxRetries) {
+              // Exponential backoff: 2^retryCount seconds
+              final backoffDelay = Duration(seconds: (2 * retryCount).clamp(1, 10));
+              print('Retry $retryCount for roster entry ${roster.id} after ${backoffDelay.inSeconds}s delay...');
+              await Future.delayed(backoffDelay);
+            }
+          }
+        } catch (e) {
+          retryCount++;
+          print('Error syncing roster entry ${roster.id} (attempt $retryCount): $e');
+          
+          if (retryCount < maxRetries) {
+            // Exponential backoff: 2^retryCount seconds
+            final backoffDelay = Duration(seconds: (2 * retryCount).clamp(1, 10));
+            await Future.delayed(backoffDelay);
+          }
+        }
+      }
+
+      if (!success) {
+        failureCount++;
+        consecutiveFailures++;
+        print('Failed to sync roster entry ${roster.id} after $maxRetries attempts');
+      }
+    }
+
+    print('Background roster sync complete. Success: $successCount, Failed: $failureCount');
+    return {'success': successCount, 'failed': failureCount, 'pending': failureCount};
+  }
+
+  /// Syncs a single roster entry with improved error handling.
+  Future<bool> _syncGameRosterWithRetry(GameRoster roster) async {
+    try {
+      // Check if a row already exists for this game + player combination
+      final existingRowIndex = await _findGameRosterRow(roster.gameId, roster.playerId);
+      
+      final List<Object> values = [
+        roster.gameId,
+        roster.playerId,
+        roster.status,
+      ];
+
+      final Map<String, dynamic> body = {
+        'values': [values],
+        'majorDimension': 'ROWS',
+      };
+
+      Map<String, dynamic>? result;
+      
+      if (existingRowIndex != -1) {
+        // Update existing row
+        result = await _makeRequest(
+          'POST',
+          'values/GameRoster!A$existingRowIndex:C$existingRowIndex?valueInputOption=USER_ENTERED',
+          body: body,
+        );
+        print('Updated existing roster entry at row $existingRowIndex for player ${roster.playerId} in game ${roster.gameId}');
+      } else {
+        // Append new row
+        result = await _makeRequest(
+          'POST',
+          'values/GameRoster!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+          body: body,
+        );
+        print('Created new roster entry for player ${roster.playerId} in game ${roster.gameId}');
+      }
+
+      if (result != null) {
+        if (roster.isInBox) {
+          roster.isSynced = true;
+          await roster.save();
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('Error in _syncGameRosterWithRetry: $e');
+      return false;
+    }
   }
 
   Future<bool> updateEventInSheet(GameEvent event) async {
@@ -413,7 +591,13 @@ class SheetsService {
 
   Future<bool> ensureAuthenticated() async {
     await _initialize();
-    return _client != null;
+    try {
+      final serviceAuth = await ServiceAccountAuth.instance;
+      return serviceAuth.isAuthenticated;
+    } catch (e) {
+      print('Error checking authentication: $e');
+      return false;
+    }
   }
 
   Future<Map<String, int>> syncPendingEvents() async {
@@ -436,7 +620,9 @@ class SheetsService {
     int failureCount = 0;
 
     for (final event in pendingEvents) {
-      if (_client == null) {
+      // Check authentication before each sync attempt
+      bool isStillAuthenticated = await ensureAuthenticated();
+      if (!isStillAuthenticated) {
          print('Authentication lost during batch sync.');
          failureCount = pendingEvents.length - successCount;
          break;
@@ -452,6 +638,152 @@ class SheetsService {
 
     print('Sync complete. Success: $successCount, Failed: $failureCount');
     return {'success': successCount, 'failed': failureCount, 'pending': failureCount};
+  }
+
+  /// Syncs pending events in the background without blocking the UI.
+  /// This method implements retry logic and better error handling for events.
+  Future<Map<String, int>> syncPendingEventsInBackground() async {
+    print('Starting background events sync...');
+    
+    try {
+      bool isAuthenticated = await ensureAuthenticated();
+      if (!isAuthenticated) {
+        print('Background events sync: Authentication failed.');
+        return {'success': 0, 'failed': 0, 'pending': -1};
+      }
+
+      final gameEventsBox = Hive.box<GameEvent>('gameEvents');
+      final pendingEvents = gameEventsBox.values.where((event) => !event.isSynced).toList();
+
+      if (pendingEvents.isEmpty) {
+        print('Background events sync: No pending events to sync.');
+        return {'success': 0, 'failed': 0, 'pending': 0};
+      }
+
+      print('Background events sync: Found ${pendingEvents.length} pending events to sync.');
+      
+      // Use batch operations for better performance
+      return await _syncEventsBatch(pendingEvents);
+      
+    } catch (e) {
+      print('Background events sync error: $e');
+      return {'success': 0, 'failed': 0, 'pending': -1};
+    }
+  }
+
+  /// Syncs a batch of events with retry logic and better error handling.
+  Future<Map<String, int>> _syncEventsBatch(List<GameEvent> events) async {
+    int successCount = 0;
+    int failureCount = 0;
+    const int maxRetries = 3;
+    int consecutiveFailures = 0;
+    const int circuitBreakerThreshold = 5; // Stop after 5 consecutive failures
+
+    for (final event in events) {
+      // Circuit breaker: stop if too many consecutive failures
+      if (consecutiveFailures >= circuitBreakerThreshold) {
+        print('Circuit breaker activated: Too many consecutive failures. Stopping batch sync.');
+        failureCount += events.length - successCount - failureCount;
+        break;
+      }
+
+      bool success = false;
+      int retryCount = 0;
+
+      while (!success && retryCount < maxRetries) {
+        try {
+          // Check authentication before each sync attempt
+          bool isStillAuthenticated = await ensureAuthenticated();
+          if (!isStillAuthenticated) {
+            print('Authentication lost during batch sync.');
+            failureCount = events.length - successCount;
+            break;
+          }
+
+          success = await _syncGameEventWithRetry(event);
+          
+          if (success) {
+            successCount++;
+            consecutiveFailures = 0; // Reset consecutive failures on success
+            print('Successfully synced event ${event.id}');
+          } else {
+            retryCount++;
+            if (retryCount < maxRetries) {
+              // Exponential backoff: 2^retryCount seconds, capped at 10 seconds
+              final backoffDelay = Duration(seconds: (2 * retryCount).clamp(1, 10));
+              print('Retry $retryCount for event ${event.id} after ${backoffDelay.inSeconds}s delay...');
+              await Future.delayed(backoffDelay);
+            }
+          }
+        } catch (e) {
+          retryCount++;
+          print('Error syncing event ${event.id} (attempt $retryCount): $e');
+          
+          if (retryCount < maxRetries) {
+            // Exponential backoff: 2^retryCount seconds, capped at 10 seconds
+            final backoffDelay = Duration(seconds: (2 * retryCount).clamp(1, 10));
+            await Future.delayed(backoffDelay);
+          }
+        }
+      }
+
+      if (!success) {
+        failureCount++;
+        consecutiveFailures++;
+        print('Failed to sync event ${event.id} after $maxRetries attempts');
+      }
+    }
+
+    print('Background events sync complete. Success: $successCount, Failed: $failureCount');
+    return {'success': successCount, 'failed': failureCount, 'pending': failureCount};
+  }
+
+  /// Syncs a single event with improved error handling.
+  Future<bool> _syncGameEventWithRetry(GameEvent event) async {
+    try {
+      // Format the timestamp in a more readable format: YYYY-MM-DD HH:MM:SS
+      String formattedTimestamp = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}-${event.timestamp.day.toString().padLeft(2, '0')} ${event.timestamp.hour.toString().padLeft(2, '0')}:${event.timestamp.minute.toString().padLeft(2, '0')}:${event.timestamp.second.toString().padLeft(2, '0')}";
+
+      final List<Object> values = [
+        event.id,
+        event.gameId,
+        formattedTimestamp,
+        event.period,
+        event.eventType,
+        event.team,
+        event.primaryPlayerId,
+        event.assistPlayer1Id ?? '',
+        event.assistPlayer2Id ?? '',
+        event.isGoal ?? false,
+        _goalSituationToString(event.goalSituation),
+        event.penaltyType ?? '',
+        event.penaltyDuration ?? 0,
+        event.yourTeamPlayersOnIce?.join(',') ?? '',
+      ];
+
+      final Map<String, dynamic> body = {
+        'values': [values],
+        'majorDimension': 'ROWS',
+      };
+
+      final result = await _makeRequest(
+        'POST',
+        'values/Events!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+        body: body,
+      );
+
+      if (result != null) {
+        if (event.isInBox) {
+          event.isSynced = true;
+          await event.save();
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('Error in _syncGameEventWithRetry: $e');
+      return false;
+    }
   }
 
   Future<List<Player>?> fetchPlayers() async {

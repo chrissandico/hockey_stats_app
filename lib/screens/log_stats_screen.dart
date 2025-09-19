@@ -71,16 +71,32 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   bool _isLogging = false;
   final uuid = Uuid();
   late Box<GameEvent> gameEventsBox;
+  
+  // Sync status tracking
+  String? _syncStatus;
+  bool _isSyncingInBackground = false;
 
   @override
   void initState() {
     super.initState();
     gameEventsBox = Hive.box<GameEvent>('gameEvents');
-    _loadInitialData();
-    _checkSignInStatus();
-    _loadPlayers();
+    _initializeScreenAsync();
+  }
+
+  /// Initialize the screen with optimized async loading
+  Future<void> _initializeScreenAsync() async {
+    // Load essential data first (non-blocking)
+    await _loadInitialData();
+    
+    // Load other data in parallel (non-blocking)
+    Future.wait([
+      _checkSignInStatus(),
+      _loadPlayers(),
+      _loadCurrentTeamName(),
+    ]);
+    
+    // Load attendance data last (least critical)
     _loadAttendanceData();
-    _loadCurrentTeamName();
   }
 
   Future<void> _checkSignInStatus() async {
@@ -1093,6 +1109,64 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // Sync status indicator
+                if (_syncStatus != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12.0),
+                    margin: const EdgeInsets.only(bottom: 16.0),
+                    decoration: BoxDecoration(
+                      color: _isSyncingInBackground 
+                          ? Colors.blue.withOpacity(0.1)
+                          : Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8.0),
+                      border: Border.all(
+                        color: _isSyncingInBackground 
+                            ? Colors.blue.withOpacity(0.3)
+                            : Colors.green.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        if (_isSyncingInBackground)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          Icon(
+                            Icons.check_circle,
+                            color: Colors.green,
+                            size: 16,
+                          ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _syncStatus!,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: _isSyncingInBackground 
+                                  ? Colors.blue[700]
+                                  : Colors.green[700],
+                            ),
+                          ),
+                        ),
+                        if (!_isSyncingInBackground)
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 16),
+                            onPressed: () {
+                              setState(() {
+                                _syncStatus = null;
+                              });
+                            },
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 if (_currentUser != null) ...[
                   const SizedBox(height: 10),

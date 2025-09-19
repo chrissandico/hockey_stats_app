@@ -30,7 +30,7 @@ class TeamContextService {
   /// Get the current team's logo file name
   Future<String> getCurrentTeamLogoFileName() async {
     final team = await getCurrentTeam();
-    return team?.logoFileName ?? 'generic_logo.svg';
+    return team?.logoFileName ?? 'waxers_logo.png'; // Use PNG instead of corrupted SVG
   }
 
   /// Get the current team's logo path for assets

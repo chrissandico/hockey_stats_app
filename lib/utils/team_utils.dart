@@ -42,14 +42,14 @@ class TeamUtils {
         Team(
           id: 'your_team',
           name: 'Your Team',
-          logoPath: 'assets/logos/your_team_logo.svg',
+          logoPath: 'assets/logos/stars_logo.png', // Use existing PNG instead of corrupted SVG
           primaryColor: const Color(0xFF059669),
           secondaryColor: Colors.white,
         ),
         Team(
           id: 'opponent',
           name: 'Opponent',
-          logoPath: 'assets/logos/generic_logo.svg',
+          logoPath: 'assets/logos/waxers_logo.png', // Use existing PNG instead of corrupted SVG
           primaryColor: const Color(0xFFDC2626),
           secondaryColor: Colors.white,
         ),
@@ -141,13 +141,13 @@ class TeamUtils {
       logoPath = 'assets/logos/waxers_logo.png'; // Use waxers logo
     } else if (cleanIdentifier.contains('your') || cleanIdentifier.contains('home')) {
       primaryColor = const Color(0xFF059669); // Green
-      logoPath = 'assets/logos/your_team_logo.svg';
+      logoPath = 'assets/logos/stars_logo.png'; // Use existing PNG instead of corrupted SVG
     } else if (cleanIdentifier.contains('opponent') || cleanIdentifier.contains('away')) {
       primaryColor = const Color(0xFFDC2626); // Red
-      logoPath = 'assets/logos/generic_logo.svg';
+      logoPath = 'assets/logos/waxers_logo.png'; // Use existing PNG instead of corrupted SVG
     } else {
       primaryColor = const Color(0xFF6B7280); // Gray
-      logoPath = 'assets/logos/generic_logo.svg';
+      logoPath = 'assets/logos/waxers_logo.png'; // Use existing PNG instead of corrupted SVG
     }
 
     return Team(

@@ -120,8 +120,8 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
   /// This method:
   /// 1. Deletes any existing attendance records for this game
   /// 2. Creates new records based on the current UI state
-  /// 3. Attempts to sync the data to Google Sheets if the user is signed in
-  /// 4. Closes the dialog when complete
+  /// 3. Schedules background sync to Google Sheets if the user is signed in
+  /// 4. Closes the dialog immediately after local save
   Future<void> _saveAttendance() async {
     setState(() {
       _isSaving = true;
@@ -154,10 +154,15 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
         await rosterBox.put(roster.id, roster);
       }
 
-      // Try to sync to Google Sheets if signed in
+      // Schedule background sync to Google Sheets if signed in (non-blocking)
       if (await _sheetsService.isSignedIn()) {
-        print('Syncing attendance to Google Sheets...');
-        await _sheetsService.syncPendingRoster();
+        print('Scheduling background sync of attendance to Google Sheets...');
+        // Don't await this - let it run in background
+        _sheetsService.syncPendingRosterInBackground().then((result) {
+          print('Background roster sync completed: $result');
+        }).catchError((error) {
+          print('Background roster sync failed: $error');
+        });
       }
 
       if (mounted) {

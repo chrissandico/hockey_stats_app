@@ -8,7 +8,7 @@ import 'package:uuid/uuid.dart'; // Import for generating UUIDs
 import 'package:hockey_stats_app/main.dart' as main_logic; // To access functions from main.dart
 import 'package:hockey_stats_app/screens/attendance_dialog.dart'; // Import attendance dialog
 // Enum for different screen states
-enum _ScreenState { initialLoading, needsSignIn, signInFailed, syncFailed, dataLoaded, noGamesFound }
+enum _ScreenState { initialLoading, syncFailed, dataLoaded, noGamesFound }
 
 // This screen will allow the user to select a game from the local database.
 class GameSelectionScreen extends StatefulWidget {
@@ -54,39 +54,23 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
       _screenState = _ScreenState.initialLoading;
     });
 
-    bool isSignedIn = await _sheetsService.isSignedIn();
+    // With service account authentication, we always try to sync automatically
+    final syncResult = await main_logic.attemptInitialDataSyncIfSignedIn();
+    if (!mounted) return;
 
-    if (isSignedIn) {
-      final syncResult = await main_logic.attemptInitialDataSyncIfSignedIn();
-      if (!mounted) return;
+    _loadGamesInternal(); // Load games from Hive regardless of sync outcome
 
-      _loadGamesInternal(); // Load games from Hive regardless of sync outcome initially
-
-      if (syncResult['status'] == 'sync_success') {
-        // Data synced, _loadGamesInternal already updated the list
-        setState(() {
-          _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.dataLoaded;
-          _errorMessage = null;
-        });
-      } else { // sync_failed or signin_needed (after silent fail)
-        setState(() {
-          _errorMessage = syncResult['message'] as String?;
-          // If sync failed but we have local games, show them with an error.
-          // If no local games, it's effectively noGamesFound but with a sync error context.
-          _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.dataLoaded;
-          // We show dataLoaded to display games, error message will be shown via _errorMessage
-          if (syncResult['status'] == 'signin_needed') {
-             _screenState = _ScreenState.needsSignIn; // If silent sign in failed, prompt for manual.
-          } else {
-             _screenState = _ScreenState.syncFailed; // For other sync failures
-          }
-        });
-      }
-    } else { // Not signed in
-      _loadGamesInternal(); // Load any existing local games
-      if (!mounted) return;
+    if (syncResult['status'] == 'sync_success') {
+      // Data synced successfully
       setState(() {
-        _screenState = _ScreenState.needsSignIn;
+        _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.dataLoaded;
+        _errorMessage = null;
+      });
+    } else {
+      // Sync failed, but show local games if available
+      setState(() {
+        _errorMessage = syncResult['message'] as String?;
+        _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.syncFailed;
       });
     }
   }
@@ -136,41 +120,31 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     }
   }
   
-  // New method to handle manual sign-in and subsequent sync
-  Future<void> _handleSignInAndSync() async {
+  // Retry sync method for when sync fails
+  Future<void> _retrySync() async {
     if (!mounted) return;
     setState(() {
       _isPerformingAsyncOperation = true;
       _errorMessage = null;
-      // _screenState = _ScreenState.initialLoading; // Visually indicate loading
     });
 
-    bool signInSuccess = await _sheetsService.signIn();
+    final syncResult = await main_logic.attemptInitialDataSyncIfSignedIn();
     if (!mounted) return;
+    
+    _loadGamesInternal(); // Refresh game list from Hive
 
-    if (signInSuccess) {
-      final syncResult = await main_logic.attemptInitialDataSyncIfSignedIn();
-      if (!mounted) return;
-      
-      _loadGamesInternal(); // Refresh game list from Hive
-
-      if (syncResult['status'] == 'sync_success') {
-        setState(() {
-          _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.dataLoaded;
-          _errorMessage = null;
-        });
-      } else { // sync_failed or signin_needed (shouldn't be signin_needed here if signIn() was successful)
-        setState(() {
-          _errorMessage = syncResult['message'] as String?;
-          _screenState = _ScreenState.syncFailed; // Or dataLoaded with error
-        });
-      }
-    } else { // Sign-in failed
+    if (syncResult['status'] == 'sync_success') {
       setState(() {
-        _errorMessage = "Sign-in failed. Please try again.";
-        _screenState = _ScreenState.signInFailed; 
+        _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.dataLoaded;
+        _errorMessage = null;
+      });
+    } else {
+      setState(() {
+        _errorMessage = syncResult['message'] as String?;
+        _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.syncFailed;
       });
     }
+    
     if (mounted) {
       setState(() {
         _isPerformingAsyncOperation = false;
@@ -610,77 +584,25 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     }
   }
 
-  // Build the auth indicator based on sign-in state
-  Widget _buildAuthIndicator() {
+  // Build the sync status indicator
+  Widget _buildSyncIndicator() {
     return IconButton(
-      icon: _screenState == _ScreenState.needsSignIn || _screenState == _ScreenState.signInFailed
-          ? const Icon(Icons.account_circle, color: Colors.grey)
-          : _screenState == _ScreenState.initialLoading
-              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.account_circle, color: Colors.green),
-      tooltip: _screenState == _ScreenState.needsSignIn
-          ? 'Sign in with Google'
-          : _screenState == _ScreenState.signInFailed
-              ? 'Sign-in failed. Tap to retry.'
-              : _screenState == _ScreenState.initialLoading
-                  ? 'Checking sign-in status...'
-                  : 'Signed in. Tap to sign out.',
+      icon: _screenState == _ScreenState.initialLoading
+          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+          : _screenState == _ScreenState.syncFailed
+              ? const Icon(Icons.sync_problem, color: Colors.orange)
+              : const Icon(Icons.cloud_done, color: Colors.green),
+      tooltip: _screenState == _ScreenState.initialLoading
+          ? 'Syncing with Google Sheets...'
+          : _screenState == _ScreenState.syncFailed
+              ? 'Sync failed. Tap to retry.'
+              : 'Data synced with Google Sheets',
       onPressed: _isPerformingAsyncOperation
           ? null
-          : (_screenState == _ScreenState.needsSignIn || _screenState == _ScreenState.signInFailed)
-              ? _handleSignInAndSync
-              : _showSignOutDialog,
+          : _screenState == _ScreenState.syncFailed
+              ? _retrySync
+              : null,
     );
-  }
-
-  // Show sign-out confirmation dialog
-  void _showSignOutDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Sign Out'),
-          content: const Text('Are you sure you want to sign out? You won\'t be able to sync data until you sign in again.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _handleSignOut();
-              },
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('Sign Out'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // Handle sign-out process
-  Future<void> _handleSignOut() async {
-    if (!mounted) return;
-    setState(() { _isPerformingAsyncOperation = true; });
-    
-    await _sheetsService.signOut();
-    
-    if (!mounted) return;
-    setState(() {
-      _isPerformingAsyncOperation = false;
-      _screenState = _ScreenState.needsSignIn;
-    });
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Signed out successfully')),
-    );
-    
-    // Call the onSignOut callback if provided
-    if (widget.onSignOut != null) {
-      widget.onSignOut!();
-    }
   }
 
   @override
@@ -689,6 +611,37 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
       appBar: AppBar(
         title: const Text('Home'),
         actions: [
+          // Switch Team button
+          IconButton(
+            icon: const Icon(Icons.switch_account),
+            tooltip: 'Switch Team',
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (BuildContext context) {
+                  return AlertDialog(
+                    title: const Text('Switch Team'),
+                    content: const Text('Do you want to switch to a different team? This will sign you out of the current team.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          if (widget.onSignOut != null) {
+                            widget.onSignOut!();
+                          }
+                        },
+                        child: const Text('Switch Team'),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
           StreamBuilder<int>(
             stream: Hive.box<GameEvent>('gameEvents')
                 .watch()
@@ -723,7 +676,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
               );
             },
           ),
-          _buildAuthIndicator(),
+          _buildSyncIndicator(),
         ],
       ),
       body: _buildBody(),
@@ -734,9 +687,6 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     switch (_screenState) {
       case _ScreenState.initialLoading:
         return const Center(child: CircularProgressIndicator());
-      case _ScreenState.needsSignIn:
-      case _ScreenState.signInFailed:
-        return _buildSignInUI();
       case _ScreenState.syncFailed:
         // Show games if available, with an error message about sync
         return _buildGameListUI(headerMessage: _errorMessage ?? "Sync failed. Displaying local data.");
@@ -749,51 +699,6 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     }
   }
 
-  Widget _buildSignInUI() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              _screenState == _ScreenState.signInFailed 
-                  ? _errorMessage ?? 'Sign-in failed. Please try again.' 
-                  : 'Please sign in with Google to sync your hockey stats.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: _screenState == _ScreenState.signInFailed ? Colors.red : null),
-            ),
-            const SizedBox(height: 24),
-            _isPerformingAsyncOperation 
-              ? const Center(child: CircularProgressIndicator())
-              : ElevatedButton.icon(
-                  icon: const Icon(Icons.login), // Placeholder for Google icon
-                  label: const Text('Sign In with Google'),
-                  onPressed: _handleSignInAndSync,
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
-                ),
-            const SizedBox(height: 16),
-            // Optionally, allow proceeding offline if there are local games or to add a new game
-            if (availableGames.isNotEmpty) ...[
-              const Text("Or, continue with local data:", textAlign: TextAlign.center),
-              const SizedBox(height: 8),
-              ElevatedButton(
-                child: const Text('View Local Games'),
-                onPressed: () => setState(() => _screenState = _ScreenState.dataLoaded),
-              ),
-            ],
-            // Always allow adding a new game locally?
-            // Or only after sign-in attempt / explicit offline mode?
-            // For now, let's keep "Add New Game" accessible via a different part of UI if needed,
-            // or add it here if desired. The main list UI will have it.
-            // This screen's primary job is now getting the user to a state where they *can* see games.
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildNoGamesUI() {
      return Center(
       child: Padding(
@@ -804,18 +709,11 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
           children: [
             Text(_errorMessage ?? 'No games found.', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
             const SizedBox(height: 16),
-            if (_screenState == _ScreenState.needsSignIn || _screenState == _ScreenState.signInFailed)
-              ElevatedButton.icon(
-                icon: const Icon(Icons.login),
-                label: const Text('Sign In with Google'),
-                onPressed: _isPerformingAsyncOperation ? null : _handleSignInAndSync,
-              ),
-            // const SizedBox(height: 16), // Removed SizedBox
-            // ElevatedButton.icon( // Removed "Add New Game" button
-            //   icon: const Icon(Icons.add),
-            //   label: const Text('Add New Game'),
-            //   onPressed: _isPerformingAsyncOperation ? null : () => _showAddGameDialog(context),
-            // ),
+            const Text(
+              'Data syncs automatically with Google Sheets in the background.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
             // Consider adding a button to load dummy data if desired for testing
             // TextButton(onPressed: () { main_logic.addDummyDataIfNeeded(); _initializeScreen(); }, child: Text("Load Dummy Data (Dev)")),
           ],
@@ -849,7 +747,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
             if (availableGames.isEmpty && !_isPerformingAsyncOperation)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 20.0),
-                child: Text(_screenState == _ScreenState.needsSignIn ? 'Sign in to sync games or add a new one.' : 'No games available. Add a game to get started.', textAlign: TextAlign.center, style: const TextStyle(fontStyle: FontStyle.italic)),
+                child: Text('No games available. Add a game to get started.', textAlign: TextAlign.center, style: const TextStyle(fontStyle: FontStyle.italic)),
               )
             else
               ListView.builder(

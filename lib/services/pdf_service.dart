@@ -34,7 +34,7 @@ class PdfService {
       print('Failed to load team logo: $e');
       // Try fallback to generic logo
       try {
-        final logoBytes = await rootBundle.load('assets/logos/generic_logo.svg');
+        final logoBytes = await rootBundle.load('assets/logos/waxers_logo.png'); // Use PNG instead of corrupted SVG
         logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
       } catch (e2) {
         print('Failed to load fallback logo: $e2');

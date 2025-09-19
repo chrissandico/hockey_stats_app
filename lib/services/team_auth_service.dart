@@ -23,7 +23,7 @@ class Team {
       id: row[0]?.toString() ?? '',
       name: row[1]?.toString() ?? '',
       password: row[2]?.toString() ?? '',
-      logoFileName: row[3]?.toString() ?? 'generic_logo.svg',
+      logoFileName: row[3]?.toString() ?? 'waxers_logo.png', // Use PNG instead of corrupted SVG
     );
   }
 
@@ -112,7 +112,7 @@ class TeamAuthService {
       // Find team with matching password
       final team = teams.firstWhere(
         (team) => team.password == password,
-        orElse: () => Team(id: '', name: '', password: '', logoFileName: 'generic_logo.svg'),
+        orElse: () => Team(id: '', name: '', password: '', logoFileName: 'waxers_logo.png'),
       );
       
       // Return team ID if found, null otherwise
@@ -158,7 +158,7 @@ class TeamAuthService {
     final teams = await fetchTeams();
     return teams.firstWhere(
       (team) => team.id == teamId,
-      orElse: () => Team(id: '', name: '', password: '', logoFileName: 'generic_logo.svg'),
+      orElse: () => Team(id: '', name: '', password: '', logoFileName: 'waxers_logo.png'),
     );
   }
 
