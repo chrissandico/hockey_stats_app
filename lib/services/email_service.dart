@@ -49,23 +49,10 @@ class EmailService {
     final teamContextService = TeamContextService();
     final teamName = await teamContextService.getCurrentTeamName();
     
-    // Calculate the score for the email body
-    int yourTeamScore = gameEvents.where((event) => 
-      event.eventType == 'Shot' && 
-      event.isGoal == true && 
-      event.team == teamId
-    ).length;
-
-    int opponentScore = gameEvents.where((event) => 
-      event.eventType == 'Shot' && 
-      event.isGoal == true && 
-      event.team == 'opponent'
-    ).length;
-    
     final Email email = Email(
       recipients: recipients,
       subject: 'Hockey Game Stats - ${game.opponent} - $formattedDate',
-      body: 'Game stats for $teamName vs ${game.opponent} on $formattedDate.\n\nFinal Score: $yourTeamScore - $opponentScore\n\nDetailed stats attached as PDF.',
+      body: 'Please see attached PDF for complete game statistics.\n\n$teamName vs ${game.opponent}\n$formattedDate',
       attachmentPaths: [pdfFile.path],
       isHTML: false,
     );

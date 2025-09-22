@@ -7,34 +7,13 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
+import 'package:hockey_stats_app/services/centralized_data_service.dart';
 import 'package:hockey_stats_app/widgets/share_dialog.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
+import 'package:hockey_stats_app/widgets/player_selection_widget.dart';
 import 'package:uuid/uuid.dart';
 
-Map<String, int> _calculateScore(List<GameEvent> events, String teamId) {
-  print('Calculating score from ${events.length} events');
-  
-  int yourTeamScore = events.where((event) => 
-    event.eventType == 'Shot' && 
-    event.isGoal == true && 
-    event.team == teamId
-  ).length;
-
-  int opponentScore = events.where((event) => 
-    event.eventType == 'Shot' && 
-    event.isGoal == true && 
-    event.team == 'opponent'
-  ).length;
-
-  print('Score calculation complete:');
-  print('Your Team: $yourTeamScore');
-  print('Opponent: $opponentScore');
-
-  return {
-    'Your Team': yourTeamScore,
-    'Opponent': opponentScore,
-  };
-}
+// Removed - now using CentralizedDataService for score calculation
 
 class LogStatsScreen extends StatefulWidget {
   final String gameId;
@@ -53,6 +32,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
 
   final SheetsService _sheetsService = SheetsService();
   final TeamContextService _teamContextService = TeamContextService();
+  final CentralizedDataService _centralizedDataService = CentralizedDataService();
   String? _currentUser; // Changed from GoogleSignInAccount? to String?
   bool _isSigningIn = false;
   bool _isLoadingInitialData = true;
@@ -60,7 +40,11 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   
   // Players on ice tracking
   List<Player> _yourTeamPlayers = [];
+  List<Player> _goalies = [];
   List<Player> _selectedPlayersOnIce = [];
+  Player? _selectedGoalScorer;
+  Player? _selectedAssist;
+  Player? _selectedGoalie;
   bool _isLoadingPlayers = false;
   
   // Attendance tracking
@@ -151,7 +135,19 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     
     try {
       final playersBox = Hive.box<Player>('players');
-      // Filter out goalies (players with position "G")
+      
+      // Load goalies separately
+      _goalies = playersBox.values
+          .where((p) => p.teamId == widget.teamId && p.position == 'G')
+          .toList();
+      _goalies.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+      
+      // Set default goalie if available and none selected
+      if (_goalies.isNotEmpty && _selectedGoalie == null) {
+        _selectedGoalie = _goalies.first;
+      }
+      
+      // Filter out goalies (players with position "G") for skaters
       final players = playersBox.values
           .where((p) => p.teamId == widget.teamId && p.position != 'G')
           .toList();
@@ -457,24 +453,14 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
 
   Widget _buildPeriodSelector() {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          const Text(
-            'Select Period:',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8.0),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildPeriodButton(1),
-              _buildPeriodButton(2),
-              _buildPeriodButton(3),
-              _buildPeriodButton(4, label: 'OT'),
-            ],
-          ),
+          _buildPeriodButton(1),
+          _buildPeriodButton(2),
+          _buildPeriodButton(3),
+          _buildPeriodButton(4, label: 'OT'),
         ],
       ),
     );
@@ -484,7 +470,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     final isSelected = _selectedPeriod == period;
     return Expanded(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+        padding: const EdgeInsets.symmetric(horizontal: 3.0),
         child: ElevatedButton(
           onPressed: () {
             setState(() {
@@ -494,9 +480,14 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: isSelected ? Theme.of(context).primaryColor : null,
             foregroundColor: isSelected ? Colors.white : null,
-            padding: const EdgeInsets.symmetric(vertical: 12.0),
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-          child: Text(label ?? 'P$period'),
+          child: Text(
+            label ?? 'P$period',
+            style: const TextStyle(fontSize: 14),
+          ),
         ),
       ),
     );
@@ -506,6 +497,10 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
      if (!mounted) return;
      setState(() { _isLoadingScore = true; });
      try {
+        // Force refresh from Google Sheets to get the latest data
+        print('Refreshing score from Google Sheets...');
+        await _centralizedDataService.calculateCurrentScore(widget.gameId, widget.teamId, forceRefresh: true);
+        
         if (mounted) {
            setState(() {
               _isLoadingScore = false;
@@ -537,6 +532,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
         isSynced: false,
         yourTeamPlayersOnIce: team == 'opponent' ? null : _getPlayersOnIceIds(),
         goalSituation: null,
+        goalieOnIceId: (team == 'opponent' && _selectedGoalie != null) ? _selectedGoalie!.id : null,
       );
 
       await gameEventsBox.put(newShotEvent.id, newShotEvent);
@@ -721,8 +717,44 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 children: <Widget>[
                 _buildPeriodSelector(),
                 
-                // Players On Ice Panel
-                _buildPlayersOnIcePanel(),
+                // Use shared player selection widget
+                if (_isLoadingPlayers)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else
+                PlayerSelectionWidget(
+                  players: _yourTeamPlayers,
+                  goalies: _goalies,
+                  absentPlayerIds: _absentPlayerIds,
+                  selectedPlayersOnIce: _selectedPlayersOnIce,
+                  selectedGoalScorer: _selectedGoalScorer,
+                  selectedAssist1: _selectedAssist,
+                  selectedGoalie: _selectedGoalie,
+                  onPlayersOnIceChanged: (players) {
+                    setState(() {
+                      _selectedPlayersOnIce = players;
+                    });
+                  },
+                  onGoalScorerChanged: (player) {
+                    setState(() {
+                      _selectedGoalScorer = player;
+                    });
+                  },
+                  onAssist1Changed: (player) {
+                    setState(() {
+                      _selectedAssist = player;
+                    });
+                  },
+                  onGoalieChanged: (player) {
+                    setState(() {
+                      _selectedGoalie = player;
+                    });
+                  },
+                ),
 
                 const SizedBox(height: 24),
 
@@ -959,43 +991,46 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                           ),
                           const SizedBox(height: 8),
                           
-                          ValueListenableBuilder(
-                            valueListenable: Hive.box<GameEvent>('gameEvents').listenable(),
-                            builder: (context, Box<GameEvent> box, _) {
-                              final gameEvents = box.values.where((event) => event.gameId == widget.gameId).toList();
-                              final score = _calculateScore(gameEvents, widget.teamId);
+                          FutureBuilder<Map<String, int>>(
+                            future: _centralizedDataService.calculateCurrentScore(widget.gameId, widget.teamId),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState == ConnectionState.waiting || _isLoadingScore) {
+                                return const Center(
+                                  child: SizedBox(height: 30, width: 30, child: CircularProgressIndicator(strokeWidth: 3))
+                                );
+                              }
+                              
+                              final score = snapshot.data ?? {'Your Team': 0, 'Opponent': 0};
                               
                               return Center(
-                                child: _isLoadingScore
-                                    ? const SizedBox(height: 30, width: 30, child: CircularProgressIndicator(strokeWidth: 3))
-                                    : Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Text(
-                                            '${score['Your Team']}',
-                                            style: const TextStyle(
-                                              fontSize: 24,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.blue,
-                                            ),
-                                          ),
-                                          const Text(
-                                            ' - ',
-                                            style: TextStyle(
-                                              fontSize: 24,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                          Text(
-                                            '${score['Opponent']}',
-                                            style: const TextStyle(
-                                              fontSize: 24,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.red,
-                                            ),
-                                          ),
-                                        ],
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      '${score['Your Team']}',
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
                                       ),
+                                    ),
+                                    const Text(
+                                      ' - ',
+                                      style: TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${score['Opponent']}',
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.red,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               );
                             }
                           ),

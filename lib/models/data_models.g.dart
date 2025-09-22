@@ -125,13 +125,14 @@ class GameEventAdapter extends TypeAdapter<GameEvent> {
       isSynced: fields[13] as bool,
       version: fields[14] as int?,
       goalSituation: fields[15] as GoalSituation?,
+      goalieOnIceId: fields[16] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, GameEvent obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -163,7 +164,9 @@ class GameEventAdapter extends TypeAdapter<GameEvent> {
       ..writeByte(14)
       ..write(obj.version)
       ..writeByte(15)
-      ..write(obj.goalSituation);
+      ..write(obj.goalSituation)
+      ..writeByte(16)
+      ..write(obj.goalieOnIceId);
   }
 
   @override

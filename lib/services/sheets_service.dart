@@ -189,6 +189,7 @@ class SheetsService {
       event.penaltyType ?? '',
       event.penaltyDuration ?? 0,
       event.yourTeamPlayersOnIce?.join(',') ?? '',
+      event.goalieOnIceId ?? '',
     ];
 
     final Map<String, dynamic> body = {
@@ -504,6 +505,7 @@ class SheetsService {
       event.penaltyType ?? '',
       event.penaltyDuration ?? 0,
       event.yourTeamPlayersOnIce?.join(',') ?? '',
+      event.goalieOnIceId ?? '',
     ];
 
     final Map<String, dynamic> body = {
@@ -513,7 +515,7 @@ class SheetsService {
 
     final result = await _makeRequest(
       'PUT',
-      'values/Events!A$rowIndex:N$rowIndex?valueInputOption=USER_ENTERED',
+      'values/Events!A$rowIndex:O$rowIndex?valueInputOption=USER_ENTERED',
       body: body,
     );
 
@@ -759,6 +761,7 @@ class SheetsService {
         event.penaltyType ?? '',
         event.penaltyDuration ?? 0,
         event.yourTeamPlayersOnIce?.join(',') ?? '',
+        event.goalieOnIceId ?? '',
       ];
 
       final Map<String, dynamic> body = {
@@ -940,7 +943,7 @@ class SheetsService {
       return null;
     }
 
-    final result = await _makeRequest('GET', 'values/Events!A2:N');
+    final result = await _makeRequest('GET', 'values/Events!A2:O');
     if (result == null) return null;
 
     final List<List<dynamic>> values = List<List<dynamic>>.from(result['values'] ?? []);
@@ -1011,6 +1014,9 @@ class SheetsService {
               ? row[13].toString().split(',')
               : null;
 
+          String? goalieOnIceId = row.length > 14 ? row[14]?.toString() : null;
+          if (goalieOnIceId?.isEmpty ?? true) goalieOnIceId = null;
+
           // Allow events with valid ID and gameId, regardless of primaryPlayerId
           // This ensures all shot events are imported, even if they don't have a specific player assigned
           if (id.isNotEmpty && gameId.isNotEmpty && eventType.isNotEmpty) {
@@ -1031,6 +1037,7 @@ class SheetsService {
               isSynced: true,
               version: 1, // Initialize version for events from sheet
               goalSituation: goalSituation,
+              goalieOnIceId: goalieOnIceId,
             ));
             print('Parsed event: ${eventType} for ${team} (ID: $id, IsGoal: $isGoal)');
           }

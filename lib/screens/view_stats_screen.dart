@@ -3,7 +3,10 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:data_table_2/data_table_2.dart';
 import 'package:hockey_stats_app/widgets/share_dialog.dart';
+import 'package:hockey_stats_app/widgets/goalie_stats_widget.dart';
+import 'package:hockey_stats_app/widgets/score_summary_widget.dart';
 import 'package:hockey_stats_app/services/stats_service.dart';
+import 'package:hockey_stats_app/services/centralized_data_service.dart';
 
 class ViewStatsScreen extends StatefulWidget {
   const ViewStatsScreen({super.key, this.gameId, required this.teamId});
@@ -17,15 +20,51 @@ class ViewStatsScreen extends StatefulWidget {
 
 class _ViewStatsScreenState extends State<ViewStatsScreen> {
   late List<Player> players;
+  late List<Player> goalies;
+  final CentralizedDataService _centralizedDataService = CentralizedDataService();
+  bool _isLoadingStats = false;
 
   @override
   void initState() {
     super.initState();
     // Get all players, filter out opponent players
     final playersBox = Hive.box<Player>('players');
-    players = playersBox.values.where((player) => player.teamId == widget.teamId).toList();
-    // Sort players by jersey number in ascending order
+    final allPlayers = playersBox.values.where((player) => player.teamId == widget.teamId).toList();
+    
+    // Separate goalies from skaters
+    goalies = allPlayers.where((player) => player.position == 'G').toList();
+    players = allPlayers.where((player) => player.position != 'G').toList();
+    
+    // Sort both lists by jersey number in ascending order
     players.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    goalies.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    
+    // Load fresh stats from Google Sheets
+    _refreshStats();
+  }
+
+  Future<void> _refreshStats() async {
+    if (!mounted) return;
+    setState(() { _isLoadingStats = true; });
+    
+    try {
+      // Force refresh from Google Sheets to get the latest data
+      print('Refreshing stats from Google Sheets...');
+      if (widget.gameId != null) {
+        await _centralizedDataService.getCurrentGameEvents(widget.gameId!, forceRefresh: true);
+      } else {
+        await _centralizedDataService.getAllCurrentGameEvents(forceRefresh: true);
+      }
+      
+      if (mounted) {
+        setState(() { _isLoadingStats = false; });
+      }
+    } catch (e) {
+      print('Error refreshing stats: $e');
+      if (mounted) {
+        setState(() { _isLoadingStats = false; });
+      }
+    }
   }
 
   @override
@@ -35,16 +74,21 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
         title: const Text('View Stats'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh from Google Sheets',
+            onPressed: _isLoadingStats ? null : _refreshStats,
+          ),
+          IconButton(
             icon: const Icon(Icons.share),
             onPressed: () async {
               final gamesBox = Hive.box<Game>('games');
               final game = gamesBox.get(widget.gameId);
               if (game == null) return;
 
-              final gameEventsBox = Hive.box<GameEvent>('gameEvents');
-              final gameEvents = gameEventsBox.values
-                  .where((event) => event.gameId == widget.gameId)
-                  .toList();
+              // Get fresh data from centralized service
+              final gameEvents = widget.gameId != null 
+                  ? await _centralizedDataService.getCurrentGameEvents(widget.gameId!)
+                  : await _centralizedDataService.getAllCurrentGameEvents();
 
               if (mounted) {
                 await showDialog(
@@ -65,13 +109,54 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
         padding: const EdgeInsets.all(16.0),
         child: ListView(
           children: <Widget>[
-            const Text('Individual Player Stats', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            // Add Score Summary Widget
+            FutureBuilder<List<GameEvent>>(
+              future: widget.gameId != null 
+                  ? _centralizedDataService.getCurrentGameEvents(widget.gameId!)
+                  : _centralizedDataService.getAllCurrentGameEvents(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting && !_isLoadingStats) {
+                  return const ScoreSummaryWidget(
+                    gameEvents: [],
+                    teamId: '',
+                    isLoading: true,
+                  );
+                }
+                
+                final gameEvents = snapshot.data ?? [];
+
+                return ScoreSummaryWidget(
+                  gameEvents: gameEvents,
+                  teamId: widget.teamId,
+                  gameId: widget.gameId,
+                  isLoading: _isLoadingStats,
+                );
+              },
+            ),
             const SizedBox(height: 16.0),
-            ValueListenableBuilder(
-              valueListenable: Hive.box<GameEvent>('gameEvents').listenable(),
-              builder: (context, Box<GameEvent> gameEventsBox, _) {
-                // Get all game events for this game
-                final gameEvents = gameEventsBox.values.where((event) => event.gameId == widget.gameId).toList();
+            
+            Row(
+              children: [
+                const Text('Individual Player Stats', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                if (_isLoadingStats)
+                  const SizedBox(
+                    width: 20, height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16.0),
+            FutureBuilder<List<GameEvent>>(
+              future: widget.gameId != null 
+                  ? _centralizedDataService.getCurrentGameEvents(widget.gameId!)
+                  : _centralizedDataService.getAllCurrentGameEvents(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting && !_isLoadingStats) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                
+                final gameEvents = snapshot.data ?? [];
 
                 return SizedBox(
                   height: (players.length + 1) * 56.0 + 20,
@@ -192,6 +277,32 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                 );
               },
             ),
+            
+            // Add goalie stats section if there are goalies
+            if (goalies.isNotEmpty) ...[
+              const SizedBox(height: 8.0),
+              FutureBuilder<List<GameEvent>>(
+                future: widget.gameId != null 
+                    ? _centralizedDataService.getCurrentGameEvents(widget.gameId!)
+                    : _centralizedDataService.getAllCurrentGameEvents(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting && !_isLoadingStats) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  
+                  final gameEvents = snapshot.data ?? [];
+
+                  return GoalieStatsWidget(
+                    goalies: goalies,
+                    gameEvents: gameEvents,
+                    teamId: widget.teamId,
+                    isLoading: _isLoadingStats,
+                    showTitle: true,
+                    showLegend: false,
+                  );
+                },
+              ),
+            ],
           ],
         ),
       ),

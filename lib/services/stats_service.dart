@@ -119,4 +119,88 @@ class StatsService {
       plusMinus: calculatePlusMinus(player, gameEvents, teamId),
     );
   }
+
+  /// Calculate shots against for a goalie
+  static int calculateShotsAgainst(Player goalie, List<GameEvent> gameEvents, String teamId) {
+    if (goalie.position != 'G') return 0;
+    
+    return gameEvents.where((event) => 
+      event.eventType == 'Shot' && 
+      event.team != teamId && // Opponent shots
+      event.goalieOnIceId == goalie.id
+    ).length;
+  }
+
+  /// Calculate goals against for a goalie
+  static int calculateGoalsAgainst(Player goalie, List<GameEvent> gameEvents, String teamId) {
+    if (goalie.position != 'G') return 0;
+    
+    return gameEvents.where((event) => 
+      event.eventType == 'Shot' && 
+      event.isGoal == true &&
+      event.team != teamId && // Opponent goals
+      event.goalieOnIceId == goalie.id
+    ).length;
+  }
+
+  /// Calculate saves for a goalie
+  static int calculateSaves(Player goalie, List<GameEvent> gameEvents, String teamId) {
+    if (goalie.position != 'G') return 0;
+    
+    final shotsAgainst = calculateShotsAgainst(goalie, gameEvents, teamId);
+    final goalsAgainst = calculateGoalsAgainst(goalie, gameEvents, teamId);
+    return shotsAgainst - goalsAgainst;
+  }
+
+  /// Calculate save percentage for a goalie
+  static double calculateSavePercentage(Player goalie, List<GameEvent> gameEvents, String teamId) {
+    if (goalie.position != 'G') return 0.0;
+    
+    final shotsAgainst = calculateShotsAgainst(goalie, gameEvents, teamId);
+    if (shotsAgainst == 0) return 0.0;
+    
+    final saves = calculateSaves(goalie, gameEvents, teamId);
+    return saves / shotsAgainst;
+  }
+
+  /// Calculate games played for a goalie
+  static int calculateGamesPlayed(Player goalie, List<GameEvent> gameEvents) {
+    if (goalie.position != 'G') return 0;
+    
+    // Count unique games where the goalie was on ice
+    final uniqueGames = gameEvents
+        .where((event) => event.goalieOnIceId == goalie.id)
+        .map((event) => event.gameId)
+        .toSet();
+    
+    return uniqueGames.length;
+  }
+
+  /// Get complete goalie statistics
+  static GoalieSeasonStats getGoalieStats(Player goalie, List<GameEvent> gameEvents, String teamId) {
+    if (goalie.position != 'G') {
+      return GoalieSeasonStats(playerId: goalie.id);
+    }
+    
+    final stats = GoalieSeasonStats(
+      playerId: goalie.id,
+      playerName: '#${goalie.jerseyNumber}',
+      playerJerseyNumber: goalie.jerseyNumber,
+      shotsAgainst: calculateShotsAgainst(goalie, gameEvents, teamId),
+      goalsAgainst: calculateGoalsAgainst(goalie, gameEvents, teamId),
+      gamesPlayed: calculateGamesPlayed(goalie, gameEvents),
+    );
+    
+    // Add games played tracking
+    final uniqueGames = gameEvents
+        .where((event) => event.goalieOnIceId == goalie.id)
+        .map((event) => event.gameId)
+        .toSet();
+    
+    for (final gameId in uniqueGames) {
+      stats.addGamePlayed(gameId);
+    }
+    
+    return stats;
+  }
 }

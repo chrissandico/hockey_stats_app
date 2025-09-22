@@ -159,6 +159,9 @@ class GameEvent extends HiveObject {
   @HiveField(15)
   GoalSituation? goalSituation;
 
+  @HiveField(16)
+  String? goalieOnIceId;
+
   GameEvent({
     required this.id,
     required this.gameId,
@@ -176,6 +179,7 @@ class GameEvent extends HiveObject {
     this.isSynced = false,
     int? version,
     this.goalSituation,
+    this.goalieOnIceId,
   }) : version = version ?? 1 {
     this.isGoal = isGoal ?? false;
   }
@@ -248,5 +252,37 @@ class PlayerSeasonStats {
   void updatePlayerDetails(Player player) {
     playerJerseyNumber = player.jerseyNumber;
     playerPosition = player.position;
+  }
+}
+
+class GoalieSeasonStats {
+  final String playerId;
+  String playerName;
+  int playerJerseyNumber;
+  int shotsAgainst;
+  int goalsAgainst;
+  int get saves => shotsAgainst - goalsAgainst;
+  double get savePercentage => shotsAgainst > 0 ? saves / shotsAgainst : 0.0;
+  int gamesPlayed;
+  Set<String> _gamesPlayedSet = {}; // Track unique games
+
+  GoalieSeasonStats({
+    required this.playerId,
+    this.playerName = '',
+    this.playerJerseyNumber = 0,
+    this.shotsAgainst = 0,
+    this.goalsAgainst = 0,
+    this.gamesPlayed = 0,
+  });
+
+  void updatePlayerDetails(Player player) {
+    playerJerseyNumber = player.jerseyNumber;
+    playerName = '#${player.jerseyNumber}';
+  }
+
+  void addGamePlayed(String gameId) {
+    if (_gamesPlayedSet.add(gameId)) {
+      gamesPlayed = _gamesPlayedSet.length;
+    }
   }
 }
