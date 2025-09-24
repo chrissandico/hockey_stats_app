@@ -1,6 +1,204 @@
 import 'package:flutter/material.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 
+// Optimized player button widget to prevent unnecessary rebuilds
+class _PlayerButton extends StatelessWidget {
+  final Player player;
+  final bool isOnIce;
+  final bool isGoalScorer;
+  final bool isAssist1;
+  final bool isAssist2;
+  final bool isSelectedGoalie;
+  final bool isAbsent;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onDoubleTap;
+
+  const _PlayerButton({
+    required this.player,
+    required this.isOnIce,
+    required this.isGoalScorer,
+    required this.isAssist1,
+    required this.isAssist2,
+    required this.isSelectedGoalie,
+    required this.isAbsent,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onDoubleTap,
+  });
+
+  // Cache for color calculations to avoid redundant processing
+  static final Map<String, Color> _colorCache = {};
+  
+  Color _getCachedColor(String key, Color Function() calculator) {
+    return _colorCache.putIfAbsent(key, calculator);
+  }
+
+  Color get _backgroundColor {
+    final key = 'bg_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}';
+    return _getCachedColor(key, () {
+      if (isAbsent) return Colors.grey.withOpacity(0.3);
+      if (isGoalScorer) return Colors.green.withOpacity(0.2);
+      if (isAssist1 || isAssist2) return Colors.orange.withOpacity(0.2);
+      if (isSelectedGoalie) return Colors.purple.withOpacity(0.2);
+      if (isOnIce) return Colors.blue.withOpacity(0.2);
+      return Colors.grey.withOpacity(0.1);
+    });
+  }
+
+  Color get _borderColor {
+    final key = 'border_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}';
+    return _getCachedColor(key, () {
+      if (isAbsent) return Colors.grey;
+      if (isGoalScorer) return Colors.green;
+      if (isAssist1 || isAssist2) return Colors.orange;
+      if (isSelectedGoalie) return Colors.purple;
+      if (isOnIce) return Colors.blue;
+      return Colors.grey.withOpacity(0.5);
+    });
+  }
+
+  Color get _textColor {
+    final key = 'text_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}';
+    return _getCachedColor(key, () {
+      if (isAbsent) return Colors.grey;
+      if (isGoalScorer) return Colors.green;
+      if (isAssist1 || isAssist2) return Colors.orange;
+      if (isSelectedGoalie) return Colors.purple;
+      if (isOnIce) return Colors.blue;
+      return Colors.black87;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isForward = player.position == 'C' || 
+                     player.position == 'LW' || 
+                     player.position == 'RW' ||
+                     player.position == 'F';
+    final isDefenseman = player.position == 'D' || 
+                        player.position == 'LD' || 
+                        player.position == 'RD';
+    final isGoalie = player.position == 'G';
+    
+    String positionLabel;
+    Color positionColor;
+    if (isGoalie) {
+      positionLabel = 'G';
+      positionColor = Colors.purple.withOpacity(0.8);
+    } else if (isForward) {
+      positionLabel = 'F';
+      positionColor = Colors.orange.withOpacity(0.8);
+    } else {
+      positionLabel = 'D';
+      positionColor = Colors.green.withOpacity(0.8);
+    }
+
+    return RepaintBoundary(
+      child: GestureDetector(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        onDoubleTap: onDoubleTap,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _backgroundColor,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _borderColor,
+              width: 2,
+            ),
+          ),
+          child: Stack(
+            children: [
+              Center(
+                child: Text(
+                  '#${player.jerseyNumber}',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: _textColor,
+                  ),
+                ),
+              ),
+              // Position indicator badge
+              Positioned(
+                top: 2,
+                left: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: positionColor,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    positionLabel,
+                    style: const TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              // Role indicators
+              if (isGoalScorer)
+                const Positioned(
+                  top: 2,
+                  right: 2,
+                  child: Icon(
+                    Icons.sports_score,
+                    size: 14,
+                    color: Colors.green,
+                  ),
+                ),
+              if (isAssist1)
+                const Positioned(
+                  bottom: 2,
+                  right: 2,
+                  child: Icon(
+                    Icons.looks_one,
+                    size: 14,
+                    color: Colors.orange,
+                  ),
+                ),
+              if (isAssist2)
+                const Positioned(
+                  bottom: 2,
+                  right: 14,
+                  child: Icon(
+                    Icons.looks_two,
+                    size: 12,
+                    color: Colors.orange,
+                  ),
+                ),
+              if (isSelectedGoalie)
+                const Positioned(
+                  bottom: 2,
+                  right: 2,
+                  child: Icon(
+                    Icons.check_circle,
+                    size: 14,
+                    color: Colors.purple,
+                  ),
+                ),
+              if (isAbsent)
+                const Positioned(
+                  bottom: 2,
+                  left: 2,
+                  child: Icon(
+                    Icons.person_off,
+                    size: 12,
+                    color: Colors.grey,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class PlayerSelectionWidget extends StatefulWidget {
   final List<Player> players;
   final List<Player> goalies;
@@ -106,53 +304,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     );
   }
   
-  Color _getPlayerBackgroundColor(Player player) {
-    final isOnIce = widget.selectedPlayersOnIce.contains(player);
-    final isGoalScorer = widget.selectedGoalScorer == player;
-    final isAssist1 = widget.selectedAssist1 == player;
-    final isAssist2 = widget.selectedAssist2 == player;
-    final isSelectedGoalie = widget.selectedGoalie == player;
-    final isAbsent = _isPlayerAbsent(player);
-    
-    if (isAbsent) return Colors.grey.withOpacity(0.3);
-    if (isGoalScorer) return Colors.green.withOpacity(0.2);
-    if (isAssist1 || isAssist2) return Colors.orange.withOpacity(0.2);
-    if (isSelectedGoalie) return Colors.purple.withOpacity(0.2);
-    if (isOnIce) return Colors.blue.withOpacity(0.2);
-    return Colors.grey.withOpacity(0.1);
-  }
-  
-  Color _getPlayerBorderColor(Player player) {
-    final isOnIce = widget.selectedPlayersOnIce.contains(player);
-    final isGoalScorer = widget.selectedGoalScorer == player;
-    final isAssist1 = widget.selectedAssist1 == player;
-    final isAssist2 = widget.selectedAssist2 == player;
-    final isSelectedGoalie = widget.selectedGoalie == player;
-    final isAbsent = _isPlayerAbsent(player);
-    
-    if (isAbsent) return Colors.grey;
-    if (isGoalScorer) return Colors.green;
-    if (isAssist1 || isAssist2) return Colors.orange;
-    if (isSelectedGoalie) return Colors.purple;
-    if (isOnIce) return Colors.blue;
-    return Colors.grey.withOpacity(0.5);
-  }
-  
-  Color _getPlayerTextColor(Player player) {
-    final isOnIce = widget.selectedPlayersOnIce.contains(player);
-    final isGoalScorer = widget.selectedGoalScorer == player;
-    final isAssist1 = widget.selectedAssist1 == player;
-    final isAssist2 = widget.selectedAssist2 == player;
-    final isSelectedGoalie = widget.selectedGoalie == player;
-    final isAbsent = _isPlayerAbsent(player);
-    
-    if (isAbsent) return Colors.grey;
-    if (isGoalScorer) return Colors.green;
-    if (isAssist1 || isAssist2) return Colors.orange;
-    if (isSelectedGoalie) return Colors.purple;
-    if (isOnIce) return Colors.blue;
-    return Colors.black87;
-  }
   
   void _handlePlayerTap(Player player) {
     // Don't allow selecting absent players
@@ -200,6 +351,16 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     }
   }
 
+  void _showPlayerRoleDialogIfEligible(Player player) {
+    final isOnIce = widget.selectedPlayersOnIce.contains(player);
+    final isSelectedGoalie = widget.selectedGoalie == player;
+    
+    // Only show dialog for selected players
+    if (isOnIce || isSelectedGoalie) {
+      _showPlayerRoleDialog(player);
+    }
+  }
+
   void _showPlayerRoleDialog(Player player) {
     final isOnIce = widget.selectedPlayersOnIce.contains(player);
     final isGoalScorer = widget.selectedGoalScorer == player;
@@ -208,11 +369,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     final isSelectedGoalie = widget.selectedGoalie == player;
     final isAbsent = _isPlayerAbsent(player);
     final isGoalie = _isGoalie(player);
-    
-    // Only show dialog for selected players
-    if (!isOnIce && !isSelectedGoalie) {
-      return;
-    }
     
     showDialog(
       context: context,
@@ -269,13 +425,17 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
                   ),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.handshake, color: Colors.orange),
+                  leading: const Icon(Icons.looks_one, color: Colors.orange),
                   title: const Text('1st Assist'),
                   trailing: Switch(
                     value: isAssist1,
                     activeColor: Colors.orange,
                     onChanged: (value) {
                       if (value) {
+                        // If player is already Assist #2, remove them from that role first
+                        if (widget.selectedAssist2 == player && widget.onAssist2Changed != null) {
+                          widget.onAssist2Changed!(null);
+                        }
                         widget.onAssist1Changed(player);
                       } else if (widget.selectedAssist1 == player) {
                         widget.onAssist1Changed(null);
@@ -286,13 +446,17 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
                 ),
                 if (widget.onAssist2Changed != null)
                   ListTile(
-                    leading: const Icon(Icons.handshake_outlined, color: Colors.orange),
+                    leading: const Icon(Icons.looks_two, color: Colors.orange),
                     title: const Text('2nd Assist'),
                     trailing: Switch(
                       value: isAssist2,
                       activeColor: Colors.orange,
                       onChanged: (value) {
                         if (value) {
+                          // If player is already Assist #1, remove them from that role first
+                          if (widget.selectedAssist1 == player) {
+                            widget.onAssist1Changed(null);
+                          }
                           widget.onAssist2Changed!(player);
                         } else if (widget.selectedAssist2 == player) {
                           widget.onAssist2Changed!(null);
@@ -341,121 +505,18 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
         final isAssist2 = widget.selectedAssist2 == player;
         final isSelectedGoalie = widget.selectedGoalie == player;
         final isAbsent = _isPlayerAbsent(player);
-        final isForward = _isForward(player);
-        final isDefenseman = _isDefenseman(player);
-        final isGoalie = _isGoalie(player);
         
-        String positionLabel;
-        Color positionColor;
-        if (isGoalie) {
-          positionLabel = 'G';
-          positionColor = Colors.purple.withOpacity(0.8);
-        } else if (isForward) {
-          positionLabel = 'F';
-          positionColor = Colors.orange.withOpacity(0.8);
-        } else {
-          positionLabel = 'D';
-          positionColor = Colors.green.withOpacity(0.8);
-        }
-        
-        return GestureDetector(
+        return _PlayerButton(
+          player: player,
+          isOnIce: isOnIce,
+          isGoalScorer: isGoalScorer,
+          isAssist1: isAssist1,
+          isAssist2: isAssist2,
+          isSelectedGoalie: isSelectedGoalie,
+          isAbsent: isAbsent,
           onTap: () => _handlePlayerTap(player),
-          onLongPress: () => _showPlayerRoleDialog(player),
-          child: Container(
-            decoration: BoxDecoration(
-              color: _getPlayerBackgroundColor(player),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: _getPlayerBorderColor(player),
-                width: 2,
-              ),
-            ),
-            child: Stack(
-              children: [
-                Center(
-                  child: Text(
-                    '#${player.jerseyNumber}',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: _getPlayerTextColor(player),
-                    ),
-                  ),
-                ),
-                // Position indicator badge
-                Positioned(
-                  top: 2,
-                  left: 2,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: positionColor,
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                    child: Text(
-                      positionLabel,
-                      style: const TextStyle(
-                        fontSize: 8,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-                // Role indicators
-                if (isGoalScorer)
-                  const Positioned(
-                    top: 2,
-                    right: 2,
-                    child: Icon(
-                      Icons.sports_score,
-                      size: 14,
-                      color: Colors.green,
-                    ),
-                  ),
-                if (isAssist1)
-                  const Positioned(
-                    bottom: 2,
-                    right: 2,
-                    child: Icon(
-                      Icons.handshake,
-                      size: 14,
-                      color: Colors.orange,
-                    ),
-                  ),
-                if (isAssist2)
-                  const Positioned(
-                    bottom: 2,
-                    right: 14,
-                    child: Icon(
-                      Icons.handshake_outlined,
-                      size: 12,
-                      color: Colors.orange,
-                    ),
-                  ),
-                if (isSelectedGoalie)
-                  const Positioned(
-                    bottom: 2,
-                    right: 2,
-                    child: Icon(
-                      Icons.check_circle,
-                      size: 14,
-                      color: Colors.purple,
-                    ),
-                  ),
-                if (isAbsent)
-                  const Positioned(
-                    bottom: 2,
-                    left: 2,
-                    child: Icon(
-                      Icons.person_off,
-                      size: 12,
-                      color: Colors.grey,
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          onLongPress: () => _showPlayerRoleDialogIfEligible(player),
+          onDoubleTap: () => _showPlayerRoleDialogIfEligible(player),
         );
       },
     );

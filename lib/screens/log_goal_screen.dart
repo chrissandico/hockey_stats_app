@@ -15,6 +15,9 @@ class LogGoalScreen extends StatefulWidget {
   final String teamId;
   final String? eventIdToEdit;
   final List<Player>? playersOnIce;
+  final Player? goalScorer;
+  final Player? assist1;
+  final Player? assist2;
 
   const LogGoalScreen({
     super.key, 
@@ -23,6 +26,9 @@ class LogGoalScreen extends StatefulWidget {
     required this.teamId,
     this.eventIdToEdit,
     this.playersOnIce,
+    this.goalScorer,
+    this.assist1,
+    this.assist2,
   });
 
   @override
@@ -90,9 +96,10 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
     if (widget.eventIdToEdit != null) {
       _loadEventForEditing();
     } else {
-      _selectedShooter = null;
-      _selectedAssist1 = null;
-      _selectedAssist2 = null;
+      // Initialize with passed values from log stats screen
+      _selectedShooter = widget.goalScorer;
+      _selectedAssist1 = widget.assist1;
+      _selectedAssist2 = widget.assist2;
     }
   }
 

@@ -6,6 +6,7 @@ import 'package:hockey_stats_app/models/custom_adapters.dart'; // Import our cus
 import 'package:hockey_stats_app/screens/game_selection_screen.dart'; // Import the new Game Selection screen
 import 'package:hockey_stats_app/screens/auth_wrapper_screen.dart'; // Import the Auth Wrapper screen
 import 'package:hockey_stats_app/utils/team_utils.dart'; // Import TeamUtils
+import 'package:hockey_stats_app/utils/network_utils.dart'; // Import NetworkUtils
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import SheetsService for initial sync
 import 'package:hockey_stats_app/services/team_auth_service.dart'; // Import TeamAuthService
 // Removed imports for log_shot_screen and log_penalty_screen as we navigate via GameSelectionScreen now
@@ -172,33 +173,94 @@ class AppErrorScreen extends StatelessWidget {
 // The UI layer will decide if dummy data should be added based on the outcome.
 Future<Map<String, dynamic>> attemptInitialDataSyncIfSignedIn() async {
   print('Attempting initial data sync from Google Sheets if signed in...');
+  
+  // First, check network connectivity
+  final connectivityResults = await NetworkUtils.performConnectivityCheck();
+  final networkStatus = connectivityResults['status'] as String;
+  
+  if (networkStatus == 'disconnected') {
+    print('No internet connection detected. Skipping sync attempt.');
+    return {
+      'status': 'network_unavailable', 
+      'message': 'No internet connection. App will work in offline mode.',
+      'connectivity': connectivityResults
+    };
+  } else if (networkStatus == 'partial') {
+    print('Partial connectivity detected. Google services may not be accessible.');
+    return {
+      'status': 'network_partial', 
+      'message': 'Limited connectivity. Google Sheets sync may not work.',
+      'connectivity': connectivityResults
+    };
+  }
+  
   final sheetsService = SheetsService();
   
-  // Check if a user session already exists (e.g. from a previous app run)
-  final bool previousSessionExists = await sheetsService.isSignedIn();
+  try {
+    // Check if a user session already exists (e.g. from a previous app run)
+    final bool previousSessionExists = await sheetsService.isSignedIn();
 
-  if (previousSessionExists) {
-    print('User has a previous session, attempting silent sign-in to refresh credentials...');
-    final bool silentSignInSuccess = await sheetsService.signInSilently();
-    
-    if (silentSignInSuccess) {
-      print('Silent sign-in successful, proceeding to sync data...');
-      final Map<String, dynamic> syncResult = await sheetsService.syncDataFromSheets();
+    if (previousSessionExists) {
+      print('User has a previous session, attempting silent sign-in to refresh credentials...');
+      final bool silentSignInSuccess = await sheetsService.signInSilently();
       
-      if (syncResult['success'] == true) {
-        print('Initial data sync successful: ${syncResult['players']} players, ${syncResult['games']} games, and ${syncResult['events']} events synced.');
-        return {'status': 'sync_success', 'message': 'Sync successful', 'data': syncResult};
+      if (silentSignInSuccess) {
+        print('Silent sign-in successful, proceeding to sync data...');
+        final Map<String, dynamic> syncResult = await sheetsService.syncDataFromSheets();
+        
+        if (syncResult['success'] == true) {
+          print('Initial data sync successful: ${syncResult['players']} players, ${syncResult['games']} games, and ${syncResult['events']} events synced.');
+          return {
+            'status': 'sync_success', 
+            'message': 'Sync successful', 
+            'data': syncResult,
+            'connectivity': connectivityResults
+          };
+        } else {
+          print('Initial data sync failed after successful sign-in: ${syncResult['message']}');
+          return {
+            'status': 'sync_failed', 
+            'message': 'Data sync failed: ${syncResult['message']}',
+            'connectivity': connectivityResults
+          };
+        }
       } else {
-        print('Initial data sync failed after successful sign-in: ${syncResult['message']}');
-        return {'status': 'sync_failed', 'message': 'Data sync failed: ${syncResult['message']}'};
+        print('Silent sign-in failed. User might need to sign in manually.');
+        return {
+          'status': 'signin_needed', 
+          'message': 'Could not refresh session. Please sign in.',
+          'connectivity': connectivityResults
+        };
       }
     } else {
-      print('Silent sign-in failed. User might need to sign in manually.');
-      return {'status': 'signin_needed', 'message': 'Could not refresh session. Please sign in.'};
+      print('User is not signed in. No sync attempted.');
+      return {
+        'status': 'signin_needed', 
+        'message': 'Please sign in to sync your data.',
+        'connectivity': connectivityResults
+      };
     }
-  } else {
-    print('User is not signed in. No sync attempted.');
-    return {'status': 'signin_needed', 'message': 'Please sign in to sync your data.'};
+  } catch (e) {
+    print('Error during sync attempt: $e');
+    
+    // Check if this is a network-related error
+    if (NetworkUtils.isNetworkError(e)) {
+      final networkErrorMessage = NetworkUtils.getNetworkErrorMessage(e);
+      print('Network error detected: $networkErrorMessage');
+      return {
+        'status': 'network_error',
+        'message': networkErrorMessage,
+        'error': e.toString(),
+        'connectivity': connectivityResults
+      };
+    } else {
+      return {
+        'status': 'sync_error',
+        'message': 'An error occurred during sync: $e',
+        'error': e.toString(),
+        'connectivity': connectivityResults
+      };
+    }
   }
 }
 

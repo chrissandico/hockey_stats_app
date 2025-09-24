@@ -532,6 +532,159 @@ class SheetsService {
     }
   }
 
+  /// Deletes an event from Google Sheets by finding and removing the row containing the event ID.
+  ///
+  /// @param eventId The ID of the event to delete from Google Sheets
+  /// @return A Future that resolves to true if the deletion was successful, false otherwise
+  Future<bool> deleteEventFromSheet(String eventId) async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot delete event: Authentication failed.');
+      return false;
+    }
+
+    try {
+      // First get the correct sheet ID for the Events sheet
+      final eventsSheetId = await _getSheetId('Events');
+      if (eventsSheetId == null) {
+        print('Failed to get Events sheet ID');
+        return false;
+      }
+
+      // Get all IDs to find the row
+      final idResult = await _makeRequest('GET', 'values/Events!A:A');
+      if (idResult == null) {
+        print('Failed to get event IDs from Google Sheets');
+        return false;
+      }
+
+      final List<List<dynamic>> idValues = List<List<dynamic>>.from(idResult['values'] ?? []);
+      
+      int rowIndex = -1;
+      for (int i = 0; i < idValues.length; i++) {
+        if (idValues[i].isNotEmpty) {
+          String sheetId = idValues[i][0].toString().trim();
+          if (sheetId == eventId) {
+            rowIndex = i + 1; // Google Sheets uses 1-based indexing
+            break;
+          }
+        }
+      }
+
+      if (rowIndex == -1) {
+        print('Event ID $eventId not found in the sheet. Cannot delete.');
+        return false;
+      }
+
+      print('Found event $eventId at row $rowIndex, attempting to delete from sheet ID $eventsSheetId');
+
+      // Use the batchUpdate API to delete the row
+      final Map<String, dynamic> deleteRequest = {
+        'requests': [
+          {
+            'deleteDimension': {
+              'range': {
+                'sheetId': eventsSheetId,
+                'dimension': 'ROWS',
+                'startIndex': rowIndex - 1, // Convert to 0-based indexing
+                'endIndex': rowIndex
+              }
+            }
+          }
+        ]
+      };
+
+      // Make the batch update request
+      final serviceAuth = await ServiceAccountAuth.instance;
+      final Uri uri = Uri.parse('$_sheetsApiBase/$_spreadsheetId:batchUpdate');
+      
+      final response = await serviceAuth.makeAuthenticatedRequest(
+        uri,
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(deleteRequest),
+      );
+
+      if (response.statusCode == 200) {
+        print('Delete request completed with status 200');
+        
+        // Verify deletion by checking if the event ID still exists
+        final verificationResult = await _makeRequest('GET', 'values/Events!A:A');
+        if (verificationResult != null) {
+          final List<List<dynamic>> verificationValues = List<List<dynamic>>.from(verificationResult['values'] ?? []);
+          bool eventStillExists = false;
+          
+          for (var row in verificationValues) {
+            if (row.isNotEmpty && row[0].toString().trim() == eventId) {
+              eventStillExists = true;
+              break;
+            }
+          }
+          
+          if (!eventStillExists) {
+            print('Successfully deleted event $eventId from row $rowIndex in Google Sheets (verified)');
+            return true;
+          } else {
+            print('Delete request returned success but event $eventId still exists in the sheet');
+            return false;
+          }
+        } else {
+          print('Could not verify deletion, but delete request returned success');
+          return true; // Assume success if we can't verify
+        }
+      } else {
+        print('Failed to delete event $eventId from Google Sheets. Status: ${response.statusCode}');
+        print('Response: ${response.body}');
+        return false;
+      }
+    } catch (e) {
+      print('Error deleting event $eventId from Google Sheets: $e');
+      return false;
+    }
+  }
+
+  /// Gets the sheet ID for a given sheet name.
+  ///
+  /// @param sheetName The name of the sheet to get the ID for
+  /// @return The sheet ID if found, null otherwise
+  Future<int?> _getSheetId(String sheetName) async {
+    try {
+      final serviceAuth = await ServiceAccountAuth.instance;
+      final Uri uri = Uri.parse('$_sheetsApiBase/$_spreadsheetId');
+      
+      final response = await serviceAuth.makeAuthenticatedRequest(
+        uri,
+        method: 'GET',
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final sheets = data['sheets'] as List<dynamic>?;
+        
+        if (sheets != null) {
+          for (var sheet in sheets) {
+            final properties = sheet['properties'];
+            if (properties != null && properties['title'] == sheetName) {
+              final sheetId = properties['sheetId'] as int?;
+              print('Found sheet "$sheetName" with ID: $sheetId');
+              return sheetId;
+            }
+          }
+        }
+        
+        print('Sheet "$sheetName" not found in spreadsheet');
+        return null;
+      } else {
+        print('Failed to get spreadsheet metadata. Status: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      print('Error getting sheet ID for "$sheetName": $e');
+      return null;
+    }
+  }
+
   String _goalSituationToString(GoalSituation? goalSituation) {
     if (goalSituation == null) return '';
     switch (goalSituation) {

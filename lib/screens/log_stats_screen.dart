@@ -44,6 +44,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   List<Player> _selectedPlayersOnIce = [];
   Player? _selectedGoalScorer;
   Player? _selectedAssist;
+  Player? _selectedAssist2;
   Player? _selectedGoalie;
   bool _isLoadingPlayers = false;
   
@@ -733,6 +734,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                   selectedPlayersOnIce: _selectedPlayersOnIce,
                   selectedGoalScorer: _selectedGoalScorer,
                   selectedAssist1: _selectedAssist,
+                  selectedAssist2: _selectedAssist2,
                   selectedGoalie: _selectedGoalie,
                   onPlayersOnIceChanged: (players) {
                     setState(() {
@@ -747,6 +749,11 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                   onAssist1Changed: (player) {
                     setState(() {
                       _selectedAssist = player;
+                    });
+                  },
+                  onAssist2Changed: (player) {
+                    setState(() {
+                      _selectedAssist2 = player;
                     });
                   },
                   onGoalieChanged: (player) {
@@ -846,17 +853,20 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => LogGoalScreen(
-                                gameId: widget.gameId,
-                                period: _selectedPeriod,
-                                teamId: widget.teamId,
-                                playersOnIce: _selectedPlayersOnIce,
-                              ),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => LogGoalScreen(
+                              gameId: widget.gameId,
+                              period: _selectedPeriod,
+                              teamId: widget.teamId,
+                              playersOnIce: _selectedPlayersOnIce,
+                              goalScorer: _selectedGoalScorer,
+                              assist1: _selectedAssist,
+                              assist2: _selectedAssist2,
                             ),
-                          ).then((value) {
+                          ),
+                        ).then((value) {
                             print('Returned from LogGoalScreen, refreshing score...');
                             _refreshScore().then((_) {
                               print('Score refresh complete');

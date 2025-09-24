@@ -101,19 +101,78 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
     );
 
     if (confirmed == true) {
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Deleting event...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
       try {
+        final sheetsService = SheetsService();
+        bool deletedFromSheets = false;
+        
+        // First try to delete from Google Sheets if the event was synced
+        if (event.isSynced) {
+          deletedFromSheets = await sheetsService.deleteEventFromSheet(event.id);
+          
+          if (!deletedFromSheets) {
+            // If Google Sheets deletion failed, ask user if they want to continue with local deletion
+            final continueWithLocal = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Google Sheets Error'),
+                content: const Text(
+                  'Failed to delete the event from Google Sheets. This might be due to network issues or authentication problems.\n\n'
+                  'Do you want to delete it locally anyway? The event may reappear when data is synced from Google Sheets.'
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: TextButton.styleFrom(foregroundColor: Colors.orange),
+                    child: const Text('Delete Locally'),
+                  ),
+                ],
+              ),
+            );
+            
+            if (continueWithLocal != true) {
+              return; // User cancelled, don't delete locally
+            }
+          }
+        } else {
+          // Event was not synced to Google Sheets, so we only need to delete locally
+          deletedFromSheets = true; // Consider it successful since there's nothing to delete from sheets
+        }
+        
         // Delete from local database
         await event.delete();
         
         // Refresh the list
         _loadGameEvents();
         
-        // Show success message
+        // Show appropriate success message
         if (mounted) {
+          String message;
+          if (event.isSynced && deletedFromSheets) {
+            message = '${event.eventType} deleted successfully from both local database and Google Sheets';
+          } else if (event.isSynced && !deletedFromSheets) {
+            message = '${event.eventType} deleted locally (Google Sheets deletion failed)';
+          } else {
+            message = '${event.eventType} deleted successfully';
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${event.eventType} deleted successfully'),
-              backgroundColor: Colors.green,
+              content: Text(message),
+              backgroundColor: (event.isSynced && !deletedFromSheets) ? Colors.orange : Colors.green,
             ),
           );
         }

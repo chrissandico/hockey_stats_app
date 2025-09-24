@@ -66,7 +66,7 @@ class ServiceAccountAuth {
     }
   }
   
-  /// Refresh the access token
+  /// Refresh the access token with network connectivity handling
   Future<void> _refreshAccessToken() async {
     try {
       if (_serviceAccountData == null) {
@@ -88,26 +88,64 @@ class ServiceAccountAuth {
       // Create a JWT token
       final String jwt = _createJwt(claims);
       
-      // Exchange JWT for access token
-      final response = await http.post(
-        Uri.parse(_tokenUrl),
-        body: {
-          'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-          'assertion': jwt,
-        },
-      );
+      // Exchange JWT for access token with timeout and retry logic
+      http.Response? response;
+      int retryCount = 0;
+      const int maxRetries = 3;
+      const Duration timeout = Duration(seconds: 30);
       
-      if (response.statusCode == 200) {
+      while (retryCount < maxRetries) {
+        try {
+          print('Attempting to obtain access token (attempt ${retryCount + 1}/$maxRetries)...');
+          
+          response = await http.post(
+            Uri.parse(_tokenUrl),
+            body: {
+              'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              'assertion': jwt,
+            },
+          ).timeout(timeout);
+          
+          break; // Success, exit retry loop
+          
+        } catch (e) {
+          retryCount++;
+          print('Network error on attempt $retryCount: $e');
+          
+          if (retryCount >= maxRetries) {
+            print('Max retries reached. Network connectivity issue detected.');
+            print('This is likely due to:');
+            print('1. No internet connection');
+            print('2. DNS resolution failure for oauth2.googleapis.com');
+            print('3. Firewall blocking the connection');
+            print('4. Network timeout');
+            print('The app will continue to work offline.');
+            rethrow;
+          }
+          
+          // Exponential backoff: wait 2^retryCount seconds before retry
+          final backoffDelay = Duration(seconds: (2 * retryCount).clamp(1, 10));
+          print('Retrying in ${backoffDelay.inSeconds} seconds...');
+          await Future.delayed(backoffDelay);
+        }
+      }
+      
+      if (response != null && response.statusCode == 200) {
         final tokenData = json.decode(response.body);
         _accessToken = tokenData['access_token'];
         final expiresIn = tokenData['expires_in'] as int;
         _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
         print('Successfully obtained access token, expires in $expiresIn seconds');
-      } else {
+      } else if (response != null) {
         print('Failed to obtain access token: ${response.statusCode} - ${response.body}');
         _accessToken = null;
         _tokenExpiry = null;
         throw Exception('Failed to obtain access token: ${response.statusCode}');
+      } else {
+        print('No response received from OAuth server');
+        _accessToken = null;
+        _tokenExpiry = null;
+        throw Exception('No response from OAuth server');
       }
     } catch (e) {
       print('Error refreshing access token: $e');
