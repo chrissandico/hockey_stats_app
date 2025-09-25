@@ -665,7 +665,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: isSelected ? Theme.of(context).primaryColor : null,
             foregroundColor: isSelected ? Colors.white : null,
-            padding: const EdgeInsets.symmetric(vertical: 12.0),
+            padding: const EdgeInsets.symmetric(vertical: 10.0),
           ),
           child: Text(label ?? 'P$period'),
         ),
@@ -930,7 +930,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                     borderRadius: BorderRadius.circular(8.0),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.all(12.0),
+                    padding: const EdgeInsets.all(8.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -947,7 +947,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                                   });
                                 },
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
                                   decoration: BoxDecoration(
                                     color: _isPowerPlay ? Colors.orange.withOpacity(0.2) : Colors.grey.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(6),
@@ -961,20 +961,20 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                                     children: [
                                       Icon(
                                         _isPowerPlay ? Icons.check_box : Icons.check_box_outline_blank,
-                                        size: 18,
+                                        size: 16,
                                         color: _isPowerPlay ? Colors.orange : Colors.grey,
                                       ),
-                                      const SizedBox(width: 6),
+                                      const SizedBox(width: 4),
                                       const Text(
                                         'Power Play',
-                                        style: TextStyle(fontSize: 12),
+                                        style: TextStyle(fontSize: 11),
                                       ),
                                     ],
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
                             Expanded(
                               child: InkWell(
                                 onTap: () {
@@ -986,7 +986,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                                   });
                                 },
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
                                   decoration: BoxDecoration(
                                     color: _isPenaltyKill ? Colors.red.withOpacity(0.2) : Colors.grey.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(6),
@@ -1000,13 +1000,13 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                                     children: [
                                       Icon(
                                         _isPenaltyKill ? Icons.check_box : Icons.check_box_outline_blank,
-                                        size: 18,
+                                        size: 16,
                                         color: _isPenaltyKill ? Colors.red : Colors.grey,
                                       ),
-                                      const SizedBox(width: 6),
+                                      const SizedBox(width: 4),
                                       const Text(
                                         'Penalty Kill',
-                                        style: TextStyle(fontSize: 12),
+                                        style: TextStyle(fontSize: 11),
                                       ),
                                     ],
                                   ),
@@ -1017,11 +1017,11 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                         ),
                         if (!_isPowerPlay && !_isPenaltyKill)
                           const Padding(
-                            padding: EdgeInsets.only(top: 6),
+                            padding: EdgeInsets.only(top: 4),
                             child: Text(
                               'Default: Even Strength',
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 9,
                                 fontStyle: FontStyle.italic,
                                 color: Colors.grey,
                               ),
@@ -1032,7 +1032,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 10.0),
                 
                 // Use shared player selection widget
                 PlayerSelectionWidget(
@@ -1071,7 +1071,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                   },
                 ),
 
-                const SizedBox(height: 12.0),
+                const SizedBox(height: 10.0),
 
                 SizedBox(
                   width: double.infinity,
@@ -1118,6 +1118,9 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                         ),
                   ),
                 ),
+                
+                // Add bottom padding to prop up the button
+                SizedBox(height: MediaQuery.of(context).size.height * 0.03), // Responsive bottom padding
               ],
             ),
           ),
