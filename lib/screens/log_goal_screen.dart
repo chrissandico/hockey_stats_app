@@ -638,24 +638,14 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
 
   Widget _buildPeriodSelector() {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          const Text(
-            'Select Period:',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8.0),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildPeriodButton(1),
-              _buildPeriodButton(2),
-              _buildPeriodButton(3),
-              _buildPeriodButton(4, label: 'OT'),
-            ],
-          ),
+          _buildPeriodButton(1),
+          _buildPeriodButton(2),
+          _buildPeriodButton(3),
+          _buildPeriodButton(4, label: 'OT'),
         ],
       ),
     );
@@ -894,7 +884,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildPeriodSelector(),
-                const SizedBox(height: 20.0),
+                const SizedBox(height: 12.0),
 
                 FutureBuilder<String>(
                   future: TeamContextService().getCurrentTeamName(),
@@ -932,7 +922,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                     );
                   },
                 ),
-                const SizedBox(height: 20.0),
+                const SizedBox(height: 12.0),
 
                 // Goal Situation Selection (Compact)
                 Card(
@@ -1081,27 +1071,52 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                   },
                 ),
 
-                const SizedBox(height: 16.0),
+                const SizedBox(height: 12.0),
 
-                ElevatedButton(
-                  onPressed: _isLogging ? null : _logShot,
-                  child: _isLogging
-                    ? const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          SizedBox(width: 10),
-                          Text('Logging...', style: TextStyle(fontSize: 16)),
-                        ],
-                      )
-                    : Text(
-                        _isEditMode ? 'Update Goal' : 'Log Goal',
-                        style: const TextStyle(fontSize: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isLogging ? null : _logShot,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 22.0, horizontal: 20.0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16.0),
                       ),
+                      elevation: 0,
+                      shadowColor: Colors.transparent,
+                      backgroundColor: const Color(0xFF388E3C), // Material Green 700
+                      foregroundColor: Colors.white,
+                      surfaceTintColor: Colors.transparent,
+                    ),
+                    child: _isLogging
+                      ? const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            ),
+                            SizedBox(width: 12),
+                            Text('Logging...', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ],
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.sports_score, size: 32.0, color: Colors.white),
+                            const SizedBox(width: 12.0),
+                            Text(
+                              _isEditMode ? 'Update Goal' : 'Log Goal',
+                              style: const TextStyle(
+                                fontSize: 18.0,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                  ),
                 ),
               ],
             ),
