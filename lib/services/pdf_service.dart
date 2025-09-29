@@ -18,6 +18,34 @@ class PdfService {
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
+  // Helper method to convert game type codes to readable text
+  String _getGameTypeText(String gameType) {
+    switch (gameType.toUpperCase()) {
+      case 'E':
+        return 'Exhibition';
+      case 'R':
+        return 'Regular Season';
+      case 'T':
+        return 'Tournament';
+      default:
+        return 'Regular Season'; // Default fallback
+    }
+  }
+
+  // Helper method to get color for game type badges
+  PdfColor _getGameTypeColor(String gameType) {
+    switch (gameType.toUpperCase()) {
+      case 'E':
+        return PdfColors.orange; // Exhibition
+      case 'R':
+        return PdfColors.blue; // Regular Season
+      case 'T':
+        return PdfColors.purple; // Tournament
+      default:
+        return PdfColors.blue; // Default fallback
+    }
+  }
+
   Future<File> generateGameStatsPdf({
     required List<Player> players,
     required List<GameEvent> gameEvents,
@@ -406,13 +434,34 @@ class PdfService {
           ],
         ),
         
-        // Center - Game info (no score on right anymore)
+        // Center - Game info with game type
         pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.center,
           children: [
-            pw.Text(
-              'vs ${game.opponent}',
-              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+            pw.Row(
+              mainAxisSize: pw.MainAxisSize.min,
+              children: [
+                pw.Text(
+                  'vs ${game.opponent}',
+                  style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+                ),
+                pw.SizedBox(width: 8),
+                pw.Container(
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: pw.BoxDecoration(
+                    color: _getGameTypeColor(game.gameType),
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                  ),
+                  child: pw.Text(
+                    _getGameTypeText(game.gameType),
+                    style: pw.TextStyle(
+                      color: PdfColors.white,
+                      fontSize: 10,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
             pw.SizedBox(height: 2),
             pw.Text(

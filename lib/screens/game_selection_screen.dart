@@ -40,6 +40,34 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
   String? _errorMessage;
   bool _isPerformingAsyncOperation = false; // General loading flag for buttons etc.
 
+  // Helper method to convert game type codes to readable text
+  String _getGameTypeText(String gameType) {
+    switch (gameType.toUpperCase()) {
+      case 'E':
+        return 'Exhibition';
+      case 'R':
+        return 'Regular Season';
+      case 'T':
+        return 'Tournament';
+      default:
+        return 'Regular Season'; // Default fallback
+    }
+  }
+
+  // Helper method to get color for game type badges
+  Color _getGameTypeColor(String gameType) {
+    switch (gameType.toUpperCase()) {
+      case 'E':
+        return Colors.orange; // Exhibition
+      case 'R':
+        return Colors.blue; // Regular Season
+      case 'T':
+        return Colors.purple; // Tournament
+      default:
+        return Colors.blue; // Default fallback
+    }
+  }
+
 
   @override
   void initState() {
@@ -781,12 +809,33 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
                         ) : null,
                       ),
                       child: ListTile(
-                        title: Text(
-                          gameTitle,
-                          style: TextStyle(
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            color: isSelected ? Theme.of(context).primaryColor : null,
-                          ),
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                gameTitle,
+                                style: TextStyle(
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  color: isSelected ? Theme.of(context).primaryColor : null,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: _getGameTypeColor(game.gameType),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                _getGameTypeText(game.gameType),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         subtitle: game.location != null ? Text('at ${game.location}') : null,
                         selected: isSelected,

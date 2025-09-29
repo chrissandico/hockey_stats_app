@@ -65,6 +65,9 @@ class Game extends HiveObject {
   
   @HiveField(5)
   int version;
+  
+  @HiveField(6)
+  String gameType;
 
   Game({
     required this.id,
@@ -73,12 +76,15 @@ class Game extends HiveObject {
     this.location,
     this.teamId = 'your_team',
     this.version = 1,
+    this.gameType = 'R', // Default to Regular Season
   });
   
   /// Factory constructor for migrating from older versions
   factory Game.migrate(Map<int, dynamic> fields) {
     // Handle missing teamId field (added in version 1)
     final String teamId = fields[4] as String? ?? 'your_team';
+    // Handle missing gameType field (added in version 2)
+    final String gameType = fields[6] as String? ?? 'R';
     
     return Game(
       id: fields[0] as String,
@@ -87,6 +93,7 @@ class Game extends HiveObject {
       location: fields[3] as String?,
       teamId: teamId,
       version: 1, // Set to current version
+      gameType: gameType,
     );
   }
   
@@ -97,6 +104,7 @@ class Game extends HiveObject {
     String? location,
     String? teamId,
     int? version,
+    String? gameType,
   }) {
     return Game(
       id: id ?? this.id,
@@ -105,6 +113,7 @@ class Game extends HiveObject {
       location: location ?? this.location,
       teamId: teamId ?? this.teamId,
       version: version ?? this.version,
+      gameType: gameType ?? this.gameType,
     );
   }
 }

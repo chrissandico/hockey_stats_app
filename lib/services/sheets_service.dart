@@ -999,7 +999,7 @@ class SheetsService {
       return null;
     }
 
-    final result = await _makeRequest('GET', 'values/Games!A2:E');
+    final result = await _makeRequest('GET', 'values/Games!A2:F');
     if (result == null) return null;
 
     final List<List<dynamic>> values = List<List<dynamic>>.from(result['values'] ?? []);
@@ -1041,6 +1041,7 @@ class SheetsService {
           String opponent = row[2]?.toString() ?? '';
           String? location = row.length > 3 ? row[3]?.toString() : null;
           String teamId = row.length > 4 ? row[4]?.toString() ?? 'your_team' : 'your_team'; // Default to 'your_team' if not specified
+          String gameType = row.length > 5 ? row[5]?.toString() ?? 'R' : 'R'; // Default to 'R' (Regular Season) if not specified
           
           if (id.isNotEmpty && opponent.isNotEmpty) {
             games.add(Game(
@@ -1049,8 +1050,9 @@ class SheetsService {
               opponent: opponent,
               location: location,
               teamId: teamId,
+              gameType: gameType,
             ));
-            print('Parsed game: $opponent on ${date.toIso8601String().split('T')[0]} (ID: $id)');
+            print('Parsed game: $opponent on ${date.toIso8601String().split('T')[0]} (ID: $id, Type: $gameType)');
           }
         } catch (e) {
           print('Error parsing game row: $row, Error: $e');
