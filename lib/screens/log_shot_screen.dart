@@ -6,6 +6,9 @@ import 'package:uuid/uuid.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
+import 'package:hockey_stats_app/services/connectivity_service.dart';
+import 'package:hockey_stats_app/services/background_sync_service.dart';
+import 'package:hockey_stats_app/services/memory_cache_service.dart';
 import 'package:hockey_stats_app/widgets/goal_situation_dialog.dart';
 import 'package:hockey_stats_app/widgets/player_selection_widget.dart';
 
@@ -266,7 +269,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
   Future<void> _logShot() async {
     if (_selectedTeam == widget.teamId && _selectedShooter == null && _isGoal == true) {
       if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a goal scorer.')),
       );
       return;
@@ -301,7 +304,6 @@ class _LogShotScreenState extends State<LogShotScreen> {
       );
       
       if (confirmed != true) {
-        setState(() { _isLogging = false; });
         return;
       }
     }
@@ -332,45 +334,24 @@ class _LogShotScreenState extends State<LogShotScreen> {
         eventToProcess = _eventBeingEdited!;
         successMessage = 'Shot updated for ${(_selectedTeam == widget.teamId && _selectedShooter != null) ? '#${_selectedShooter!.jerseyNumber} ' : ''}$_selectedTeam${_isGoal ? " (Goal)" : ""}';
         
+        // Save locally immediately (offline-first approach)
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
-        print('Event updated in Hive');
-
-        final savedEvent = gameEventsBox.get(eventToProcess.id);
-        print('Verified saved event:');
-        print('  ID: ${savedEvent?.id}');
-        print('  IsGoal: ${savedEvent?.isGoal}');
         
-        bool syncSuccess = false;
-        String syncError = '';
-        try {
-          syncSuccess = await _sheetsService.updateEventInSheet(eventToProcess);
-          if (!syncSuccess) {
-            syncError = "Sync failed - please try again later.";
-          }
-        } catch (error) {
-          syncError = error.toString();
-          print("Error during sync for updated event: $error");
-        }
+        // Cache the event for faster future access
+        final memoryCache = MemoryCacheService();
+        memoryCache.cacheEvent(eventToProcess);
+        
+        print('Event updated in Hive and cached in memory');
 
+        // Show success immediately and navigate back
         if (!mounted) return;
-
-        if (syncSuccess) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$successMessage and synced.')),
-          );
-          Navigator.pop(context);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Shot updated locally but sync failed: $syncError'),
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: 'Retry Sync',
-                onPressed: _logShot,
-              ),
-            ),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMessage)),
+        );
+        Navigator.pop(context);
+        
+        // Attempt sync in background without blocking UI
+        _syncEventInBackground(eventToProcess);
 
       } else {
         print('Creating new shot event:');
@@ -401,41 +382,24 @@ class _LogShotScreenState extends State<LogShotScreen> {
         print('  ID: ${eventToProcess.id}');
         print('  IsGoal: ${eventToProcess.isGoal}');
         
+        // Save locally immediately (offline-first approach)
         await gameEventsBox.put(eventToProcess.id, eventToProcess);
         
-        final savedEvent = gameEventsBox.get(eventToProcess.id);
-        print('Verified saved event:');
-        print('  ID: ${savedEvent?.id}');
-        print('  IsGoal: ${savedEvent?.isGoal}');
+        // Cache the event for faster future access
+        final memoryCache = MemoryCacheService();
+        memoryCache.cacheEvent(eventToProcess);
+        
+        print('Event saved locally and cached in memory');
 
-        bool syncSuccess = false;
-        String syncError = '';
-        try {
-          syncSuccess = await _sheetsService.syncGameEvent(eventToProcess);
-          if (!syncSuccess) {
-            syncError = "Sync failed - please try again later.";
-          }
-        } catch (error) {
-          syncError = error.toString();
-          print("Error during sync for new event: $error");
-        }
-
+        // Show success immediately and navigate back
         if (!mounted) return;
-
-        if (syncSuccess) {
-          Navigator.pop(context, _selectedPeriod);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$successMessage and synced.')),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Shot saved locally - will sync when online'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-          Navigator.pop(context, _selectedPeriod);
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(successMessage)),
+        );
+        Navigator.pop(context, _selectedPeriod);
+        
+        // Attempt sync in background without blocking UI
+        _syncEventInBackground(eventToProcess);
       }
 
     } catch (e) {
@@ -449,6 +413,13 @@ class _LogShotScreenState extends State<LogShotScreen> {
         setState(() { _isLogging = false; });
       }
     }
+  }
+
+  /// Sync event in background without blocking UI
+  void _syncEventInBackground(GameEvent event) {
+    // Use the background sync service instead of direct sync
+    final backgroundSyncService = BackgroundSyncService();
+    backgroundSyncService.queueEventForSync(event);
   }
 
   List<String> _getPlayersOnIceIds() {

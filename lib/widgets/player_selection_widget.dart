@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
+import 'package:hockey_stats_app/services/connectivity_service.dart';
 
 // Optimized player button widget to prevent unnecessary rebuilds
 class _PlayerButton extends StatelessWidget {
@@ -29,9 +30,14 @@ class _PlayerButton extends StatelessWidget {
 
   // Cache for color calculations to avoid redundant processing
   static final Map<String, Color> _colorCache = {};
+  static final Map<String, Widget> _widgetCache = {};
   
   Color _getCachedColor(String key, Color Function() calculator) {
     return _colorCache.putIfAbsent(key, calculator);
+  }
+  
+  Widget _getCachedWidget(String key, Widget Function() builder) {
+    return _widgetCache.putIfAbsent(key, builder);
   }
 
   Color get _backgroundColor {
@@ -663,26 +669,27 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
             
             const SizedBox(height: 8),
             
-            // Clear all button (icon-only)
+            // Clear skaters button (icon-only) - preserves goalie
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 IconButton(
                   icon: const Icon(Icons.clear_all, size: 18),
-                  tooltip: 'Clear All',
+                  tooltip: 'Clear Skaters (Keep Goalie)',
                   style: IconButton.styleFrom(
                     padding: const EdgeInsets.all(4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   onPressed: () {
+                    // Clear only skaters (D and F), preserve goalie selection
                     widget.onPlayersOnIceChanged([]);
                     widget.onGoalScorerChanged(null);
                     widget.onAssist1Changed(null);
                     if (widget.onAssist2Changed != null) {
                       widget.onAssist2Changed!(null);
                     }
-                    widget.onGoalieChanged(null);
+                    // Note: widget.onGoalieChanged(null) is removed to preserve goalie
                   },
                 ),
               ],

@@ -17,25 +17,35 @@ class ScoreSummaryWidget extends StatelessWidget {
   });
 
   Map<String, dynamic> _calculatePeriodScoring() {
-    // Calculate goals by period for both teams
+    // Calculate goals and shots by period for both teams
     final Map<int, int> yourTeamGoalsByPeriod = {};
     final Map<int, int> opponentGoalsByPeriod = {};
+    final Map<int, int> yourTeamShotsByPeriod = {};
+    final Map<int, int> opponentShotsByPeriod = {};
     
     // Initialize periods 1-4 (including OT)
     for (int period = 1; period <= 4; period++) {
       yourTeamGoalsByPeriod[period] = 0;
       opponentGoalsByPeriod[period] = 0;
+      yourTeamShotsByPeriod[period] = 0;
+      opponentShotsByPeriod[period] = 0;
     }
     
-    // Count goals by period
+    // Count goals and shots by period
     for (final event in gameEvents) {
-      if (event.eventType == 'Shot' && event.isGoal == true) {
+      if (event.eventType == 'Shot') {
         final period = event.period;
         if (period >= 1 && period <= 4) {
           if (event.team == teamId) {
-            yourTeamGoalsByPeriod[period] = (yourTeamGoalsByPeriod[period] ?? 0) + 1;
+            yourTeamShotsByPeriod[period] = (yourTeamShotsByPeriod[period] ?? 0) + 1;
+            if (event.isGoal == true) {
+              yourTeamGoalsByPeriod[period] = (yourTeamGoalsByPeriod[period] ?? 0) + 1;
+            }
           } else if (event.team == 'opponent') {
-            opponentGoalsByPeriod[period] = (opponentGoalsByPeriod[period] ?? 0) + 1;
+            opponentShotsByPeriod[period] = (opponentShotsByPeriod[period] ?? 0) + 1;
+            if (event.isGoal == true) {
+              opponentGoalsByPeriod[period] = (opponentGoalsByPeriod[period] ?? 0) + 1;
+            }
           }
         }
       }
@@ -44,9 +54,12 @@ class ScoreSummaryWidget extends StatelessWidget {
     // Calculate totals
     final yourTeamTotal = yourTeamGoalsByPeriod.values.fold(0, (a, b) => a + b);
     final opponentTotal = opponentGoalsByPeriod.values.fold(0, (a, b) => a + b);
+    final yourTeamShotsTotal = yourTeamShotsByPeriod.values.fold(0, (a, b) => a + b);
+    final opponentShotsTotal = opponentShotsByPeriod.values.fold(0, (a, b) => a + b);
     
-    // Determine which periods to show (always show 1-3, show OT only if there were goals)
-    final showOT = (yourTeamGoalsByPeriod[4] ?? 0) > 0 || (opponentGoalsByPeriod[4] ?? 0) > 0;
+    // Determine which periods to show (always show 1-3, show OT only if there were goals or shots)
+    final showOT = (yourTeamGoalsByPeriod[4] ?? 0) > 0 || (opponentGoalsByPeriod[4] ?? 0) > 0 ||
+                   (yourTeamShotsByPeriod[4] ?? 0) > 0 || (opponentShotsByPeriod[4] ?? 0) > 0;
     
     // Get team names
     String yourTeamName = 'Your Team';
@@ -64,8 +77,12 @@ class ScoreSummaryWidget extends StatelessWidget {
     return {
       'yourTeamGoalsByPeriod': yourTeamGoalsByPeriod,
       'opponentGoalsByPeriod': opponentGoalsByPeriod,
+      'yourTeamShotsByPeriod': yourTeamShotsByPeriod,
+      'opponentShotsByPeriod': opponentShotsByPeriod,
       'yourTeamTotal': yourTeamTotal,
       'opponentTotal': opponentTotal,
+      'yourTeamShotsTotal': yourTeamShotsTotal,
+      'opponentShotsTotal': opponentShotsTotal,
       'showOT': showOT,
       'yourTeamName': yourTeamName,
       'opponentName': opponentName,
@@ -88,8 +105,12 @@ class ScoreSummaryWidget extends StatelessWidget {
     final scoringData = _calculatePeriodScoring();
     final yourTeamGoalsByPeriod = scoringData['yourTeamGoalsByPeriod'] as Map<int, int>;
     final opponentGoalsByPeriod = scoringData['opponentGoalsByPeriod'] as Map<int, int>;
+    final yourTeamShotsByPeriod = scoringData['yourTeamShotsByPeriod'] as Map<int, int>;
+    final opponentShotsByPeriod = scoringData['opponentShotsByPeriod'] as Map<int, int>;
     final yourTeamTotal = scoringData['yourTeamTotal'] as int;
     final opponentTotal = scoringData['opponentTotal'] as int;
+    final yourTeamShotsTotal = scoringData['yourTeamShotsTotal'] as int;
+    final opponentShotsTotal = scoringData['opponentShotsTotal'] as int;
     final showOT = scoringData['showOT'] as bool;
     final yourTeamName = scoringData['yourTeamName'] as String;
     final opponentName = scoringData['opponentName'] as String;
@@ -373,7 +394,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (yourTeamGoalsByPeriod[1] ?? 0).toString(),
+                              '${yourTeamGoalsByPeriod[1] ?? 0} [${yourTeamShotsByPeriod[1] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -382,7 +403,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (yourTeamGoalsByPeriod[2] ?? 0).toString(),
+                              '${yourTeamGoalsByPeriod[2] ?? 0} [${yourTeamShotsByPeriod[2] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -391,7 +412,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (yourTeamGoalsByPeriod[3] ?? 0).toString(),
+                              '${yourTeamGoalsByPeriod[3] ?? 0} [${yourTeamShotsByPeriod[3] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -400,7 +421,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (yourTeamGoalsByPeriod[4] ?? 0).toString(),
+                              '${yourTeamGoalsByPeriod[4] ?? 0} [${yourTeamShotsByPeriod[4] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -415,7 +436,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
-                                yourTeamTotal.toString(),
+                                '$yourTeamTotal [$yourTeamShotsTotal]',
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
@@ -437,7 +458,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (yourTeamGoalsByPeriod[1] ?? 0).toString(),
+                              '${yourTeamGoalsByPeriod[1] ?? 0} [${yourTeamShotsByPeriod[1] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -446,7 +467,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (yourTeamGoalsByPeriod[2] ?? 0).toString(),
+                              '${yourTeamGoalsByPeriod[2] ?? 0} [${yourTeamShotsByPeriod[2] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -455,7 +476,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (yourTeamGoalsByPeriod[3] ?? 0).toString(),
+                              '${yourTeamGoalsByPeriod[3] ?? 0} [${yourTeamShotsByPeriod[3] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -470,7 +491,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
-                                yourTeamTotal.toString(),
+                                '$yourTeamTotal [$yourTeamShotsTotal]',
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
@@ -497,7 +518,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (opponentGoalsByPeriod[1] ?? 0).toString(),
+                              '${opponentGoalsByPeriod[1] ?? 0} [${opponentShotsByPeriod[1] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -506,7 +527,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (opponentGoalsByPeriod[2] ?? 0).toString(),
+                              '${opponentGoalsByPeriod[2] ?? 0} [${opponentShotsByPeriod[2] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -515,7 +536,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (opponentGoalsByPeriod[3] ?? 0).toString(),
+                              '${opponentGoalsByPeriod[3] ?? 0} [${opponentShotsByPeriod[3] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -524,7 +545,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (opponentGoalsByPeriod[4] ?? 0).toString(),
+                              '${opponentGoalsByPeriod[4] ?? 0} [${opponentShotsByPeriod[4] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -539,7 +560,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
-                                opponentTotal.toString(),
+                                '$opponentTotal [$opponentShotsTotal]',
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
@@ -561,7 +582,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (opponentGoalsByPeriod[1] ?? 0).toString(),
+                              '${opponentGoalsByPeriod[1] ?? 0} [${opponentShotsByPeriod[1] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -570,7 +591,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (opponentGoalsByPeriod[2] ?? 0).toString(),
+                              '${opponentGoalsByPeriod[2] ?? 0} [${opponentShotsByPeriod[2] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -579,7 +600,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           padding: const EdgeInsets.all(8.0),
                           child: Center(
                             child: Text(
-                              (opponentGoalsByPeriod[3] ?? 0).toString(),
+                              '${opponentGoalsByPeriod[3] ?? 0} [${opponentShotsByPeriod[3] ?? 0}]',
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -594,7 +615,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
-                                opponentTotal.toString(),
+                                '$opponentTotal [$opponentShotsTotal]',
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,

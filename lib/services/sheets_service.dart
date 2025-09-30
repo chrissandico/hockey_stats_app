@@ -20,6 +20,11 @@ class SheetsService {
 
   http.Client? _client;
   bool _isInitialized = false;
+  DateTime? _lastAuthCheck;
+  bool _isAuthenticated = false;
+  
+  // Cache authentication status for better performance
+  static const Duration _authCacheValidDuration = Duration(minutes: 10);
 
   /// Initialize the service with service account authentication
   Future<void> _initialize() async {
@@ -29,10 +34,13 @@ class SheetsService {
       final serviceAuth = await ServiceAccountAuth.instance;
       // We don't need to store the client anymore since we use makeAuthenticatedRequest
       _isInitialized = true;
+      _isAuthenticated = true;
+      _lastAuthCheck = DateTime.now();
       print('SheetsService initialized with service account authentication');
     } catch (e) {
       print('Error initializing SheetsService: $e');
       _isInitialized = false;
+      _isAuthenticated = false;
     }
   }
 
@@ -746,11 +754,24 @@ class SheetsService {
 
   Future<bool> ensureAuthenticated() async {
     await _initialize();
+    
+    // Use cached authentication status if recent
+    if (_isAuthenticated && _lastAuthCheck != null) {
+      final age = DateTime.now().difference(_lastAuthCheck!);
+      if (age < _authCacheValidDuration) {
+        return true;
+      }
+    }
+    
+    // Perform actual authentication check
     try {
       final serviceAuth = await ServiceAccountAuth.instance;
-      return serviceAuth.isAuthenticated;
+      _isAuthenticated = serviceAuth.isAuthenticated;
+      _lastAuthCheck = DateTime.now();
+      return _isAuthenticated;
     } catch (e) {
       print('Error checking authentication: $e');
+      _isAuthenticated = false;
       return false;
     }
   }

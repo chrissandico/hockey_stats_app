@@ -9,6 +9,9 @@ import 'package:hockey_stats_app/utils/team_utils.dart'; // Import TeamUtils
 import 'package:hockey_stats_app/utils/network_utils.dart'; // Import NetworkUtils
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import SheetsService for initial sync
 import 'package:hockey_stats_app/services/team_auth_service.dart'; // Import TeamAuthService
+import 'package:hockey_stats_app/services/connectivity_service.dart'; // Import ConnectivityService
+import 'package:hockey_stats_app/services/background_sync_service.dart'; // Import BackgroundSyncService
+import 'package:hockey_stats_app/services/memory_cache_service.dart'; // Import MemoryCacheService
 // Removed imports for log_shot_screen and log_penalty_screen as we navigate via GameSelectionScreen now
 
 // Define the dummyGameId here to be used across files (still needed for dummy data creation)
@@ -67,6 +70,9 @@ void main() async {
     // Open boxes with error handling
     await _safelyOpenHiveBoxes();
     
+    // Initialize performance services
+    await _initializePerformanceServices();
+    
     print('App initialization completed successfully');
     
     // DO NOT call attemptInitialDataSyncIfSignedIn() or addDummyDataIfNeeded() here anymore.
@@ -120,6 +126,28 @@ Future<void> _safelyOpenHiveBoxes() async {
         // Continue with other boxes even if one fails
       }
     }
+  }
+}
+
+/// Initialize performance services for better responsiveness
+Future<void> _initializePerformanceServices() async {
+  print('Initializing performance services...');
+  
+  try {
+    // Initialize connectivity service
+    final connectivityService = ConnectivityService();
+    await connectivityService.initialize();
+    print('ConnectivityService initialized');
+    
+    // Initialize background sync service
+    final backgroundSyncService = BackgroundSyncService();
+    await backgroundSyncService.initialize();
+    print('BackgroundSyncService initialized');
+    
+    print('Performance services initialization completed');
+  } catch (e) {
+    print('Error initializing performance services: $e');
+    // Don't throw - let the app continue even if services fail to initialize
   }
 }
 

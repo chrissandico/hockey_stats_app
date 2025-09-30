@@ -1,13 +1,20 @@
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:hockey_stats_app/services/connectivity_service.dart';
 
 /// Utility class for network connectivity detection and handling
 class NetworkUtils {
-  static const Duration _timeout = Duration(seconds: 10);
+  static const Duration _timeout = Duration(seconds: 3); // Reduced from 10 to 3 seconds
+  static final ConnectivityService _connectivityService = ConnectivityService();
   
-  /// Check if the device has internet connectivity
-  /// This performs a simple DNS lookup to Google's public DNS
+  /// Check if the device has internet connectivity (uses cached result when possible)
   static Future<bool> hasInternetConnection() async {
+    // Use cached result if available and recent
+    if (_connectivityService.isOnline) {
+      return true;
+    }
+    
+    // Perform quick check if cache indicates offline
     try {
       final result = await InternetAddress.lookup('google.com')
           .timeout(_timeout);
@@ -18,9 +25,14 @@ class NetworkUtils {
     }
   }
   
-  /// Check if Google APIs are accessible
-  /// This specifically tests connectivity to Google's OAuth servers
+  /// Check if Google APIs are accessible (uses cached result when possible)
   static Future<bool> canReachGoogleAPIs() async {
+    // Use cached result if available and recent
+    if (_connectivityService.canReachGoogleAPIs) {
+      return true;
+    }
+    
+    // Perform quick check if cache indicates APIs are unreachable
     try {
       final response = await http.head(
         Uri.parse('https://oauth2.googleapis.com'),
@@ -31,6 +43,16 @@ class NetworkUtils {
       print('Google APIs connectivity check failed: $e');
       return false;
     }
+  }
+  
+  /// Quick check using cached connectivity status
+  static bool isOnlineQuick() {
+    return _connectivityService.isOnline;
+  }
+  
+  /// Quick check if Google APIs are reachable using cached status
+  static bool canReachGoogleAPIsQuick() {
+    return _connectivityService.canReachGoogleAPIs;
   }
   
   /// Perform a comprehensive network connectivity check

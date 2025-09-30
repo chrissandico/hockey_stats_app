@@ -950,25 +950,35 @@ class PdfService {
 
   // Build tabular score summary display
   pw.Widget _buildScoreSummaryTable(List<GameEvent> gameEvents, String teamId, Game game) {
-    // Calculate goals by period for both teams
+    // Calculate goals and shots by period for both teams
     final Map<int, int> yourTeamGoalsByPeriod = {};
     final Map<int, int> opponentGoalsByPeriod = {};
+    final Map<int, int> yourTeamShotsByPeriod = {};
+    final Map<int, int> opponentShotsByPeriod = {};
     
     // Initialize periods 1-4 (including OT)
     for (int period = 1; period <= 4; period++) {
       yourTeamGoalsByPeriod[period] = 0;
       opponentGoalsByPeriod[period] = 0;
+      yourTeamShotsByPeriod[period] = 0;
+      opponentShotsByPeriod[period] = 0;
     }
     
-    // Count goals by period
+    // Count goals and shots by period
     for (final event in gameEvents) {
-      if (event.eventType == 'Shot' && event.isGoal == true) {
+      if (event.eventType == 'Shot') {
         final period = event.period;
         if (period >= 1 && period <= 4) {
           if (event.team == teamId) {
-            yourTeamGoalsByPeriod[period] = (yourTeamGoalsByPeriod[period] ?? 0) + 1;
+            yourTeamShotsByPeriod[period] = (yourTeamShotsByPeriod[period] ?? 0) + 1;
+            if (event.isGoal == true) {
+              yourTeamGoalsByPeriod[period] = (yourTeamGoalsByPeriod[period] ?? 0) + 1;
+            }
           } else if (event.team == 'opponent') {
-            opponentGoalsByPeriod[period] = (opponentGoalsByPeriod[period] ?? 0) + 1;
+            opponentShotsByPeriod[period] = (opponentShotsByPeriod[period] ?? 0) + 1;
+            if (event.isGoal == true) {
+              opponentGoalsByPeriod[period] = (opponentGoalsByPeriod[period] ?? 0) + 1;
+            }
           }
         }
       }
@@ -977,9 +987,12 @@ class PdfService {
     // Calculate totals
     final yourTeamTotal = yourTeamGoalsByPeriod.values.fold(0, (a, b) => a + b);
     final opponentTotal = opponentGoalsByPeriod.values.fold(0, (a, b) => a + b);
+    final yourTeamShotsTotal = yourTeamShotsByPeriod.values.fold(0, (a, b) => a + b);
+    final opponentShotsTotal = opponentShotsByPeriod.values.fold(0, (a, b) => a + b);
     
-    // Determine which periods to show (always show 1-3, show OT only if there were goals)
-    final showOT = (yourTeamGoalsByPeriod[4] ?? 0) > 0 || (opponentGoalsByPeriod[4] ?? 0) > 0;
+    // Determine which periods to show (always show 1-3, show OT only if there were goals or shots)
+    final showOT = (yourTeamGoalsByPeriod[4] ?? 0) > 0 || (opponentGoalsByPeriod[4] ?? 0) > 0 ||
+                   (yourTeamShotsByPeriod[4] ?? 0) > 0 || (opponentShotsByPeriod[4] ?? 0) > 0;
     
     // Get team names
     final yourTeamName = 'Your Team'; // Could be enhanced to get actual team name
@@ -1073,23 +1086,23 @@ class PdfService {
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((yourTeamGoalsByPeriod[1] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[1] ?? 0} [${yourTeamShotsByPeriod[1] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((yourTeamGoalsByPeriod[2] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[2] ?? 0} [${yourTeamShotsByPeriod[2] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((yourTeamGoalsByPeriod[3] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[3] ?? 0} [${yourTeamShotsByPeriod[3] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((yourTeamGoalsByPeriod[4] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[4] ?? 0} [${yourTeamShotsByPeriod[4] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text(yourTeamTotal.toString(), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                    child: pw.Center(child: pw.Text('$yourTeamTotal [$yourTeamShotsTotal]', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
                   ),
                 ] : [
                   pw.Padding(
@@ -1098,19 +1111,19 @@ class PdfService {
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((yourTeamGoalsByPeriod[1] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[1] ?? 0} [${yourTeamShotsByPeriod[1] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((yourTeamGoalsByPeriod[2] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[2] ?? 0} [${yourTeamShotsByPeriod[2] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((yourTeamGoalsByPeriod[3] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[3] ?? 0} [${yourTeamShotsByPeriod[3] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text(yourTeamTotal.toString(), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                    child: pw.Center(child: pw.Text('$yourTeamTotal [$yourTeamShotsTotal]', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
                   ),
                 ],
               ),
@@ -1124,23 +1137,23 @@ class PdfService {
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((opponentGoalsByPeriod[1] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[1] ?? 0} [${opponentShotsByPeriod[1] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((opponentGoalsByPeriod[2] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[2] ?? 0} [${opponentShotsByPeriod[2] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((opponentGoalsByPeriod[3] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[3] ?? 0} [${opponentShotsByPeriod[3] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((opponentGoalsByPeriod[4] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[4] ?? 0} [${opponentShotsByPeriod[4] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text(opponentTotal.toString(), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                    child: pw.Center(child: pw.Text('$opponentTotal [$opponentShotsTotal]', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
                   ),
                 ] : [
                   pw.Padding(
@@ -1149,19 +1162,19 @@ class PdfService {
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((opponentGoalsByPeriod[1] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[1] ?? 0} [${opponentShotsByPeriod[1] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((opponentGoalsByPeriod[2] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[2] ?? 0} [${opponentShotsByPeriod[2] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text((opponentGoalsByPeriod[3] ?? 0).toString(), style: const pw.TextStyle(fontSize: 9))),
+                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[3] ?? 0} [${opponentShotsByPeriod[3] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
                   ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text(opponentTotal.toString(), style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
+                    child: pw.Center(child: pw.Text('$opponentTotal [$opponentShotsTotal]', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
                   ),
                 ],
               ),

@@ -768,82 +768,114 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 // NEW: 5-button layout for streamlined shot logging
                 Column(
                   children: [
-                    // Top row: Team shot buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                            child: ElevatedButton(
-                              onPressed: _isLogging ? null : () => _logQuickShot(widget.teamId),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 16.0),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16.0),
-                                ),
-                                elevation: 0,
-                                shadowColor: Colors.transparent,
-                                backgroundColor: const Color(0xFF1976D2), // Material Blue 700
-                                foregroundColor: Colors.white,
-                                surfaceTintColor: Colors.transparent,
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.sports_hockey, size: 28.0, color: Colors.white),
-                                  const SizedBox(height: 6.0),
-                                  Text(
-                                    '$_currentTeamName\nShot',
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                      fontSize: 13.0,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.2,
-                                      color: Colors.white,
+                    // Top row: Team shot buttons with SOG counts
+                    ValueListenableBuilder(
+                      valueListenable: Hive.box<GameEvent>('gameEvents').listenable(),
+                      builder: (context, Box<GameEvent> box, _) {
+                        final gameEvents = box.values.where((event) => event.gameId == widget.gameId).toList();
+                        
+                        // Filter shot events
+                        final shotEvents = gameEvents.where((event) => event.eventType == 'Shot').toList();
+                        
+                        // Calculate shots on goal (includes goals)
+                        final yourTeamShots = shotEvents.where((event) => event.team == widget.teamId).length;
+                        final opponentShots = shotEvents.where((event) => event.team == 'opponent').length;
+
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                                child: ElevatedButton(
+                                  onPressed: _isLogging ? null : () => _logQuickShot(widget.teamId),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 16.0),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16.0),
                                     ),
+                                    elevation: 0,
+                                    shadowColor: Colors.transparent,
+                                    backgroundColor: const Color(0xFF1976D2), // Material Blue 700
+                                    foregroundColor: Colors.white,
+                                    surfaceTintColor: Colors.transparent,
                                   ),
-                                ],
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.sports_hockey, size: 28.0, color: Colors.white),
+                                      const SizedBox(height: 6.0),
+                                      Text(
+                                        '$_currentTeamName\nShot',
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                          fontSize: 13.0,
+                                          fontWeight: FontWeight.w700,
+                                          height: 1.2,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4.0),
+                                      Text(
+                                        'SOG: $yourTeamShots',
+                                        style: const TextStyle(
+                                          fontSize: 14.0,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                            child: ElevatedButton(
-                              onPressed: _isLogging ? null : () => _logQuickShot('opponent'),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 16.0),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16.0),
-                                ),
-                                elevation: 0,
-                                shadowColor: Colors.transparent,
-                                backgroundColor: const Color(0xFFD32F2F), // Material Red 700
-                                foregroundColor: Colors.white,
-                                surfaceTintColor: Colors.transparent,
-                              ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.sports_hockey, size: 28.0, color: Colors.white),
-                                  const SizedBox(height: 6.0),
-                                  const Text(
-                                    'Opponent\nShot',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 13.0,
-                                      fontWeight: FontWeight.w700,
-                                      height: 1.2,
-                                      color: Colors.white,
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                                child: ElevatedButton(
+                                  onPressed: _isLogging ? null : () => _logQuickShot('opponent'),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 16.0),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16.0),
                                     ),
+                                    elevation: 0,
+                                    shadowColor: Colors.transparent,
+                                    backgroundColor: const Color(0xFFD32F2F), // Material Red 700
+                                    foregroundColor: Colors.white,
+                                    surfaceTintColor: Colors.transparent,
                                   ),
-                                ],
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.sports_hockey, size: 28.0, color: Colors.white),
+                                      const SizedBox(height: 6.0),
+                                      const Text(
+                                        'Opponent\nShot',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          fontSize: 13.0,
+                                          fontWeight: FontWeight.w700,
+                                          height: 1.2,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4.0),
+                                      Text(
+                                        'SOG: $opponentShots',
+                                        style: const TextStyle(
+                                          fontSize: 14.0,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      ],
+                          ],
+                        );
+                      }
                     ),
                     
                     const SizedBox(height: 12),
@@ -1041,63 +1073,6 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                                     ),
                                   ],
                                 ),
-                              );
-                            }
-                          ),
-                          const SizedBox(height: 8),
-                          
-                          ValueListenableBuilder(
-                            valueListenable: Hive.box<GameEvent>('gameEvents').listenable(),
-                            builder: (context, Box<GameEvent> box, _) {
-                              final gameEvents = box.values.where((event) => event.gameId == widget.gameId).toList();
-                              
-                              // Filter shot events
-                              final shotEvents = gameEvents.where((event) => event.eventType == 'Shot').toList();
-                              
-                              // Calculate shots on goal (includes goals)
-                              final yourTeamShots = shotEvents.where((event) => event.team == widget.teamId).length;
-                              final opponentShots = shotEvents.where((event) => event.team == 'opponent').length;
-
-                              return Column(
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        '$yourTeamShots',
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.blue,
-                                        ),
-                                      ),
-                                      const Text(
-                                        ' shots ',
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Text(
-                                        '$opponentShots',
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.red,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Shots on Goal (includes goals)',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[600],
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ],
                               );
                             }
                           ),
