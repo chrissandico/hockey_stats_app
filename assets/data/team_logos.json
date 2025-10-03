@@ -10,21 +10,21 @@
     {
       "id": "your_team",
       "name": "Your Team",
-      "logoPath": "assets/logos/your_team_logo.svg",
+      "logoPath": "assets/logos/stars_logo.png",
       "primaryColor": "#059669",
       "secondaryColor": "#FFFFFF"
     },
     {
       "id": "opponent",
       "name": "Opponent",
-      "logoPath": "assets/logos/generic_logo.svg",
+      "logoPath": "assets/logos/waxers_logo.png",
       "primaryColor": "#DC2626",
       "secondaryColor": "#FFFFFF"
     },
     {
       "id": "generic",
       "name": "Generic Team",
-      "logoPath": "assets/logos/generic_logo.svg",
+      "logoPath": "assets/logos/stars_logo.png",
       "primaryColor": "#6B7280",
       "secondaryColor": "#FFFFFF"
     }
@@ -32,7 +32,7 @@
   "default": {
     "id": "generic",
     "name": "Generic Team",
-    "logoPath": "assets/logos/generic_logo.svg",
+    "logoPath": "assets/logos/stars_logo.png",
     "primaryColor": "#6B7280",
     "secondaryColor": "#FFFFFF"
   }

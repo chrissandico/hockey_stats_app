@@ -68,7 +68,7 @@ class ConnectivityService {
   
   /// Schedule periodic background connectivity checks
   void _schedulePeriodicChecks() {
-    Timer.periodic(const Duration(minutes: 2), (timer) {
+    _periodicTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
       if (_shouldPerformCheck()) {
         _performConnectivityCheck();
       }
@@ -88,17 +88,20 @@ class ConnectivityService {
       
       // Quick internet check with short timeout
       final hasInternet = await _quickInternetCheck();
+      print('ConnectivityService: Internet check result: $hasInternet');
       
       bool canReachGoogle = false;
       if (hasInternet) {
         // Only check Google APIs if we have basic internet
         canReachGoogle = await _quickGoogleAPICheck();
+        print('ConnectivityService: Google APIs check result: $canReachGoogle');
       }
       
       _updateConnectivityStatus(hasInternet, canReachGoogle);
       _lastConnectivityCheck = DateTime.now();
       
       print('ConnectivityService: Check complete. Internet: $hasInternet, Google APIs: $canReachGoogle');
+      print('ConnectivityService: Updated status - isOnline: $_isOnline, canReachGoogleAPIs: $_canReachGoogleAPIs');
     } catch (e) {
       print('ConnectivityService: Error during connectivity check: $e');
       // On error, assume offline to be safe

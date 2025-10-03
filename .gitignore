@@ -54,3 +54,4 @@ key.properties
 # Build artifacts
 *.apk
 *.aab
+android/app/google-services.json

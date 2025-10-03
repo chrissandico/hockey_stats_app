@@ -670,13 +670,31 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
               );
             },
           ),
+          // Add the sync status indicator
+          _buildSyncIndicator(),
           StreamBuilder<int>(
-            stream: Hive.box<GameEvent>('gameEvents')
-                .watch()
-                .map((_) => Hive.box<GameEvent>('gameEvents')
-                    .values
-                    .where((e) => !e.isSynced)
-                    .length),
+            stream: Stream.periodic(const Duration(seconds: 1)).asyncMap((_) async {
+              // Get user preferences
+              final prefsBox = Hive.box<SyncPreferences>('syncPreferences');
+              final prefs = prefsBox.get('user_prefs') ?? SyncPreferences();
+              
+              // Count unsynced events that match preferences
+              final gameEventsBox = Hive.box<GameEvent>('gameEvents');
+              final unsyncedEvents = gameEventsBox.values
+                  .where((event) => !event.isSynced && prefs.shouldSyncEvent(event))
+                  .length;
+              
+              // Count unsynced attendance if enabled
+              int unsyncedAttendance = 0;
+              if (prefs.shouldSyncAttendance()) {
+                final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
+                unsyncedAttendance = attendanceBox.values
+                    .where((attendance) => !attendance.isSynced)
+                    .length;
+              }
+              
+              return unsyncedEvents + unsyncedAttendance;
+            }),
             builder: (context, snapshot) {
               final count = snapshot.data ?? 0;
               return Badge(
@@ -684,17 +702,26 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
                 isLabelVisible: count > 0,
                 child: IconButton(
                   icon: Icon(Icons.cloud_sync),
+                  tooltip: 'Sync unsynced events',
                   onPressed: () async {
-                    final result = await context.read<SheetsService>().syncPendingEvents();
+                    final result = await context.read<SheetsService>().syncPendingEventsInBackground();
+                    final attendanceResult = await context.read<SheetsService>().syncPendingAttendanceInBackground();
+                    
+                    final totalSuccess = (result['success'] ?? 0) + (attendanceResult['success'] ?? 0);
+                    final totalFailed = (result['failed'] ?? 0) + (attendanceResult['failed'] ?? 0);
+                    
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(result['failed']! > 0 
-                            ? 'Synced ${result['success']} events (${result['failed']} failed)'
-                            : 'Successfully synced ${result['success']} events'),
-                        action: result['failed']! > 0
+                        content: Text(totalFailed > 0 
+                            ? 'Synced $totalSuccess items ($totalFailed failed)'
+                            : 'Successfully synced $totalSuccess items'),
+                        action: totalFailed > 0
                             ? SnackBarAction(
                                 label: 'Retry',
-                                onPressed: () => context.read<SheetsService>().syncPendingEvents(),
+                                onPressed: () async {
+                                  await context.read<SheetsService>().syncPendingEventsInBackground();
+                                  await context.read<SheetsService>().syncPendingAttendanceInBackground();
+                                },
                               )
                             : null,
                       ),
@@ -704,7 +731,6 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
               );
             },
           ),
-          _buildSyncIndicator(),
         ],
       ),
       body: _buildBody(),

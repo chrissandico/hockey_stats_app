@@ -3,6 +3,8 @@ import 'package:hockey_stats_app/screens/log_goal_screen.dart';
 import 'package:hockey_stats_app/screens/log_penalty_screen.dart';
 import 'package:hockey_stats_app/screens/view_stats_screen.dart';
 import 'package:hockey_stats_app/screens/edit_shot_list_screen.dart';
+import 'package:hockey_stats_app/screens/unsynced_events_screen.dart';
+import 'package:hockey_stats_app/screens/sync_settings_screen.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
@@ -12,6 +14,7 @@ import 'package:hockey_stats_app/widgets/share_dialog.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
 import 'package:hockey_stats_app/widgets/player_selection_widget.dart';
 import 'package:uuid/uuid.dart';
+import 'package:provider/provider.dart';
 
 // Removed - now using CentralizedDataService for score calculation
 
@@ -70,18 +73,38 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
 
   /// Initialize the screen with optimized async loading
   Future<void> _initializeScreenAsync() async {
-    // Load essential data first (non-blocking)
+    // Load essential data first (blocking - needed for UI)
     await _loadInitialData();
     
-    // Load other data in parallel (non-blocking)
-    Future.wait([
-      _checkSignInStatus(),
-      _loadPlayers(),
-      _loadCurrentTeamName(),
-    ]);
-    
-    // Load attendance data last (least critical)
-    _loadAttendanceData();
+    // Load other data in background (non-blocking)
+    _loadBackgroundData();
+  }
+  
+  /// Load non-essential data in background to avoid blocking UI
+  void _loadBackgroundData() {
+    // Use microtasks to ensure UI renders first
+    Future.microtask(() async {
+      // Load data in parallel but don't block UI
+      final futures = [
+        _checkSignInStatus(),
+        _loadPlayers(),
+        _loadCurrentTeamName(),
+        _loadAttendanceData(),
+      ];
+      
+      // Process results as they complete
+      for (final future in futures) {
+        future.catchError((error) {
+          print('Background data loading error: $error');
+          return null;
+        });
+      }
+      
+      // Wait for all to complete
+      await Future.wait(futures, eagerError: false);
+      
+      print('Background data loading completed');
+    });
   }
 
   Future<void> _checkSignInStatus() async {
@@ -554,13 +577,38 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
       if (!mounted) return;
 
       String teamDisplayName = team == widget.teamId ? _currentTeamName : 'Opponent';
-      String message = syncSuccess 
-          ? 'Shot logged for $teamDisplayName and synced.'
-          : 'Shot logged for $teamDisplayName locally - $syncError';
+      String message;
+      Color? backgroundColor;
+      Widget? icon;
+      
+      if (syncSuccess) {
+        message = 'Shot logged for $teamDisplayName and synced.';
+      } else {
+        // Check if the error is due to being offline
+        if (syncError.toLowerCase().contains('offline') || 
+            syncError.toLowerCase().contains('connection') ||
+            syncError.toLowerCase().contains('network') ||
+            syncError.toLowerCase().contains('retry when online')) {
+          message = 'Shot logged successfully! Your changes will automatically sync when your device is back online.';
+          backgroundColor = Colors.blue;
+          icon = const Icon(Icons.info_outline, color: Colors.white, size: 20);
+        } else {
+          message = 'Shot logged for $teamDisplayName locally - $syncError';
+        }
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(message),
+          content: Row(
+            children: [
+              if (icon != null) ...[
+                icon,
+                const SizedBox(width: 8),
+              ],
+              Expanded(child: Text(message)),
+            ],
+          ),
+          backgroundColor: backgroundColor,
           duration: Duration(seconds: syncSuccess ? 2 : 4),
         ),
       );
@@ -653,57 +701,198 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                ),
              )
           else ...[
-            IconButton(
-              icon: const Icon(Icons.edit),
-              tooltip: 'Edit Logged Shots',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => EditShotListScreen(gameId: widget.gameId, teamId: widget.teamId)),
-                ).then((_) {
-                  print('Returned from EditShotListScreen, refreshing score...');
-                  _refreshScore().then((_) {
-                    print('Score refresh complete');
-                  });
-                });
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.share),
-              tooltip: 'Share Game Stats',
-              onPressed: () async {
-                if (_currentGame == null) return;
-
-                final playersBox = Hive.box<Player>('players');
-                final players = playersBox.values.where((player) => player.teamId == widget.teamId).toList();
-
-                final gameEventsBox = Hive.box<GameEvent>('gameEvents');
-                final gameEvents = gameEventsBox.values
-                    .where((event) => event.gameId == widget.gameId)
-                    .toList();
-
-                if (mounted) {
-                  await showDialog(
-                    context: context,
-                    builder: (context) => ShareDialog(
-                      players: players,
-                      gameEvents: gameEvents,
-                      game: _currentGame!,
-                      teamId: widget.teamId,
+            // Sync badge first to ensure it has enough space
+            Padding(
+              padding: const EdgeInsets.only(right: 4.0),
+              child: StreamBuilder<int>(
+                stream: Stream.periodic(const Duration(seconds: 1)).asyncMap((_) async {
+                  // Get user preferences to filter events
+                  final prefsBox = Hive.box<SyncPreferences>('syncPreferences');
+                  final prefs = prefsBox.get('user_prefs') ?? SyncPreferences();
+                  
+                  // Count unsynced events that match preferences
+                  final gameEventsBox = Hive.box<GameEvent>('gameEvents');
+                  final unsyncedEvents = gameEventsBox.values
+                      .where((event) => !event.isSynced && prefs.shouldSyncEvent(event))
+                      .length;
+                  
+                  // Count unsynced attendance if enabled
+                  int unsyncedAttendance = 0;
+                  if (prefs.shouldSyncAttendance()) {
+                    final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
+                    unsyncedAttendance = attendanceBox.values
+                        .where((attendance) => !attendance.isSynced)
+                        .length;
+                  }
+                  
+                  return unsyncedEvents + unsyncedAttendance;
+                }),
+                builder: (context, snapshot) {
+                  final count = snapshot.data ?? 0;
+                  return GestureDetector(
+                    onLongPress: () async {
+                      // Long press triggers sync
+                      final result = await _sheetsService.syncPendingEventsInBackground();
+                      final attendanceResult = await _sheetsService.syncPendingAttendanceInBackground();
+                      
+                      final totalSuccess = (result['success'] ?? 0) + (attendanceResult['success'] ?? 0);
+                      final totalFailed = (result['failed'] ?? 0) + (attendanceResult['failed'] ?? 0);
+                      
+                      if (!mounted) return;
+                      
+                      String message;
+                      SnackBarAction? action;
+                      
+                      if (result['pending'] == -1 || attendanceResult['pending'] == -1) {
+                        message = 'Your device appears to be offline. All changes are safely stored and will automatically sync when your connection is restored.';
+                      } else if (totalFailed > 0) {
+                        message = 'Synced $totalSuccess items ($totalFailed failed)';
+                        action = SnackBarAction(
+                          label: 'Retry',
+                          onPressed: () async {
+                            await _sheetsService.syncPendingEventsInBackground();
+                            await _sheetsService.syncPendingAttendanceInBackground();
+                          },
+                        );
+                      } else if (totalSuccess > 0) {
+                        message = 'Successfully synced $totalSuccess items';
+                        await _refreshScore();
+                      } else {
+                        message = 'No items to sync based on your preferences.';
+                      }
+                      
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Row(
+                            children: [
+                              if (result['pending'] == -1 || attendanceResult['pending'] == -1) 
+                                const Icon(Icons.info_outline, color: Colors.white, size: 20),
+                              if (result['pending'] == -1 || attendanceResult['pending'] == -1) 
+                                const SizedBox(width: 8),
+                              Expanded(child: Text(message)),
+                            ],
+                          ),
+                          backgroundColor: (result['pending'] == -1 || attendanceResult['pending'] == -1)
+                              ? Colors.blue 
+                              : null,
+                          action: action,
+                          duration: Duration(seconds: (result['pending'] == -1 || attendanceResult['pending'] == -1) ? 4 : 3),
+                        ),
+                      );
+                    },
+                    child: PopupMenuButton<String>(
+                      icon: Badge(
+                        label: Text(count.toString()),
+                        isLabelVisible: count > 0,
+                        child: const Icon(Icons.cloud_sync),
+                      ),
+                      tooltip: count > 0 
+                          ? 'View $count unsynced events\nLong press to sync'
+                          : 'All events synced',
+                      onSelected: (value) {
+                        if (value == 'view_unsynced') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => UnsyncedEventsScreen(gameId: widget.gameId),
+                            ),
+                          );
+                        } else if (value == 'sync_settings') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const SyncSettingsScreen(),
+                            ),
+                          );
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'view_unsynced',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.list, size: 20),
+                              const SizedBox(width: 8),
+                              Text('View Unsynced Events ($count)'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'sync_settings',
+                          child: Row(
+                            children: [
+                              Icon(Icons.settings, size: 20),
+                              SizedBox(width: 8),
+                              Text('Sync Settings'),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   );
-                }
-              },
+                },
+              ),
             ),
-            IconButton(
-              icon: const Icon(Icons.bar_chart),
-              tooltip: 'View Stats',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId, teamId: widget.teamId)),
-                );
-              },
+            Padding(
+              padding: const EdgeInsets.only(right: 4.0),
+              child: IconButton(
+                icon: const Icon(Icons.edit),
+                tooltip: 'Edit Logged Shots',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => EditShotListScreen(gameId: widget.gameId, teamId: widget.teamId)),
+                  ).then((_) {
+                    print('Returned from EditShotListScreen, refreshing score...');
+                    _refreshScore().then((_) {
+                      print('Score refresh complete');
+                    });
+                  });
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: 4.0),
+              child: IconButton(
+                icon: const Icon(Icons.share),
+                tooltip: 'Share Game Stats',
+                onPressed: () async {
+                  if (_currentGame == null) return;
+
+                  final playersBox = Hive.box<Player>('players');
+                  final players = playersBox.values.where((player) => player.teamId == widget.teamId).toList();
+
+                  final gameEventsBox = Hive.box<GameEvent>('gameEvents');
+                  final gameEvents = gameEventsBox.values
+                      .where((event) => event.gameId == widget.gameId)
+                      .toList();
+
+                  if (mounted) {
+                    await showDialog(
+                      context: context,
+                      builder: (context) => ShareDialog(
+                        players: players,
+                        gameEvents: gameEvents,
+                        game: _currentGame!,
+                        teamId: widget.teamId,
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: IconButton(
+                icon: const Icon(Icons.bar_chart),
+                tooltip: 'View Stats',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId, teamId: widget.teamId)),
+                  );
+                },
+              ),
             ),
           ],
         ],
@@ -1187,15 +1376,6 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                     ),
                   ),
                 ],
-
-                if (_currentUser != null) ...[
-                  const SizedBox(height: 10),
-                  ElevatedButton.icon(
-                    icon: _isSigningIn ? SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).primaryColor)) : const Icon(Icons.sync),
-                    label: const Text('Sync Data to Google Sheets'),
-                    onPressed: _isSigningIn ? null : _handleSync,
-                  ),
-                ]
                 ],
               ),
             ),

@@ -219,18 +219,18 @@ class ScoreSummaryWidget extends StatelessWidget {
                 child: Table(
                   border: TableBorder.all(color: Colors.grey[300]!, width: 1),
                   columnWidths: showOT ? {
-                    0: const FlexColumnWidth(2.5), // Team
-                    1: const FlexColumnWidth(1), // 1
-                    2: const FlexColumnWidth(1), // 2
-                    3: const FlexColumnWidth(1), // 3
-                    4: const FlexColumnWidth(1), // OT
-                    5: const FlexColumnWidth(1), // T
+                    0: const FlexColumnWidth(2.0), // Team
+                    1: const FlexColumnWidth(1.3), // 1
+                    2: const FlexColumnWidth(1.3), // 2
+                    3: const FlexColumnWidth(1.3), // 3
+                    4: const FlexColumnWidth(1.3), // OT
+                    5: const FlexColumnWidth(1.3), // T
                   } : {
-                    0: const FlexColumnWidth(2.5), // Team
-                    1: const FlexColumnWidth(1), // 1
-                    2: const FlexColumnWidth(1), // 2
-                    3: const FlexColumnWidth(1), // 3
-                    4: const FlexColumnWidth(1), // T
+                    0: const FlexColumnWidth(2.0), // Team
+                    1: const FlexColumnWidth(1.4), // 1
+                    2: const FlexColumnWidth(1.4), // 2
+                    3: const FlexColumnWidth(1.4), // 3
+                    4: const FlexColumnWidth(1.4), // T
                   },
                   children: [
                     // Header row
@@ -238,7 +238,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                       decoration: const BoxDecoration(color: Colors.black),
                       children: showOT ? [
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Text(
                             'Team',
                             style: TextStyle(
@@ -249,7 +249,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           ),
                         ),
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '1',
@@ -262,7 +262,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           ),
                         ),
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '2',
@@ -275,7 +275,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           ),
                         ),
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '3',
@@ -288,7 +288,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           ),
                         ),
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               'OT',
@@ -301,7 +301,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           ),
                         ),
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               'T',
@@ -315,7 +315,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                         ),
                       ] : [
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Text(
                             'Team',
                             style: TextStyle(
@@ -326,7 +326,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           ),
                         ),
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '1',
@@ -339,7 +339,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           ),
                         ),
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '2',
@@ -352,7 +352,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           ),
                         ),
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '3',
@@ -365,7 +365,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                           ),
                         ),
                         const Padding(
-                          padding: EdgeInsets.all(8.0),
+                          padding: EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               'T',
@@ -384,53 +384,53 @@ class ScoreSummaryWidget extends StatelessWidget {
                     TableRow(
                       children: showOT ? [
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Text(
                             yourTeamName,
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${yourTeamGoalsByPeriod[1] ?? 0} [${yourTeamShotsByPeriod[1] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${yourTeamGoalsByPeriod[2] ?? 0} [${yourTeamShotsByPeriod[2] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${yourTeamGoalsByPeriod[3] ?? 0} [${yourTeamShotsByPeriod[3] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${yourTeamGoalsByPeriod[4] ?? 0} [${yourTeamShotsByPeriod[4] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: Colors.blue[50],
                                 borderRadius: BorderRadius.circular(4),
@@ -438,7 +438,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                               child: Text(
                                 '$yourTeamTotal [$yourTeamShotsTotal]',
                                 style: const TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.blue,
                                 ),
@@ -448,44 +448,44 @@ class ScoreSummaryWidget extends StatelessWidget {
                         ),
                       ] : [
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Text(
                             yourTeamName,
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${yourTeamGoalsByPeriod[1] ?? 0} [${yourTeamShotsByPeriod[1] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${yourTeamGoalsByPeriod[2] ?? 0} [${yourTeamShotsByPeriod[2] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${yourTeamGoalsByPeriod[3] ?? 0} [${yourTeamShotsByPeriod[3] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: Colors.blue[50],
                                 borderRadius: BorderRadius.circular(4),
@@ -493,7 +493,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                               child: Text(
                                 '$yourTeamTotal [$yourTeamShotsTotal]',
                                 style: const TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.blue,
                                 ),
@@ -508,53 +508,53 @@ class ScoreSummaryWidget extends StatelessWidget {
                     TableRow(
                       children: showOT ? [
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Text(
                             opponentName,
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${opponentGoalsByPeriod[1] ?? 0} [${opponentShotsByPeriod[1] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${opponentGoalsByPeriod[2] ?? 0} [${opponentShotsByPeriod[2] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${opponentGoalsByPeriod[3] ?? 0} [${opponentShotsByPeriod[3] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${opponentGoalsByPeriod[4] ?? 0} [${opponentShotsByPeriod[4] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: Colors.red[50],
                                 borderRadius: BorderRadius.circular(4),
@@ -562,7 +562,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                               child: Text(
                                 '$opponentTotal [$opponentShotsTotal]',
                                 style: const TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.red,
                                 ),
@@ -572,44 +572,44 @@ class ScoreSummaryWidget extends StatelessWidget {
                         ),
                       ] : [
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Text(
                             opponentName,
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${opponentGoalsByPeriod[1] ?? 0} [${opponentShotsByPeriod[1] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${opponentGoalsByPeriod[2] ?? 0} [${opponentShotsByPeriod[2] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Text(
                               '${opponentGoalsByPeriod[3] ?? 0} [${opponentShotsByPeriod[3] ?? 0}]',
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.all(8.0),
+                          padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
                           child: Center(
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: Colors.red[50],
                                 borderRadius: BorderRadius.circular(4),
@@ -617,7 +617,7 @@ class ScoreSummaryWidget extends StatelessWidget {
                               child: Text(
                                 '$opponentTotal [$opponentShotsTotal]',
                                 style: const TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.red,
                                 ),

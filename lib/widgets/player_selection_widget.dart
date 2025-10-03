@@ -1,9 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
-import 'package:hockey_stats_app/services/connectivity_service.dart';
+import 'package:hockey_stats_app/services/line_configuration_service.dart';
 
-// Optimized player button widget to prevent unnecessary rebuilds
-class _PlayerButton extends StatelessWidget {
+// Data class to represent a line position
+class LinePosition {
+  final int lineIndex;
+  final int positionIndex;
+  final String positionType; // 'forward' or 'defense'
+  
+  LinePosition({
+    required this.lineIndex,
+    required this.positionIndex,
+    required this.positionType,
+  });
+}
+
+// Draggable player button widget
+class _DraggablePlayerButton extends StatelessWidget {
   final Player player;
   final bool isOnIce;
   final bool isGoalScorer;
@@ -14,8 +27,15 @@ class _PlayerButton extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final VoidCallback onDoubleTap;
+  final bool isDragging;
+  final double width;
+  final double height;
+  final double jerseyFontSize;
+  final double positionBadgeFontSize;
+  final double iconSize;
+  final double smallIconSize;
 
-  const _PlayerButton({
+  const _DraggablePlayerButton({
     required this.player,
     required this.isOnIce,
     required this.isGoalScorer,
@@ -26,23 +46,26 @@ class _PlayerButton extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     required this.onDoubleTap,
+    this.isDragging = false,
+    this.width = 80.0,
+    this.height = 50.0,
+    this.jerseyFontSize = 16.0,
+    this.positionBadgeFontSize = 8.0,
+    this.iconSize = 12.0,
+    this.smallIconSize = 10.0,
   });
 
   // Cache for color calculations to avoid redundant processing
   static final Map<String, Color> _colorCache = {};
-  static final Map<String, Widget> _widgetCache = {};
   
   Color _getCachedColor(String key, Color Function() calculator) {
     return _colorCache.putIfAbsent(key, calculator);
   }
-  
-  Widget _getCachedWidget(String key, Widget Function() builder) {
-    return _widgetCache.putIfAbsent(key, builder);
-  }
 
   Color get _backgroundColor {
-    final key = 'bg_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}';
+    final key = 'bg_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}_${isDragging}';
     return _getCachedColor(key, () {
+      if (isDragging) return Colors.blue.withOpacity(0.1);
       if (isAbsent) return Colors.grey.withOpacity(0.3);
       if (isGoalScorer) return Colors.green.withOpacity(0.2);
       if (isAssist1 || isAssist2) return Colors.orange.withOpacity(0.2);
@@ -53,8 +76,9 @@ class _PlayerButton extends StatelessWidget {
   }
 
   Color get _borderColor {
-    final key = 'border_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}';
+    final key = 'border_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}_${isDragging}';
     return _getCachedColor(key, () {
+      if (isDragging) return Colors.blue.withOpacity(0.3);
       if (isAbsent) return Colors.grey;
       if (isGoalScorer) return Colors.green;
       if (isAssist1 || isAssist2) return Colors.orange;
@@ -65,8 +89,9 @@ class _PlayerButton extends StatelessWidget {
   }
 
   Color get _textColor {
-    final key = 'text_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}';
+    final key = 'text_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}_${isDragging}';
     return _getCachedColor(key, () {
+      if (isDragging) return Colors.blue.withOpacity(0.7);
       if (isAbsent) return Colors.grey;
       if (isGoalScorer) return Colors.green;
       if (isAssist1 || isAssist2) return Colors.orange;
@@ -76,8 +101,7 @@ class _PlayerButton extends StatelessWidget {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildPlayerJersey() {
     final isForward = player.position == 'C' || 
                      player.position == 'LW' || 
                      player.position == 'RW' ||
@@ -100,105 +124,316 @@ class _PlayerButton extends StatelessWidget {
       positionColor = Colors.green.withOpacity(0.8);
     }
 
-    return RepaintBoundary(
-      child: GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        onDoubleTap: onDoubleTap,
-        child: Container(
-          decoration: BoxDecoration(
-            color: _backgroundColor,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: _borderColor,
-              width: 2,
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: _backgroundColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: _borderColor,
+          width: 1.5,
+        ),
+      ),
+      child: Stack(
+        children: [
+          Center(
+            child: Text(
+              '#${player.jerseyNumber}',
+              style: TextStyle(
+                fontSize: jerseyFontSize,
+                fontWeight: FontWeight.bold,
+                color: _textColor,
+              ),
             ),
           ),
-          child: Stack(
-            children: [
-              Center(
-                child: Text(
-                  '#${player.jerseyNumber}',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: _textColor,
-                  ),
+          // Position indicator badge
+          Positioned(
+            top: 2,
+            left: 2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+              decoration: BoxDecoration(
+                color: positionColor,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                positionLabel,
+                style: TextStyle(
+                  fontSize: positionBadgeFontSize,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
-              // Position indicator badge
-              Positioned(
-                top: 2,
-                left: 2,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: positionColor,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  child: Text(
-                    positionLabel,
-                    style: const TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-              // Role indicators
-              if (isGoalScorer)
-                const Positioned(
-                  top: 2,
-                  right: 2,
-                  child: Icon(
-                    Icons.sports_score,
-                    size: 14,
-                    color: Colors.green,
-                  ),
-                ),
-              if (isAssist1)
-                const Positioned(
-                  bottom: 2,
-                  right: 2,
-                  child: Icon(
-                    Icons.looks_one,
-                    size: 14,
-                    color: Colors.orange,
-                  ),
-                ),
-              if (isAssist2)
-                const Positioned(
-                  bottom: 2,
-                  right: 14,
-                  child: Icon(
-                    Icons.looks_two,
-                    size: 12,
-                    color: Colors.orange,
-                  ),
-                ),
-              if (isSelectedGoalie)
-                const Positioned(
-                  bottom: 2,
-                  right: 2,
-                  child: Icon(
-                    Icons.check_circle,
-                    size: 14,
-                    color: Colors.purple,
-                  ),
-                ),
-              if (isAbsent)
-                const Positioned(
-                  bottom: 2,
-                  left: 2,
-                  child: Icon(
-                    Icons.person_off,
-                    size: 12,
-                    color: Colors.grey,
-                  ),
-                ),
-            ],
+            ),
           ),
+          // Role indicators
+          if (isGoalScorer)
+            Positioned(
+              top: 2,
+              right: 2,
+              child: Icon(
+                Icons.sports_score,
+                size: iconSize,
+                color: Colors.green,
+              ),
+            ),
+          if (isAssist1)
+            Positioned(
+              bottom: 2,
+              right: 2,
+              child: Icon(
+                Icons.looks_one,
+                size: iconSize,
+                color: Colors.orange,
+              ),
+            ),
+          if (isAssist2)
+            Positioned(
+              bottom: 2,
+              right: iconSize + 2,
+              child: Icon(
+                Icons.looks_two,
+                size: smallIconSize,
+                color: Colors.orange,
+              ),
+            ),
+          if (isSelectedGoalie)
+            Positioned(
+              bottom: 2,
+              right: 2,
+              child: Icon(
+                Icons.check_circle,
+                size: iconSize,
+                color: Colors.purple,
+              ),
+            ),
+          if (isAbsent)
+            Positioned(
+              bottom: 2,
+              left: 2,
+              child: Icon(
+                Icons.person_off,
+                size: smallIconSize,
+                color: Colors.grey,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: Draggable<Player>(
+        data: player,
+        feedback: Material(
+          elevation: 6.0,
+          borderRadius: BorderRadius.circular(8),
+          child: Transform.scale(
+            scale: 1.1,
+            child: _buildPlayerJersey(),
+          ),
+        ),
+        childWhenDragging: Opacity(
+          opacity: 0.3,
+          child: _buildPlayerJersey(),
+        ),
+        child: GestureDetector(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          onDoubleTap: onDoubleTap,
+          child: _buildPlayerJersey(),
+        ),
+      ),
+    );
+  }
+}
+
+// Player button wrapper for drop targets that gets state from parent
+class _PlayerButtonInDropTarget extends StatelessWidget {
+  final Player player;
+  final Function(Player) onPlayerTap;
+  final Function(Player) onPlayerLongPress;
+
+  const _PlayerButtonInDropTarget({
+    required this.player,
+    required this.onPlayerTap,
+    required this.onPlayerLongPress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Find the parent PlayerSelectionWidget to get the current state
+    final parentState = context.findAncestorStateOfType<_PlayerSelectionWidgetState>();
+    if (parentState == null) {
+      return Container(); // Fallback if parent not found
+    }
+
+    final isOnIce = parentState.widget.selectedPlayersOnIce.contains(player);
+    final isGoalScorer = parentState.widget.selectedGoalScorer == player;
+    final isAssist1 = parentState.widget.selectedAssist1 == player;
+    final isAssist2 = parentState.widget.selectedAssist2 == player;
+    final isSelectedGoalie = parentState.widget.selectedGoalie == player;
+    final isAbsent = parentState._isPlayerAbsent(player);
+
+    return _DraggablePlayerButton(
+      player: player,
+      isOnIce: isOnIce,
+      isGoalScorer: isGoalScorer,
+      isAssist1: isAssist1,
+      isAssist2: isAssist2,
+      isSelectedGoalie: isSelectedGoalie,
+      isAbsent: isAbsent,
+      width: parentState._playerBoxWidth,
+      height: parentState._playerBoxHeight,
+      jerseyFontSize: parentState._jerseyFontSize,
+      positionBadgeFontSize: parentState._positionBadgeFontSize,
+      iconSize: parentState._iconSize,
+      smallIconSize: parentState._smallIconSize,
+      onTap: () => onPlayerTap(player),
+      onLongPress: () => onPlayerLongPress(player),
+      onDoubleTap: () => onPlayerLongPress(player),
+    );
+  }
+}
+
+// Drop target for line positions
+class _LinePositionDropTarget extends StatelessWidget {
+  final Player? player;
+  final LinePosition position;
+  final Function(Player, LinePosition) onPlayerDropped;
+  final Function(Player) onPlayerTap;
+  final Function(Player) onPlayerLongPress;
+  final bool isHighlighted;
+
+  const _LinePositionDropTarget({
+    this.player,
+    required this.position,
+    required this.onPlayerDropped,
+    required this.onPlayerTap,
+    required this.onPlayerLongPress,
+    this.isHighlighted = false,
+  });
+
+  bool _canAcceptPlayer(Player? draggedPlayer) {
+    if (draggedPlayer == null) return false;
+    
+    final isForward = draggedPlayer.position == 'C' || 
+                     draggedPlayer.position == 'LW' || 
+                     draggedPlayer.position == 'RW' ||
+                     draggedPlayer.position == 'F';
+    final isDefenseman = draggedPlayer.position == 'D' || 
+                        draggedPlayer.position == 'LD' || 
+                        draggedPlayer.position == 'RD';
+    
+    return (position.positionType == 'forward' && isForward) ||
+           (position.positionType == 'defense' && isDefenseman);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Get parent state for dynamic sizing
+    final parentState = context.findAncestorStateOfType<_PlayerSelectionWidgetState>();
+    final width = parentState?._playerBoxWidth ?? 80.0;
+    final height = parentState?._playerBoxHeight ?? 50.0;
+    
+    return DragTarget<Player>(
+      builder: (context, candidateData, rejectedData) {
+        final showHighlight = candidateData.isNotEmpty && _canAcceptPlayer(candidateData.first);
+        
+        return Container(
+          width: width,
+          height: height,
+          margin: const EdgeInsets.all(1),
+          decoration: BoxDecoration(
+            color: showHighlight 
+                ? Colors.blue.withOpacity(0.2)
+                : isHighlighted
+                    ? Colors.blue.withOpacity(0.1)
+                    : Colors.grey.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: showHighlight 
+                  ? Colors.blue
+                  : isHighlighted
+                      ? Colors.blue.withOpacity(0.5)
+                      : Colors.grey.withOpacity(0.3),
+              width: showHighlight ? 2 : 1,
+              style: player == null ? BorderStyle.solid : BorderStyle.none,
+            ),
+          ),
+          child: player != null
+              ? _PlayerButtonInDropTarget(
+                  player: player!,
+                  onPlayerTap: onPlayerTap,
+                  onPlayerLongPress: onPlayerLongPress,
+                )
+              : Center(
+                  child: Icon(
+                    Icons.add,
+                    color: Colors.grey.withOpacity(0.5),
+                    size: 20,
+                  ),
+                ),
+        );
+      },
+      onWillAccept: _canAcceptPlayer,
+      onAccept: (player) => onPlayerDropped(player, position),
+    );
+  }
+}
+
+// Line header with selection functionality
+class _LineHeader extends StatelessWidget {
+  final String lineLabel;
+  final List<Player?> playersInLine;
+  final Set<Player> selectedPlayers;
+  final VoidCallback onLineToggle;
+
+  const _LineHeader({
+    required this.lineLabel,
+    required this.playersInLine,
+    required this.selectedPlayers,
+    required this.onLineToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final nonNullPlayers = playersInLine.where((p) => p != null).cast<Player>().toList();
+    final selectedInLine = nonNullPlayers.where((p) => selectedPlayers.contains(p)).length;
+    final allSelected = selectedInLine == nonNullPlayers.length && nonNullPlayers.isNotEmpty;
+    final partiallySelected = selectedInLine > 0 && selectedInLine < nonNullPlayers.length;
+
+    return GestureDetector(
+      onTap: onLineToggle,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.grey.withOpacity(0.3)),
+        ),
+        child: Container(
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.blue),
+            color: allSelected 
+                ? Colors.blue 
+                : partiallySelected 
+                    ? Colors.blue.withOpacity(0.5) 
+                    : Colors.transparent,
+          ),
+          child: allSelected || partiallySelected
+              ? const Icon(
+                  Icons.check,
+                  size: 14,
+                  color: Colors.white,
+                )
+              : null,
         ),
       ),
     );
@@ -242,8 +477,61 @@ class PlayerSelectionWidget extends StatefulWidget {
 }
 
 class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
-  
-  // Helper methods for position detection
+  final LineConfigurationService _lineService = LineConfigurationService.instance;
+  String? _currentGameId;
+
+  // Compact mode detection - activate when team has >15 players
+  bool get _isCompactMode {
+    final totalPlayers = widget.players.length;
+    return totalPlayers > 15;
+  }
+
+  // Dynamic sizing based on compact mode
+  double get _playerBoxWidth => _isCompactMode ? 65.0 : 80.0;
+  double get _playerBoxHeight => _isCompactMode ? 40.0 : 50.0;
+  double get _jerseyFontSize => _isCompactMode ? 14.0 : 16.0;
+  double get _positionBadgeFontSize => _isCompactMode ? 7.0 : 8.0;
+  double get _lineVerticalPadding => _isCompactMode ? 1.0 : 2.0;
+  double get _sectionSpacing => _isCompactMode ? 6.0 : 8.0;
+  double get _cardPadding => _isCompactMode ? 6.0 : 8.0;
+  double get _iconSize => _isCompactMode ? 10.0 : 12.0;
+  double get _smallIconSize => _isCompactMode ? 8.0 : 10.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeLines();
+  }
+
+  @override
+  void didUpdateWidget(PlayerSelectionWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.players != widget.players) {
+      _initializeLines();
+    }
+  }
+
+  void _initializeLines() async {
+    // For now, use a default game ID. In a real implementation, this would come from the current game context
+    _currentGameId = 'current_game';
+    
+    // Initialize lines with current players
+    _lineService.initializeLines(widget.players);
+    
+    // Load saved configuration for this game
+    await _lineService.loadLineConfiguration(_currentGameId!, widget.players);
+    
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _saveLineConfiguration() async {
+    if (_currentGameId != null) {
+      await _lineService.saveLineConfiguration(_currentGameId!);
+    }
+  }
+
   bool _isForward(Player player) {
     return player.position == 'C' || 
            player.position == 'LW' || 
@@ -261,58 +549,55 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     return player.position == 'G';
   }
   
-  // Check if a player is absent
   bool _isPlayerAbsent(Player player) {
     return widget.absentPlayerIds.contains(player.id);
   }
-  
-  Widget _buildRoleIndicator(String label, IconData icon, Color color, int count, [String? subtitle]) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.5)),
+
+  void _handlePlayerDropped(Player player, LinePosition position) {
+    if (_isPlayerAbsent(player)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot move absent player'),
+          duration: Duration(seconds: 2),
         ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            if (subtitle != null)
-              Text(
-                subtitle,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontStyle: FontStyle.italic,
-                  color: color,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
+      );
+      return;
+    }
+
+    setState(() {
+      // Remove player from current position
+      _removePlayerFromLines(player);
+      
+      // Remove player from current position in the service
+      _lineService.removePlayerFromLines(player);
+      
+      // Check if there's already a player in the target position
+      List<List<Player?>> targetLines = position.positionType == 'forward' 
+          ? _lineService.forwardLines 
+          : _lineService.defenseLines;
+      Player? existingPlayer = targetLines[position.lineIndex][position.positionIndex];
+      
+      // Update the position in the service
+      _lineService.updatePosition(position.positionType, position.lineIndex, position.positionIndex, player);
+      
+      // If there was a player in the target position, find them a new spot
+      if (existingPlayer != null) {
+        _lineService.findEmptySpotForPlayer(existingPlayer, position.positionType);
+      }
+    });
+    
+    _saveLineConfiguration();
   }
-  
-  
+
+  void _removePlayerFromLines(Player player) {
+    _lineService.removePlayerFromLines(player);
+  }
+
+  void _findEmptySpotForPlayer(Player player, String positionType) {
+    _lineService.findEmptySpotForPlayer(player, positionType);
+  }
+
   void _handlePlayerTap(Player player) {
-    // Don't allow selecting absent players
     if (_isPlayerAbsent(player)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -333,7 +618,7 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
         widget.onGoalieChanged(player);
       }
     } else {
-      // Toggle skater on ice - enforce hockey rule: max 6 total players (including goalie)
+      // Toggle skater on ice
       List<Player> newPlayersOnIce = List.from(widget.selectedPlayersOnIce);
       final currentGoalieCount = widget.selectedGoalie != null ? 1 : 0;
       
@@ -357,14 +642,44 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     }
   }
 
-  void _showPlayerRoleDialogIfEligible(Player player) {
-    final isOnIce = widget.selectedPlayersOnIce.contains(player);
-    final isSelectedGoalie = widget.selectedGoalie == player;
+  void _handleLineToggle(List<Player?> playersInLine) {
+    final nonNullPlayers = playersInLine.where((p) => p != null).cast<Player>().toList();
+    final availablePlayers = nonNullPlayers.where((p) => !_isPlayerAbsent(p)).toList();
     
-    // Only show dialog for selected players
-    if (isOnIce || isSelectedGoalie) {
-      _showPlayerRoleDialog(player);
+    if (availablePlayers.isEmpty) return;
+    
+    final selectedPlayersSet = widget.selectedPlayersOnIce.toSet();
+    final selectedInLine = availablePlayers.where((p) => selectedPlayersSet.contains(p)).length;
+    final allSelected = selectedInLine == availablePlayers.length;
+    
+    List<Player> newPlayersOnIce = List.from(widget.selectedPlayersOnIce);
+    final currentGoalieCount = widget.selectedGoalie != null ? 1 : 0;
+    
+    if (allSelected) {
+      // Deselect all players in the line
+      for (final player in availablePlayers) {
+        newPlayersOnIce.remove(player);
+      }
+    } else {
+      // Select all players in the line (up to the limit)
+      final currentSelectionCount = newPlayersOnIce.length;
+      final availableSlots = 6 - currentSelectionCount - currentGoalieCount;
+      
+      final playersToAdd = availablePlayers.where(
+        (p) => !newPlayersOnIce.contains(p)
+      ).take(availableSlots).toList();
+      
+      if (playersToAdd.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Maximum players on ice reached')),
+        );
+        return;
+      }
+      
+      newPlayersOnIce.addAll(playersToAdd);
     }
+    
+    widget.onPlayersOnIceChanged(newPlayersOnIce);
   }
 
   void _showPlayerRoleDialog(Player player) {
@@ -375,6 +690,9 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     final isSelectedGoalie = widget.selectedGoalie == player;
     final isAbsent = _isPlayerAbsent(player);
     final isGoalie = _isGoalie(player);
+    
+    // Only show dialog for selected players
+    if (!isOnIce && !isSelectedGoalie) return;
     
     showDialog(
       context: context,
@@ -413,7 +731,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
                   ),
                 ),
               ] else ...[
-                // Skater role assignment options
                 ListTile(
                   leading: const Icon(Icons.sports_score, color: Colors.green),
                   title: const Text('Goal Scorer'),
@@ -438,7 +755,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
                     activeColor: Colors.orange,
                     onChanged: (value) {
                       if (value) {
-                        // If player is already Assist #2, remove them from that role first
                         if (widget.selectedAssist2 == player && widget.onAssist2Changed != null) {
                           widget.onAssist2Changed!(null);
                         }
@@ -459,7 +775,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
                       activeColor: Colors.orange,
                       onChanged: (value) {
                         if (value) {
-                          // If player is already Assist #1, remove them from that role first
                           if (widget.selectedAssist1 == player) {
                             widget.onAssist1Changed(null);
                           }
@@ -487,76 +802,184 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     );
   }
 
-  Widget _buildPositionSection({
-    required String title,
-    required List<Player> players,
-    required int columns,
-    required Color color,
-  }) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        childAspectRatio: 1.0, // Consistent square buttons for all positions
-        crossAxisSpacing: 6,
-        mainAxisSpacing: 6,
-      ),
-      itemCount: players.length,
-      itemBuilder: (context, index) {
-        final player = players[index];
-        final isOnIce = widget.selectedPlayersOnIce.contains(player);
-        final isGoalScorer = widget.selectedGoalScorer == player;
-        final isAssist1 = widget.selectedAssist1 == player;
-        final isAssist2 = widget.selectedAssist2 == player;
-        final isSelectedGoalie = widget.selectedGoalie == player;
-        final isAbsent = _isPlayerAbsent(player);
-        
-        return _PlayerButton(
-          player: player,
-          isOnIce: isOnIce,
-          isGoalScorer: isGoalScorer,
-          isAssist1: isAssist1,
-          isAssist2: isAssist2,
-          isSelectedGoalie: isSelectedGoalie,
-          isAbsent: isAbsent,
-          onTap: () => _handlePlayerTap(player),
-          onLongPress: () => _showPlayerRoleDialogIfEligible(player),
-          onDoubleTap: () => _showPlayerRoleDialogIfEligible(player),
-        );
-      },
+  Widget _buildForwardLines() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Text(
+            'FORWARDS',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.orange,
+            ),
+          ),
+        ),
+        ...List.generate(_lineService.forwardLines.length, (lineIndex) {
+          return Padding(
+            padding: EdgeInsets.symmetric(vertical: _lineVerticalPadding),
+            child: Row(
+              children: [
+                // Line selector on the left - flexible width
+                Flexible(
+                  flex: 1,
+                  child: _LineHeader(
+                    lineLabel: 'LINE ${lineIndex + 1}',
+                    playersInLine: _lineService.forwardLines[lineIndex],
+                    selectedPlayers: widget.selectedPlayersOnIce.toSet(),
+                    onLineToggle: () => _handleLineToggle(_lineService.forwardLines[lineIndex]),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                // Player positions on the right
+                Expanded(
+                  flex: 6,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: List.generate(3, (posIndex) {
+                      final player = _lineService.forwardLines[lineIndex][posIndex];
+                      final position = LinePosition(
+                        lineIndex: lineIndex,
+                        positionIndex: posIndex,
+                        positionType: 'forward',
+                      );
+                      
+                      return _LinePositionDropTarget(
+                        player: player,
+                        position: position,
+                        onPlayerDropped: _handlePlayerDropped,
+                        onPlayerTap: _handlePlayerTap,
+                        onPlayerLongPress: _showPlayerRoleDialog,
+                      );
+                    }),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildDefenseLines() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Text(
+            'DEFENSE',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.green,
+            ),
+          ),
+        ),
+        ...List.generate(_lineService.defenseLines.length, (lineIndex) {
+          return Padding(
+            padding: EdgeInsets.symmetric(vertical: _lineVerticalPadding),
+            child: Row(
+              children: [
+                // Line selector on the left - flexible width
+                Flexible(
+                  flex: 1,
+                  child: _LineHeader(
+                    lineLabel: 'LINE ${lineIndex + 1}',
+                    playersInLine: _lineService.defenseLines[lineIndex],
+                    selectedPlayers: widget.selectedPlayersOnIce.toSet(),
+                    onLineToggle: () => _handleLineToggle(_lineService.defenseLines[lineIndex]),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                // Player positions on the right
+                Expanded(
+                  flex: 6,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: List.generate(2, (posIndex) {
+                      final player = _lineService.defenseLines[lineIndex][posIndex];
+                      final position = LinePosition(
+                        lineIndex: lineIndex,
+                        positionIndex: posIndex,
+                        positionType: 'defense',
+                      );
+                      
+                      return _LinePositionDropTarget(
+                        player: player,
+                        position: position,
+                        onPlayerDropped: _handlePlayerDropped,
+                        onPlayerTap: _handlePlayerTap,
+                        onPlayerLongPress: _showPlayerRoleDialog,
+                      );
+                    }),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildGoalieSection() {
+    final goalies = [...widget.goalies];
+    goalies.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Text(
+            'GOALIES',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.purple,
+            ),
+          ),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: goalies.map((goalie) {
+            final isOnIce = false; // Goalies don't use the on-ice selection
+            final isGoalScorer = widget.selectedGoalScorer == goalie;
+            final isAssist1 = widget.selectedAssist1 == goalie;
+            final isAssist2 = widget.selectedAssist2 == goalie;
+            final isSelectedGoalie = widget.selectedGoalie == goalie;
+            final isAbsent = _isPlayerAbsent(goalie);
+            
+            return _DraggablePlayerButton(
+              player: goalie,
+              isOnIce: isOnIce,
+              isGoalScorer: isGoalScorer,
+              isAssist1: isAssist1,
+              isAssist2: isAssist2,
+              isSelectedGoalie: isSelectedGoalie,
+              isAbsent: isAbsent,
+              width: _playerBoxWidth,
+              height: _playerBoxHeight,
+              jerseyFontSize: _jerseyFontSize,
+              positionBadgeFontSize: _positionBadgeFontSize,
+              iconSize: _iconSize,
+              smallIconSize: _smallIconSize,
+              onTap: () => _handlePlayerTap(goalie),
+              onLongPress: () => _showPlayerRoleDialog(goalie),
+              onDoubleTap: () => _showPlayerRoleDialog(goalie),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Sort players by position: Forwards first, then Defensemen, then Goalies
-    // Within each position, sort by jersey number ascending
-    
-    // Get forwards and sort by jersey number
-    final forwards = widget.players.where((player) => 
-      player.position == 'C' || 
-      player.position == 'LW' || 
-      player.position == 'RW' ||
-      player.position == 'F'
-    ).toList();
-    forwards.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
-    
-    // Get defensemen and sort by jersey number
-    final defensemen = widget.players.where((player) => 
-      player.position == 'D' || 
-      player.position == 'LD' || 
-      player.position == 'RD'
-    ).toList();
-    defensemen.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
-    
-    // Get goalies and sort by jersey number
-    final goalies = [...widget.goalies];
-    goalies.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
-    
-    // Combine in order: Forwards → Defensemen → Goalies
-    final allPlayers = [...forwards, ...defensemen, ...goalies];
-    
     // Count assists for status display
     int assistCount = 0;
     if (widget.selectedAssist1 != null) assistCount++;
@@ -629,45 +1052,20 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
             
             const SizedBox(height: 8),
             
-            // Position-based layout with separate sections (no headings, minimal spacing)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Forwards Section
-                if (forwards.isNotEmpty) ...[
-                  _buildPositionSection(
-                    title: 'Forwards',
-                    players: forwards,
-                    columns: 6,
-                    color: Colors.orange,
-                  ),
-                  const SizedBox(height: 6),
-                ],
-                
-                // Defensemen Section
-                if (defensemen.isNotEmpty) ...[
-                  _buildPositionSection(
-                    title: 'Defense',
-                    players: defensemen,
-                    columns: defensemen.length <= 4 ? 4 : 6,
-                    color: Colors.green,
-                  ),
-                  const SizedBox(height: 6),
-                ],
-                
-                // Goalies Section
-                if (goalies.isNotEmpty) ...[
-                  _buildPositionSection(
-                    title: 'Goalies',
-                    players: goalies,
-                    columns: 6, // Use same column count as forwards for consistent sizing
-                    color: Colors.purple,
-                  ),
-                ],
-              ],
-            ),
+            // Forward lines
+            _buildForwardLines(),
             
             const SizedBox(height: 8),
+            
+            // Defense lines
+            _buildDefenseLines(),
+            
+            const SizedBox(height: 8),
+            
+            // Goalies section
+            _buildGoalieSection(),
+            
+            const SizedBox(height: 6),
             
             // Clear skaters button (icon-only) - preserves goalie
             Row(

@@ -318,15 +318,39 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
         // Navigate back
         Navigator.pop(context, _selectedPeriod);
       } else {
-        // Show error but keep form data for retry
-          Navigator.pop(context, _selectedPeriod);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Penalty ${isEditing ? 'updated' : 'saved'} locally - will sync when online'),
-              duration: const Duration(seconds: 3),
+        // Check if the error is due to being offline
+        String message;
+        Color? backgroundColor;
+        Widget? icon;
+        
+        if (syncError.toLowerCase().contains('offline') || 
+            syncError.toLowerCase().contains('connection') ||
+            syncError.toLowerCase().contains('network') ||
+            syncError.toLowerCase().contains('retry when online')) {
+          message = 'Penalty ${isEditing ? 'updated' : 'logged'} successfully! Your changes will automatically sync when your device is back online.';
+          backgroundColor = Colors.blue;
+          icon = const Icon(Icons.info_outline, color: Colors.white, size: 20);
+        } else {
+          message = 'Penalty ${isEditing ? 'updated' : 'saved'} locally - will sync when online';
+        }
+        
+        Navigator.pop(context, _selectedPeriod);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                if (icon != null) ...[
+                  icon,
+                  const SizedBox(width: 8),
+                ],
+                Expanded(child: Text(message)),
+              ],
             ),
-          );
-          setState(() { _isLogging = false; });
+            backgroundColor: backgroundColor,
+            duration: Duration(seconds: backgroundColor != null ? 4 : 3),
+          ),
+        );
+        setState(() { _isLogging = false; });
       }
 
     } catch (e) {

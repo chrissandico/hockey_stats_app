@@ -379,14 +379,41 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
           );
           Navigator.pop(context);
         } else {
+          // Check if the error is due to being offline
+          String message;
+          Color? backgroundColor;
+          Widget? icon;
+          SnackBarAction? action;
+          
+          if (syncError.toLowerCase().contains('offline') || 
+              syncError.toLowerCase().contains('connection') ||
+              syncError.toLowerCase().contains('network') ||
+              syncError.toLowerCase().contains('retry when online')) {
+            message = 'Goal updated successfully! Your changes will automatically sync when your device is back online.';
+            backgroundColor = Colors.blue;
+            icon = const Icon(Icons.info_outline, color: Colors.white, size: 20);
+          } else {
+            message = 'Shot updated locally but sync failed: $syncError';
+            action = SnackBarAction(
+              label: 'Retry Sync',
+              onPressed: _logShot,
+            );
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Shot updated locally but sync failed: $syncError'),
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: 'Retry Sync',
-                onPressed: _logShot,
+              content: Row(
+                children: [
+                  if (icon != null) ...[
+                    icon,
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(child: Text(message)),
+                ],
               ),
+              backgroundColor: backgroundColor,
+              duration: Duration(seconds: backgroundColor != null ? 4 : 5),
+              action: action,
             ),
           );
         }
@@ -447,10 +474,35 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
             SnackBar(content: Text('$successMessage and synced.')),
           );
         } else {
+          // Check if the error is due to being offline
+          String message;
+          Color? backgroundColor;
+          Widget? icon;
+          
+          if (syncError.toLowerCase().contains('offline') || 
+              syncError.toLowerCase().contains('connection') ||
+              syncError.toLowerCase().contains('network') ||
+              syncError.toLowerCase().contains('retry when online')) {
+            message = 'Goal logged successfully! Your changes will automatically sync when your device is back online.';
+            backgroundColor = Colors.blue;
+            icon = const Icon(Icons.info_outline, color: Colors.white, size: 20);
+          } else {
+            message = 'Shot saved locally - will sync when online';
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text('Shot saved locally - will sync when online'),
-              duration: const Duration(seconds: 3),
+              content: Row(
+                children: [
+                  if (icon != null) ...[
+                    icon,
+                    const SizedBox(width: 8),
+                  ],
+                  Expanded(child: Text(message)),
+                ],
+              ),
+              backgroundColor: backgroundColor,
+              duration: Duration(seconds: backgroundColor != null ? 4 : 3),
             ),
           );
           Navigator.pop(context, _selectedPeriod);

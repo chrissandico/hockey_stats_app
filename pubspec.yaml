@@ -58,6 +58,7 @@ dependencies:
   path_provider: ^2.1.2 # For accessing device storage
   printing: ^5.12.0 # For PDF utilities and preview
   share_plus: ^7.2.2 # For native sharing capabilities
+  shared_preferences: ^2.2.2 # For storing user preferences
 
 
 dev_dependencies:

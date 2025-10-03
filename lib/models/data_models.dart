@@ -234,6 +234,102 @@ class GameRoster extends HiveObject {
   });
 }
 
+@HiveType(typeId: 6)
+class GameAttendance extends HiveObject {
+  @HiveField(0)
+  String id;
+
+  @HiveField(1)
+  String gameId;
+
+  @HiveField(2)
+  List<String> absentPlayerIds;
+
+  @HiveField(3)
+  DateTime timestamp;
+
+  @HiveField(4)
+  bool isSynced;
+
+  @HiveField(5)
+  String teamId;
+
+  GameAttendance({
+    required this.id,
+    required this.gameId,
+    required this.absentPlayerIds,
+    required this.timestamp,
+    required this.teamId,
+    this.isSynced = false,
+  });
+}
+
+@HiveType(typeId: 7)
+class SyncPreferences extends HiveObject {
+  @HiveField(0)
+  bool syncShots;
+  
+  @HiveField(1)
+  bool syncGoals;
+  
+  @HiveField(2)
+  bool syncPenalties;
+  
+  @HiveField(3)
+  bool syncAttendance;
+
+  @HiveField(4)
+  bool syncOnlyImportantEvents;
+
+  SyncPreferences({
+    this.syncShots = true,
+    this.syncGoals = true,
+    this.syncPenalties = true,
+    this.syncAttendance = false, // Default to false since attendance was causing issues
+    this.syncOnlyImportantEvents = false,
+  });
+
+  /// Check if an event should be synced based on preferences
+  bool shouldSyncEvent(GameEvent event) {
+    // Always sync goals regardless of shot preference
+    if (event.isGoal == true) {
+      return syncGoals;
+    }
+    
+    // Check event type preferences
+    switch (event.eventType) {
+      case 'Shot':
+        return syncShots;
+      case 'Penalty':
+        return syncPenalties;
+      default:
+        return true; // Sync unknown event types by default
+    }
+  }
+
+  /// Check if attendance should be synced
+  bool shouldSyncAttendance() {
+    return syncAttendance;
+  }
+
+  /// Get a summary of what will be synced
+  String getSyncSummary() {
+    List<String> enabled = [];
+    if (syncGoals) enabled.add('Goals');
+    if (syncShots) enabled.add('Shots');
+    if (syncPenalties) enabled.add('Penalties');
+    if (syncAttendance) enabled.add('Attendance');
+    
+    if (enabled.isEmpty) {
+      return 'No events will be synced';
+    } else if (enabled.length == 4) {
+      return 'All events will be synced';
+    } else {
+      return '${enabled.join(', ')} will be synced';
+    }
+  }
+}
+
 class PlayerSeasonStats {
   final String playerId; 
   String playerName;

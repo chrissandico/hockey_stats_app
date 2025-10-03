@@ -66,13 +66,14 @@ class GameAdapter extends TypeAdapter<Game> {
       location: fields[3] as String?,
       teamId: fields[4] as String,
       version: fields[5] as int,
+      gameType: fields[6] as String,
     );
   }
 
   @override
   void write(BinaryWriter writer, Game obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(7)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -84,7 +85,9 @@ class GameAdapter extends TypeAdapter<Game> {
       ..writeByte(4)
       ..write(obj.teamId)
       ..writeByte(5)
-      ..write(obj.version);
+      ..write(obj.version)
+      ..writeByte(6)
+      ..write(obj.gameType);
   }
 
   @override
@@ -259,6 +262,101 @@ class GameRosterAdapter extends TypeAdapter<GameRoster> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is GameRosterAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class GameAttendanceAdapter extends TypeAdapter<GameAttendance> {
+  @override
+  final int typeId = 6;
+
+  @override
+  GameAttendance read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return GameAttendance(
+      id: fields[0] as String,
+      gameId: fields[1] as String,
+      absentPlayerIds: (fields[2] as List).cast<String>(),
+      timestamp: fields[3] as DateTime,
+      teamId: fields[5] as String,
+      isSynced: fields[4] as bool,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, GameAttendance obj) {
+    writer
+      ..writeByte(6)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.gameId)
+      ..writeByte(2)
+      ..write(obj.absentPlayerIds)
+      ..writeByte(3)
+      ..write(obj.timestamp)
+      ..writeByte(4)
+      ..write(obj.isSynced)
+      ..writeByte(5)
+      ..write(obj.teamId);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GameAttendanceAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class SyncPreferencesAdapter extends TypeAdapter<SyncPreferences> {
+  @override
+  final int typeId = 7;
+
+  @override
+  SyncPreferences read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return SyncPreferences(
+      syncShots: fields[0] as bool,
+      syncGoals: fields[1] as bool,
+      syncPenalties: fields[2] as bool,
+      syncAttendance: fields[3] as bool,
+      syncOnlyImportantEvents: fields[4] as bool,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, SyncPreferences obj) {
+    writer
+      ..writeByte(5)
+      ..writeByte(0)
+      ..write(obj.syncShots)
+      ..writeByte(1)
+      ..write(obj.syncGoals)
+      ..writeByte(2)
+      ..write(obj.syncPenalties)
+      ..writeByte(3)
+      ..write(obj.syncAttendance)
+      ..writeByte(4)
+      ..write(obj.syncOnlyImportantEvents);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SyncPreferencesAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

@@ -2,7 +2,9 @@ import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hive/hive.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:io';
 import 'package:hockey_stats_app/services/service_account_auth.dart';
+import 'package:hockey_stats_app/services/connectivity_service.dart';
 
 /// Service for interacting with Google Sheets to sync hockey stats data.
 ///
@@ -755,6 +757,42 @@ class SheetsService {
   Future<bool> ensureAuthenticated() async {
     await _initialize();
     
+    // Check connectivity first - skip authentication if offline
+    final connectivityService = ConnectivityService();
+    
+    // Force a connectivity check if the service hasn't been checked recently
+    final detailedStatus = connectivityService.getDetailedStatus();
+    if (detailedStatus['lastCheck'] == null) {
+      print('SheetsService: No recent connectivity check found, forcing check...');
+      connectivityService.forceCheck();
+      // Wait longer for the check to complete
+      await Future.delayed(const Duration(milliseconds: 1500));
+    }
+    
+    final shouldAttempt = connectivityService.shouldAttemptNetworkOperation();
+    print('SheetsService: Connectivity check result - shouldAttempt: $shouldAttempt');
+    print('SheetsService: Detailed status: ${connectivityService.getDetailedStatus()}');
+    
+    // If connectivity service says offline but we know network is working, 
+    // let's try a direct check using the same method as NetworkUtils
+    if (!shouldAttempt) {
+      print('SheetsService: Connectivity service reports offline, performing direct check...');
+      try {
+        // Try a direct connectivity check similar to NetworkUtils
+        final result = await InternetAddress.lookup('google.com').timeout(const Duration(seconds: 3));
+        if (result.isNotEmpty && result[0].rawAddress.isNotEmpty) {
+          print('SheetsService: Direct connectivity check passed, proceeding with authentication');
+          // Don't return false, continue with authentication
+        } else {
+          print('SheetsService: Direct connectivity check failed, skipping authentication');
+          return false;
+        }
+      } catch (e) {
+        print('SheetsService: Direct connectivity check error: $e, skipping authentication');
+        return false;
+      }
+    }
+    
     // Use cached authentication status if recent
     if (_isAuthenticated && _lastAuthCheck != null) {
       final age = DateTime.now().difference(_lastAuthCheck!);
@@ -828,15 +866,27 @@ class SheetsService {
         return {'success': 0, 'failed': 0, 'pending': -1};
       }
 
+      // Get user preferences
+      final prefsBox = Hive.box<SyncPreferences>('syncPreferences');
+      final prefs = prefsBox.get('user_prefs') ?? SyncPreferences();
+
       final gameEventsBox = Hive.box<GameEvent>('gameEvents');
-      final pendingEvents = gameEventsBox.values.where((event) => !event.isSynced).toList();
+      final allPendingEvents = gameEventsBox.values.where((event) => !event.isSynced).toList();
+
+      // Filter events based on user preferences
+      final pendingEvents = allPendingEvents.where((event) => prefs.shouldSyncEvent(event)).toList();
+      final skippedCount = allPendingEvents.length - pendingEvents.length;
+
+      if (skippedCount > 0) {
+        print('Background events sync: Skipped $skippedCount events based on user preferences');
+      }
 
       if (pendingEvents.isEmpty) {
-        print('Background events sync: No pending events to sync.');
+        print('Background events sync: No events to sync after applying preferences.');
         return {'success': 0, 'failed': 0, 'pending': 0};
       }
 
-      print('Background events sync: Found ${pendingEvents.length} pending events to sync.');
+      print('Background events sync: Found ${pendingEvents.length} events to sync (${allPendingEvents.length} total pending).');
       
       // Use batch operations for better performance
       return await _syncEventsBatch(pendingEvents);
@@ -1407,5 +1457,272 @@ class SheetsService {
       'events': events.length,
       'unsynced': remainingUnsyncedCount
     };
+  }
+
+  /// Sync pending attendance records in background
+  Future<Map<String, int>> syncPendingAttendanceInBackground() async {
+    print('SheetsService: Starting background attendance sync...');
+    
+    try {
+      // Check user preferences first
+      final prefsBox = Hive.box<SyncPreferences>('syncPreferences');
+      final prefs = prefsBox.get('user_prefs') ?? SyncPreferences();
+      
+      if (!prefs.shouldSyncAttendance()) {
+        print('SheetsService: Attendance sync disabled by user preferences');
+        return {'success': 0, 'failed': 0, 'pending': 0};
+      }
+      
+      final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
+      final pendingAttendance = attendanceBox.values
+          .where((attendance) => !attendance.isSynced)
+          .toList();
+
+      if (pendingAttendance.isEmpty) {
+        print('SheetsService: No pending attendance records to sync');
+        return {'success': 0, 'failed': 0, 'pending': 0};
+      }
+
+      print('SheetsService: Found ${pendingAttendance.length} pending attendance records');
+
+      int successCount = 0;
+      int failureCount = 0;
+
+      for (final attendance in pendingAttendance) {
+        try {
+          final success = await syncGameAttendance(attendance);
+          if (success) {
+            successCount++;
+          } else {
+            failureCount++;
+          }
+        } catch (e) {
+          print('SheetsService: Error syncing attendance ${attendance.id}: $e');
+          failureCount++;
+        }
+
+        // Small delay between requests to avoid overwhelming the API
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+
+      final remainingPending = attendanceBox.values
+          .where((attendance) => !attendance.isSynced)
+          .length;
+
+      print('Background attendance sync complete. Success: $successCount, Failed: $failureCount');
+      return {
+        'success': successCount,
+        'failed': failureCount,
+        'pending': remainingPending,
+      };
+    } catch (e) {
+      print('SheetsService: Error in background attendance sync: $e');
+      return {'success': 0, 'failed': 0, 'pending': -1};
+    }
+  }
+
+  /// Sync pending events for a specific game with preference filtering
+  Future<Map<String, int>> syncPendingEventsForGame(String? gameId) async {
+    print('SheetsService: Starting game-specific events sync for game: $gameId');
+    
+    try {
+      bool isAuthenticated = await ensureAuthenticated();
+      if (!isAuthenticated) {
+        print('Game-specific events sync: Authentication failed.');
+        return {'success': 0, 'failed': 0, 'pending': -1};
+      }
+
+      // Get user preferences
+      final prefsBox = Hive.box<SyncPreferences>('syncPreferences');
+      final prefs = prefsBox.get('user_prefs') ?? SyncPreferences();
+
+      final gameEventsBox = Hive.box<GameEvent>('gameEvents');
+      
+      // Filter by game ID first, then by sync status
+      var gameEvents = gameEventsBox.values.where((event) => !event.isSynced);
+      
+      if (gameId != null) {
+        gameEvents = gameEvents.where((event) => event.gameId == gameId);
+      }
+      
+      final allPendingEvents = gameEvents.toList();
+
+      // Filter events based on user preferences
+      final pendingEvents = allPendingEvents.where((event) => prefs.shouldSyncEvent(event)).toList();
+      final skippedCount = allPendingEvents.length - pendingEvents.length;
+
+      print('Game-specific events sync: Found ${allPendingEvents.length} unsynced events for game $gameId');
+      if (skippedCount > 0) {
+        print('Game-specific events sync: Skipped $skippedCount events based on user preferences');
+      }
+
+      if (pendingEvents.isEmpty) {
+        print('Game-specific events sync: No events to sync after applying preferences.');
+        return {'success': 0, 'failed': 0, 'pending': 0};
+      }
+
+      print('Game-specific events sync: Syncing ${pendingEvents.length} events for game $gameId');
+      
+      // Use batch operations for better performance
+      return await _syncEventsBatch(pendingEvents);
+      
+    } catch (e) {
+      print('Game-specific events sync error: $e');
+      return {'success': 0, 'failed': 0, 'pending': -1};
+    }
+  }
+
+  /// Sync pending attendance for a specific game
+  Future<Map<String, int>> syncPendingAttendanceForGame(String? gameId) async {
+    print('SheetsService: Starting game-specific attendance sync for game: $gameId');
+    
+    try {
+      // Check user preferences first
+      final prefsBox = Hive.box<SyncPreferences>('syncPreferences');
+      final prefs = prefsBox.get('user_prefs') ?? SyncPreferences();
+      
+      if (!prefs.shouldSyncAttendance()) {
+        print('SheetsService: Attendance sync disabled by user preferences');
+        return {'success': 0, 'failed': 0, 'pending': 0};
+      }
+      
+      final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
+      
+      // Filter by game ID first, then by sync status
+      var attendanceRecords = attendanceBox.values.where((attendance) => !attendance.isSynced);
+      
+      if (gameId != null) {
+        attendanceRecords = attendanceRecords.where((attendance) => attendance.gameId == gameId);
+      }
+      
+      final pendingAttendance = attendanceRecords.toList();
+
+      print('Game-specific attendance sync: Found ${pendingAttendance.length} unsynced attendance records for game $gameId');
+
+      if (pendingAttendance.isEmpty) {
+        print('SheetsService: No pending attendance records to sync for game $gameId');
+        return {'success': 0, 'failed': 0, 'pending': 0};
+      }
+
+      int successCount = 0;
+      int failureCount = 0;
+
+      for (final attendance in pendingAttendance) {
+        try {
+          final success = await syncGameAttendance(attendance);
+          if (success) {
+            successCount++;
+          } else {
+            failureCount++;
+          }
+        } catch (e) {
+          print('SheetsService: Error syncing attendance ${attendance.id}: $e');
+          failureCount++;
+        }
+
+        // Small delay between requests to avoid overwhelming the API
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+
+      print('Game-specific attendance sync complete. Success: $successCount, Failed: $failureCount');
+      return {
+        'success': successCount,
+        'failed': failureCount,
+        'pending': failureCount,
+      };
+    } catch (e) {
+      print('SheetsService: Error in game-specific attendance sync: $e');
+      return {'success': 0, 'failed': 0, 'pending': -1};
+    }
+  }
+
+  /// Sync a single GameAttendance record to Google Sheets
+  Future<bool> syncGameAttendance(GameAttendance attendance) async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot sync attendance: Authentication failed.');
+      return false;
+    }
+
+    try {
+      // Format the attendance data for Google Sheets
+      // We'll store one row per game with absent player IDs as a comma-separated list
+      final List<Object> values = [
+        attendance.gameId,
+        attendance.teamId,
+        attendance.absentPlayerIds.join(','),
+        attendance.timestamp.toIso8601String(),
+      ];
+
+      final Map<String, dynamic> body = {
+        'values': [values],
+        'majorDimension': 'ROWS',
+      };
+
+      // Check if attendance record already exists for this game
+      final existingRowIndex = await _findGameAttendanceRow(attendance.gameId, attendance.teamId);
+      
+      Map<String, dynamic>? result;
+      
+      if (existingRowIndex != -1) {
+        // Update existing row
+        result = await _makeRequest(
+          'POST',
+          'values/GameAttendance!A$existingRowIndex:D$existingRowIndex?valueInputOption=USER_ENTERED',
+          body: body,
+        );
+        print('Updated existing attendance record at row $existingRowIndex for game ${attendance.gameId}');
+      } else {
+        // Append new row
+        result = await _makeRequest(
+          'POST',
+          'values/GameAttendance!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+          body: body,
+        );
+        print('Created new attendance record for game ${attendance.gameId}');
+      }
+
+      if (result != null) {
+        print('Successfully synced attendance for game ${attendance.gameId}');
+        if (attendance.isInBox) {
+          attendance.isSynced = true;
+          await attendance.save();
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('Error syncing attendance ${attendance.id}: $e');
+      return false;
+    }
+  }
+
+  /// Helper method to find an existing row in the GameAttendance sheet for a specific game + team combination.
+  Future<int> _findGameAttendanceRow(String gameId, String teamId) async {
+    try {
+      final result = await _makeRequest('GET', 'values/GameAttendance!A:B');
+      if (result == null) return -1;
+
+      final List<List<dynamic>> values = List<List<dynamic>>.from(result['values'] ?? []);
+      
+      // Search through all rows to find matching gameId + teamId combination
+      for (int i = 0; i < values.length; i++) {
+        final row = values[i];
+        if (row.length >= 2) {
+          final rowGameId = row[0]?.toString() ?? '';
+          final rowTeamId = row[1]?.toString() ?? '';
+          
+          if (rowGameId == gameId && rowTeamId == teamId) {
+            // Return 1-based row index for Google Sheets API
+            return i + 1;
+          }
+        }
+      }
+      
+      return -1; // Not found
+    } catch (e) {
+      print('Error finding GameAttendance row: $e');
+      return -1;
+    }
   }
 }

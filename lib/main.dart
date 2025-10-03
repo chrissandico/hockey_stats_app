@@ -65,6 +65,8 @@ void main() async {
     Hive.registerAdapter(GameEventAdapter());
     Hive.registerAdapter(EmailSettingsAdapter());
     Hive.registerAdapter(GameRosterAdapter());
+    Hive.registerAdapter(GameAttendanceAdapter());
+    Hive.registerAdapter(SyncPreferencesAdapter());
     Hive.registerAdapter(GoalSituationAdapter());
     
     // Open boxes with error handling
@@ -93,7 +95,7 @@ Future<void> _safelyOpenHiveBoxes() async {
   print('Opening Hive boxes with error handling...');
   
   // List of box names to open
-  final boxNames = ['players', 'games', 'gameEvents', 'emailSettings', 'gameRoster'];
+  final boxNames = ['players', 'games', 'gameEvents', 'emailSettings', 'gameRoster', 'gameAttendance', 'syncPreferences'];
   
   for (final boxName in boxNames) {
     try {
@@ -110,6 +112,10 @@ Future<void> _safelyOpenHiveBoxes() async {
         await Hive.openBox<EmailSettings>(boxName);
       } else if (boxName == 'gameRoster') {
         await Hive.openBox<GameRoster>(boxName);
+      } else if (boxName == 'gameAttendance') {
+        await Hive.openBox<GameAttendance>(boxName);
+      } else if (boxName == 'syncPreferences') {
+        await Hive.openBox<SyncPreferences>(boxName);
       }
       
       print('Successfully opened box: $boxName');
@@ -158,6 +164,7 @@ class AppErrorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       home: Scaffold(
         body: Center(
           child: Padding(
@@ -332,6 +339,7 @@ class MyApp extends StatelessWidget {
     
     return MaterialApp(
       title: 'Hockey Stats App',
+      debugShowCheckedModeBanner: false, // This removes the debug banner
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),

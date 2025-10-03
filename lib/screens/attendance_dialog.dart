@@ -83,6 +83,21 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
   /// If records exist, it updates the UI to reflect which players were previously marked as absent.
   Future<void> _loadExistingAttendance() async {
     try {
+      // First try to load from the new GameAttendance model
+      final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
+      final existingAttendance = attendanceBox.values
+          .where((a) => a.gameId == widget.gameId && a.teamId == widget.teamId)
+          .firstOrNull;
+
+      if (existingAttendance != null) {
+        setState(() {
+          _absentPlayerIds = existingAttendance.absentPlayerIds.toSet();
+        });
+        print('Loaded attendance from GameAttendance: ${_absentPlayerIds.length} absent players');
+        return;
+      }
+
+      // Fallback: Load from old GameRoster model for backward compatibility
       final rosterBox = Hive.box<GameRoster>('gameRoster');
       final existingRoster = rosterBox.values
           .where((r) => r.gameId == widget.gameId)
@@ -95,6 +110,7 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
               .map((r) => r.playerId)
               .toSet();
         });
+        print('Loaded attendance from GameRoster (legacy): ${_absentPlayerIds.length} absent players');
       }
     } catch (e) {
       print('Error loading existing attendance: $e');
@@ -117,51 +133,52 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
   /// Saves the current attendance data to the local database and attempts to sync
   /// with Google Sheets if the user is signed in.
   /// 
-  /// This method:
-  /// 1. Deletes any existing attendance records for this game
-  /// 2. Creates new records based on the current UI state
-  /// 3. Schedules background sync to Google Sheets if the user is signed in
-  /// 4. Closes the dialog immediately after local save
+  /// This method now uses the efficient GameAttendance model:
+  /// 1. Creates/updates a single GameAttendance record with only absent player IDs
+  /// 2. Schedules background sync to Google Sheets if the user is signed in
+  /// 3. Closes the dialog immediately after local save
   Future<void> _saveAttendance() async {
     setState(() {
       _isSaving = true;
     });
 
     try {
-      final rosterBox = Hive.box<GameRoster>('gameRoster');
+      final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
       final uuid = const Uuid();
       final timestamp = DateTime.now();
 
-      // Delete existing attendance records for this game
-      final existingRecords = rosterBox.values
-          .where((r) => r.gameId == widget.gameId)
-          .toList();
-      for (final record in existingRecords) {
-        await record.delete();
+      // Create or update the single GameAttendance record for this game
+      final existingAttendance = attendanceBox.values
+          .where((a) => a.gameId == widget.gameId)
+          .firstOrNull;
+
+      final gameAttendance = GameAttendance(
+        id: existingAttendance?.id ?? uuid.v4(),
+        gameId: widget.gameId,
+        absentPlayerIds: _absentPlayerIds.toList(),
+        timestamp: timestamp,
+        teamId: widget.teamId,
+        isSynced: false,
+      );
+
+      // Delete existing record if it exists
+      if (existingAttendance != null) {
+        await existingAttendance.delete();
       }
 
-      // Save new attendance records
-      for (final player in _yourTeamPlayers) {
-        final status = _absentPlayerIds.contains(player.id) ? 'Absent' : 'Present';
-        final roster = GameRoster(
-          id: uuid.v4(),
-          gameId: widget.gameId,
-          playerId: player.id,
-          status: status,
-          timestamp: timestamp,
-          isSynced: false,
-        );
-        await rosterBox.put(roster.id, roster);
-      }
+      // Save the new/updated attendance record
+      await attendanceBox.put(gameAttendance.id, gameAttendance);
+
+      print('Saved attendance for game ${widget.gameId}: ${_absentPlayerIds.length} absent players');
 
       // Schedule background sync to Google Sheets if signed in (non-blocking)
       if (await _sheetsService.isSignedIn()) {
         print('Scheduling background sync of attendance to Google Sheets...');
         // Don't await this - let it run in background
-        _sheetsService.syncPendingRosterInBackground().then((result) {
-          print('Background roster sync completed: $result');
+        _sheetsService.syncPendingAttendanceInBackground().then((result) {
+          print('Background attendance sync completed: $result');
         }).catchError((error) {
-          print('Background roster sync failed: $error');
+          print('Background attendance sync failed: $error');
         });
       }
 

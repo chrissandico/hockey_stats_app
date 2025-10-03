@@ -17,6 +17,7 @@ class BackgroundSyncService {
   
   Timer? _periodicSyncTimer;
   bool _isSyncing = false;
+  bool _isCancelled = false;
   
   // Batching system for efficient network operations
   final List<GameEvent> _pendingEventBatch = [];
@@ -119,6 +120,23 @@ class BackgroundSyncService {
     }
     
     await _performBackgroundSync();
+  }
+  
+  /// Cancel the current sync operation
+  void cancelSync() {
+    if (_isSyncing) {
+      print('BackgroundSyncService: Cancelling sync operation');
+      _isCancelled = true;
+      _syncStatusController.add(SyncStatus.cancelled);
+    }
+  }
+  
+  /// Check if sync is currently cancelled
+  bool get isCancelled => _isCancelled;
+  
+  /// Reset cancellation state
+  void _resetCancellation() {
+    _isCancelled = false;
   }
   
   /// Get the current sync status
@@ -316,6 +334,7 @@ enum SyncStatus {
   partialSuccess,
   failed,
   offline,
+  cancelled,
 }
 
 /// Extension to get user-friendly sync status messages
@@ -334,6 +353,8 @@ extension SyncStatusExtension on SyncStatus {
         return 'Sync failed';
       case SyncStatus.offline:
         return 'Offline mode';
+      case SyncStatus.cancelled:
+        return 'Sync cancelled';
     }
   }
   

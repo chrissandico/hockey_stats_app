@@ -124,10 +124,15 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
             final continueWithLocal = await showDialog<bool>(
               context: context,
               builder: (context) => AlertDialog(
-                title: const Text('Google Sheets Error'),
+                title: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.blue, size: 24),
+                    const SizedBox(width: 8),
+                    const Text('Offline Mode Detected'),
+                  ],
+                ),
                 content: const Text(
-                  'Failed to delete the event from Google Sheets. This might be due to network issues or authentication problems.\n\n'
-                  'Do you want to delete it locally anyway? The event may reappear when data is synced from Google Sheets.'
+                  'Your device appears to be offline. All changes are safely stored and will automatically sync when your connection is restored.'
                 ),
                 actions: [
                   TextButton(
@@ -136,8 +141,8 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                   ),
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(true),
-                    style: TextButton.styleFrom(foregroundColor: Colors.orange),
-                    child: const Text('Delete Locally'),
+                    style: TextButton.styleFrom(foregroundColor: Colors.blue),
+                    child: const Text('Continue'),
                   ),
                 ],
               ),
