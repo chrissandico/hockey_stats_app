@@ -1085,6 +1085,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                               goalScorer: _selectedGoalScorer,
                               assist1: _selectedAssist,
                               assist2: _selectedAssist2,
+                              selectedGoalie: _selectedGoalie,
                             ),
                           ),
                         ).then((value) {

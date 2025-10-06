@@ -1,87 +1,74 @@
 # Player Selection Persistence Fix Summary
 
 ## Issue Description
-When users selected players on ice, goal scorer, and assists on the "log stats" screen, only the players on ice selections persisted when navigating to the "log goal" screen. The goal scorer and assist selections were lost during navigation.
-
-Additionally, the log stats screen only supported one assist player, while the log goal screen supported two assists. Users needed the ability to select a second assist on the log stats screen and have both assists persist when navigating to the log goal screen.
+When navigating from the log stats screen to the log goal screen, all players except the goalie were persisting correctly. The goalie selection was being lost during navigation.
 
 ## Root Cause Analysis
-The issue was in the navigation code between `LogStatsScreen` and `LogGoalScreen`. While the `playersOnIce` parameter was being passed correctly, the goal scorer (`_selectedGoalScorer`) and assist (`_selectedAssist`) selections were not being passed to the `LogGoalScreen` constructor.
+The issue was in the **LogGoalScreen** constructor and initialization:
 
-For the second assist issue, the `LogStatsScreen` was missing:
-- A state variable for the second assist (`_selectedAssist2`)
-- The second assist parameter in the `PlayerSelectionWidget` usage
-- Passing the second assist value in navigation to `LogGoalScreen`
+1. **LogGoalScreen constructor** did not accept a `selectedGoalie` parameter
+2. **Navigation call** in LogStatsScreen was not passing the selected goalie
+3. **Goalie initialization logic** in LogGoalScreen was always defaulting to the first goalie when none was explicitly set, overriding any previous selection
 
-## Files Modified
+## Solution Implemented
 
-### 1. lib/screens/log_goal_screen.dart
-**Changes Made:**
-- Updated the `LogGoalScreen` constructor to accept three new optional parameters:
-  - `goalScorer` (Player?)
-  - `assist1` (Player?)
-  - `assist2` (Player?)
-- Modified the `initState()` method to initialize `_selectedShooter`, `_selectedAssist1`, and `_selectedAssist2` with the passed values when not in edit mode
+### 1. Modified LogGoalScreen Constructor
+**File:** `lib/screens/log_goal_screen.dart`
+- Added `selectedGoalie` parameter to the constructor
+- Updated constructor to accept the goalie selection from the previous screen
 
-**Code Changes:**
 ```dart
-// Constructor updated to accept new parameters
-const LogGoalScreen({
-  super.key, 
-  required this.gameId,
-  required this.period,
-  required this.teamId,
-  this.eventIdToEdit,
-  this.playersOnIce,
-  this.goalScorer,        // NEW
-  this.assist1,           // NEW
-  this.assist2,           // NEW
-});
+class LogGoalScreen extends StatefulWidget {
+  final String gameId;
+  final int period;
+  final String teamId;
+  final String? eventIdToEdit;
+  final List<Player>? playersOnIce;
+  final Player? goalScorer;
+  final Player? assist1;
+  final Player? assist2;
+  final Player? selectedGoalie; // NEW PARAMETER
 
-// initState updated to use passed values
-if (widget.eventIdToEdit != null) {
-  _loadEventForEditing();
-} else {
-  // Initialize with passed values from log stats screen
-  _selectedShooter = widget.goalScorer;    // NEW
-  _selectedAssist1 = widget.assist1;      // NEW
-  _selectedAssist2 = widget.assist2;      // NEW
+  const LogGoalScreen({
+    super.key, 
+    required this.gameId,
+    required this.period,
+    required this.teamId,
+    this.eventIdToEdit,
+    this.playersOnIce,
+    this.goalScorer,
+    this.assist1,
+    this.assist2,
+    this.selectedGoalie, // NEW PARAMETER
+  });
+```
+
+### 2. Updated Goalie Initialization Logic
+**File:** `lib/screens/log_goal_screen.dart`
+- Modified `_loadPlayers()` method to prioritize the passed goalie selection
+- Only falls back to default goalie if no goalie was passed from the previous screen
+
+```dart
+void _loadPlayers() {
+  // ... existing code ...
+  
+  // Use passed goalie from log stats screen, or set default if none passed and none selected
+  if (widget.selectedGoalie != null) {
+    _selectedGoalie = widget.selectedGoalie;
+  } else if (_goalies.isNotEmpty && _selectedGoalie == null) {
+    _selectedGoalie = _goalies.first;
+  }
+  
+  // ... rest of method ...
 }
 ```
 
-### 2. lib/screens/log_stats_screen.dart
-**Changes Made:**
-- Added a new state variable `_selectedAssist2` for the second assist
-- Updated the `PlayerSelectionWidget` usage to include `selectedAssist2` parameter and `onAssist2Changed` callback
-- Updated the navigation code to pass the goal scorer and both assist selections to the `LogGoalScreen`
+### 3. Updated Navigation Call
+**File:** `lib/screens/log_stats_screen.dart`
+- Modified the navigation call to LogGoalScreen to pass the selected goalie
+- Added `selectedGoalie: _selectedGoalie` parameter to the navigation
 
-**Code Changes:**
 ```dart
-// Added second assist state variable
-Player? _selectedAssist2;
-
-// Updated PlayerSelectionWidget usage
-PlayerSelectionWidget(
-  players: _yourTeamPlayers,
-  goalies: _goalies,
-  absentPlayerIds: _absentPlayerIds,
-  selectedPlayersOnIce: _selectedPlayersOnIce,
-  selectedGoalScorer: _selectedGoalScorer,
-  selectedAssist1: _selectedAssist,
-  selectedAssist2: _selectedAssist2,        // NEW
-  selectedGoalie: _selectedGoalie,
-  onPlayersOnIceChanged: (players) { ... },
-  onGoalScorerChanged: (player) { ... },
-  onAssist1Changed: (player) { ... },
-  onAssist2Changed: (player) {              // NEW
-    setState(() {
-      _selectedAssist2 = player;
-    });
-  },
-  onGoalieChanged: (player) { ... },
-),
-
-// Updated navigation code
 Navigator.push(
   context,
   MaterialPageRoute(
@@ -90,26 +77,31 @@ Navigator.push(
       period: _selectedPeriod,
       teamId: widget.teamId,
       playersOnIce: _selectedPlayersOnIce,
-      goalScorer: _selectedGoalScorer,    // NEW
-      assist1: _selectedAssist,           // NEW
-      assist2: _selectedAssist2,          // NEW
+      goalScorer: _selectedGoalScorer,
+      assist1: _selectedAssist,
+      assist2: _selectedAssist2,
+      selectedGoalie: _selectedGoalie, // NEW PARAMETER
     ),
   ),
 )
 ```
 
-## Solution Summary
-The fix ensures that all player selections (players on ice, goal scorer, and assist) are properly passed between screens and persist when navigating from the log stats screen to the log goal screen.
+## Result
+Now when navigating from the log stats screen to the log goal screen:
+- ✅ All selected players on ice persist correctly
+- ✅ Goal scorer selection persists correctly  
+- ✅ Assist selections persist correctly
+- ✅ **Goalie selection now persists correctly** (FIXED)
 
-## Testing
-- Ran `flutter analyze` to verify no compilation errors
-- All existing functionality remains intact
-- The fix is backward compatible and doesn't break any existing features
+## Files Modified
+1. `lib/screens/log_goal_screen.dart` - Added goalie parameter and updated initialization logic
+2. `lib/screens/log_stats_screen.dart` - Updated navigation call to pass selected goalie
 
-## Impact
-- **Positive:** Users can now select players on the log stats screen and have all selections (including goal scorer and assist) persist when navigating to the log goal screen
-- **No Breaking Changes:** The new parameters are optional, so existing code continues to work
-- **Improved User Experience:** Eliminates the need for users to re-select goal scorer and assist when navigating between screens
+## Testing Recommendations
+1. Select players on ice and a goalie in the log stats screen
+2. Navigate to the log goal screen
+3. Verify that all selections (including the goalie) are maintained
+4. Test with different goalie selections to ensure proper persistence
+5. Test edge cases like no goalie selected (should fall back to default behavior)
 
-## Date Completed
-January 24, 2025
+The fix ensures complete player selection persistence between screens while maintaining backward compatibility with existing functionality.

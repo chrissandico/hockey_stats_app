@@ -4,6 +4,7 @@ import 'package:hive/hive.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:hockey_stats_app/services/connectivity_service.dart';
+import 'package:hockey_stats_app/utils/sync_error_utils.dart';
 
 /// Service for handling background synchronization of data with Google Sheets
 /// This service runs sync operations in background isolates to avoid blocking the UI
@@ -25,6 +26,10 @@ class BackgroundSyncService {
   Timer? _batchTimer;
   static const Duration _batchDelay = Duration(seconds: 5);
   static const int _maxBatchSize = 10;
+  
+  // Event-level sync locks to prevent race conditions
+  final Set<String> _syncingEventIds = <String>{};
+  final Set<String> _syncingRosterIds = <String>{};
   
   // Stream controller for sync status updates
   final StreamController<SyncStatus> _syncStatusController = StreamController<SyncStatus>.broadcast();
@@ -86,8 +91,12 @@ class BackgroundSyncService {
       final rosterResults = await _sheetsService.syncPendingRosterInBackground();
       print('BackgroundSyncService: Roster sync - Success: ${rosterResults['success']}, Failed: ${rosterResults['failed']}');
       
-      final totalSuccess = (eventResults['success'] ?? 0) + (rosterResults['success'] ?? 0);
-      final totalFailed = (eventResults['failed'] ?? 0) + (rosterResults['failed'] ?? 0);
+      // Sync pending attendance records
+      final attendanceResults = await _sheetsService.syncPendingAttendanceInBackground();
+      print('BackgroundSyncService: Attendance sync - Success: ${attendanceResults['success']}, Failed: ${attendanceResults['failed']}');
+      
+      final totalSuccess = (eventResults['success'] ?? 0) + (rosterResults['success'] ?? 0) + (attendanceResults['success'] ?? 0);
+      final totalFailed = (eventResults['failed'] ?? 0) + (rosterResults['failed'] ?? 0) + (attendanceResults['failed'] ?? 0);
       
       if (totalFailed == 0 && totalSuccess > 0) {
         _syncStatusController.add(SyncStatus.success);
@@ -95,19 +104,46 @@ class BackgroundSyncService {
       } else if (totalSuccess > 0) {
         _syncStatusController.add(SyncStatus.partialSuccess);
         print('BackgroundSyncService: Partial sync success - $totalSuccess synced, $totalFailed failed');
+        _logSyncSummary(totalSuccess, totalFailed);
       } else if (totalFailed > 0) {
         _syncStatusController.add(SyncStatus.failed);
         print('BackgroundSyncService: Sync failed - $totalFailed items failed');
+        _logSyncSummary(totalSuccess, totalFailed);
       } else {
         _syncStatusController.add(SyncStatus.idle);
         print('BackgroundSyncService: No items to sync');
       }
       
     } catch (e) {
-      print('BackgroundSyncService: Sync error: $e');
+      // Analyze the error using the new error categorization system
+      final errorInfo = SyncErrorUtils.analyzeError(e);
+      
+      print('BackgroundSyncService: Sync error:');
+      print('  Category: ${SyncErrorUtils.getCategoryStatusMessage(errorInfo.category)}');
+      print('  User Message: ${errorInfo.userMessage}');
+      print('  Technical: ${errorInfo.technicalMessage}');
+      if (errorInfo.suggestedAction != null) {
+        print('  Suggested Action: ${errorInfo.suggestedAction}');
+      }
+      print('  Retryable: ${errorInfo.isRetryable}');
+      
       _syncStatusController.add(SyncStatus.failed);
     } finally {
       _isSyncing = false;
+    }
+  }
+  
+  /// Log a summary of sync results with helpful context
+  void _logSyncSummary(int successCount, int failureCount) {
+    if (failureCount > 0) {
+      print('BackgroundSyncService: Sync Summary:');
+      print('  ✓ Successfully synced: $successCount items');
+      print('  ✗ Failed to sync: $failureCount items');
+      print('  📱 Your data is saved locally and will sync when connection improves');
+      
+      if (failureCount > successCount) {
+        print('  💡 Most sync failures are temporary - the app will retry automatically');
+      }
     }
   }
   
@@ -297,8 +333,17 @@ class BackgroundSyncService {
     }
   }
   
-  /// Sync a single event in background
+  /// Sync a single event in background with race condition protection
   Future<void> _syncSingleEvent(GameEvent event) async {
+    // Check if this event is already being synced
+    if (_syncingEventIds.contains(event.id)) {
+      print('BackgroundSyncService: Event ${event.id} is already being synced, skipping');
+      return;
+    }
+    
+    // Add to sync lock
+    _syncingEventIds.add(event.id);
+    
     try {
       final success = await _sheetsService.syncGameEvent(event);
       if (success) {
@@ -308,11 +353,23 @@ class BackgroundSyncService {
       }
     } catch (e) {
       print('BackgroundSyncService: Error syncing event ${event.id}: $e');
+    } finally {
+      // Always remove from sync lock
+      _syncingEventIds.remove(event.id);
     }
   }
   
-  /// Sync a single roster entry in background
+  /// Sync a single roster entry in background with race condition protection
   Future<void> _syncSingleRoster(GameRoster roster) async {
+    // Check if this roster entry is already being synced
+    if (_syncingRosterIds.contains(roster.id)) {
+      print('BackgroundSyncService: Roster ${roster.id} is already being synced, skipping');
+      return;
+    }
+    
+    // Add to sync lock
+    _syncingRosterIds.add(roster.id);
+    
     try {
       final success = await _sheetsService.syncGameRoster(roster);
       if (success) {
@@ -322,7 +379,25 @@ class BackgroundSyncService {
       }
     } catch (e) {
       print('BackgroundSyncService: Error syncing roster ${roster.id}: $e');
+    } finally {
+      // Always remove from sync lock
+      _syncingRosterIds.remove(roster.id);
     }
+  }
+  
+  /// Check if an event is currently being synced
+  bool isEventSyncing(String eventId) {
+    return _syncingEventIds.contains(eventId);
+  }
+  
+  /// Check if a roster entry is currently being synced
+  bool isRosterSyncing(String rosterId) {
+    return _syncingRosterIds.contains(rosterId);
+  }
+  
+  /// Get count of items currently being synced
+  int get currentlySyncingCount {
+    return _syncingEventIds.length + _syncingRosterIds.length;
   }
 }
 

@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:hockey_stats_app/services/service_account_auth.dart';
 import 'package:hockey_stats_app/services/connectivity_service.dart';
+import 'package:hockey_stats_app/utils/sync_error_utils.dart';
 
 /// Service for interacting with Google Sheets to sync hockey stats data.
 ///
@@ -143,34 +144,58 @@ class SheetsService {
           return null;
         }
       } else {
-        // Check if response is HTML (error page) vs JSON error
-        final responseBody = response.body;
-        if (responseBody.trim().startsWith('<!DOCTYPE html') || responseBody.trim().startsWith('<html')) {
-          print('API Error: ${response.statusCode} - Received HTML error page instead of JSON');
-          print('This usually indicates authentication/permission issues or invalid spreadsheet ID');
-          
-          if (response.statusCode == 404) {
-            print('404 Error: The spreadsheet may not exist or the service account may not have access');
-            print('Service account email: ${serviceAuth.serviceAccountEmail}');
-            print('Spreadsheet ID: $_spreadsheetId');
-            print('Make sure the service account email is added to the spreadsheet with Editor permissions');
-          }
-          
-          return null;
-        } else {
-          // Try to parse JSON error response
-          try {
-            final errorData = json.decode(responseBody);
-            print('API Error: ${response.statusCode} - ${errorData}');
-          } catch (e) {
-            print('API Error: ${response.statusCode} - ${responseBody}');
-          }
-          return null;
+        // Analyze the error using the new error categorization system
+        final errorInfo = SyncErrorUtils.analyzeError('HTTP ${response.statusCode}', response: response);
+        
+        // Log detailed error information
+        print('SheetsService API Error:');
+        print('  Status: ${response.statusCode}');
+        print('  Category: ${SyncErrorUtils.getCategoryStatusMessage(errorInfo.category)}');
+        print('  User Message: ${errorInfo.userMessage}');
+        print('  Technical: ${errorInfo.technicalMessage}');
+        if (errorInfo.suggestedAction != null) {
+          print('  Suggested Action: ${errorInfo.suggestedAction}');
         }
+        print('  Retryable: ${errorInfo.isRetryable}');
+        
+        // Store error information for potential UI display (without blocking)
+        _storeLastSyncError(errorInfo);
+        
+        return null;
       }
     } catch (e) {
-      print('Request error: $e');
+      // Analyze the exception using the new error categorization system
+      final errorInfo = SyncErrorUtils.analyzeError(e);
+      
+      // Log detailed error information
+      print('SheetsService Request Error:');
+      print('  Category: ${SyncErrorUtils.getCategoryStatusMessage(errorInfo.category)}');
+      print('  User Message: ${errorInfo.userMessage}');
+      print('  Technical: ${errorInfo.technicalMessage}');
+      if (errorInfo.suggestedAction != null) {
+        print('  Suggested Action: ${errorInfo.suggestedAction}');
+      }
+      print('  Retryable: ${errorInfo.isRetryable}');
+      
+      // Store error information for potential UI display (without blocking)
+      _storeLastSyncError(errorInfo);
+      
       return null;
+    }
+  }
+  
+  /// Store the last sync error for potential UI display (non-blocking)
+  void _storeLastSyncError(SyncErrorInfo errorInfo) {
+    try {
+      // Store error in a simple way that doesn't block the sync operation
+      // This could be expanded to use a proper error storage mechanism
+      print('Storing sync error for UI: ${errorInfo.userMessage}');
+      
+      // For now, we'll just ensure the error is logged in a structured way
+      // Future enhancement: Store in Hive box for UI display
+    } catch (e) {
+      // Don't let error storage block the main sync operation
+      print('Failed to store sync error: $e');
     }
   }
 
@@ -181,6 +206,9 @@ class SheetsService {
       return false;
     }
 
+    // Check if event already exists in Google Sheets to prevent duplicates
+    final existingRowIndex = await _findEventRow(event.id);
+    
     // Format the timestamp in a more readable format: YYYY-MM-DD HH:MM:SS
     String formattedTimestamp = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}-${event.timestamp.day.toString().padLeft(2, '0')} ${event.timestamp.hour.toString().padLeft(2, '0')}:${event.timestamp.minute.toString().padLeft(2, '0')}:${event.timestamp.second.toString().padLeft(2, '0')}";
 
@@ -207,21 +235,39 @@ class SheetsService {
       'majorDimension': 'ROWS',
     };
 
-    final result = await _makeRequest(
-      'POST',
-      'values/Events!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
-      body: body,
-    );
+    Map<String, dynamic>? result;
+    
+    if (existingRowIndex != -1) {
+      // Event already exists, update the existing row instead of creating duplicate
+      print('Event ${event.id} already exists at row $existingRowIndex, updating instead of creating duplicate');
+      result = await _makeRequest(
+        'PUT',
+        'values/Events!A$existingRowIndex:O$existingRowIndex?valueInputOption=USER_ENTERED',
+        body: body,
+      );
+      print('Updated existing event ${event.id} at row $existingRowIndex');
+    } else {
+      // Event doesn't exist, append new row
+      result = await _makeRequest(
+        'POST',
+        'values/Events!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+        body: body,
+      );
+      print('Created new event ${event.id}');
+    }
 
     if (result != null) {
       print('Successfully synced event ${event.id}');
+      // Immediately update the sync status to prevent race conditions
       if (event.isInBox) {
         event.isSynced = true;
         await event.save();
       }
       return true;
+    } else {
+      print('Failed to sync event ${event.id}');
+      return false;
     }
-    return false;
   }
 
   Future<bool> syncGameRoster(GameRoster roster) async {
@@ -721,6 +767,37 @@ class SheetsService {
     }
   }
 
+  /// Helper method to find an existing row in the Events sheet for a specific event ID.
+  /// 
+  /// @param eventId The event ID to search for
+  /// @return The row index (1-based) if found, -1 if not found
+  Future<int> _findEventRow(String eventId) async {
+    try {
+      final result = await _makeRequest('GET', 'values/Events!A:A');
+      if (result == null) return -1;
+
+      final List<List<dynamic>> values = List<List<dynamic>>.from(result['values'] ?? []);
+      
+      // Search through all rows to find matching event ID
+      for (int i = 0; i < values.length; i++) {
+        final row = values[i];
+        if (row.isNotEmpty) {
+          final rowEventId = row[0]?.toString() ?? '';
+          
+          if (rowEventId == eventId) {
+            // Return 1-based row index for Google Sheets API
+            return i + 1;
+          }
+        }
+      }
+      
+      return -1; // Not found
+    } catch (e) {
+      print('Error finding Event row: $e');
+      return -1;
+    }
+  }
+
   /// Helper method to find an existing row in the GameRoster sheet for a specific game + player combination.
   /// 
   /// @param gameId The game ID to search for
@@ -964,9 +1041,12 @@ class SheetsService {
     return {'success': successCount, 'failed': failureCount, 'pending': failureCount};
   }
 
-  /// Syncs a single event with improved error handling.
+  /// Syncs a single event with improved error handling and deduplication.
   Future<bool> _syncGameEventWithRetry(GameEvent event) async {
     try {
+      // Check if event already exists in Google Sheets to prevent duplicates
+      final existingRowIndex = await _findEventRow(event.id);
+      
       // Format the timestamp in a more readable format: YYYY-MM-DD HH:MM:SS
       String formattedTimestamp = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}-${event.timestamp.day.toString().padLeft(2, '0')} ${event.timestamp.hour.toString().padLeft(2, '0')}:${event.timestamp.minute.toString().padLeft(2, '0')}:${event.timestamp.second.toString().padLeft(2, '0')}";
 
@@ -993,11 +1073,26 @@ class SheetsService {
         'majorDimension': 'ROWS',
       };
 
-      final result = await _makeRequest(
-        'POST',
-        'values/Events!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
-        body: body,
-      );
+      Map<String, dynamic>? result;
+      
+      if (existingRowIndex != -1) {
+        // Event already exists, update the existing row instead of creating duplicate
+        print('_syncGameEventWithRetry: Event ${event.id} already exists at row $existingRowIndex, updating instead of creating duplicate');
+        result = await _makeRequest(
+          'PUT',
+          'values/Events!A$existingRowIndex:O$existingRowIndex?valueInputOption=USER_ENTERED',
+          body: body,
+        );
+        print('_syncGameEventWithRetry: Updated existing event ${event.id} at row $existingRowIndex');
+      } else {
+        // Event doesn't exist, append new row
+        result = await _makeRequest(
+          'POST',
+          'values/Events!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+          body: body,
+        );
+        print('_syncGameEventWithRetry: Created new event ${event.id}');
+      }
 
       if (result != null) {
         if (event.isInBox) {
@@ -1637,6 +1732,7 @@ class SheetsService {
   }
 
   /// Sync a single GameAttendance record to Google Sheets
+  /// This method now includes backward compatibility with GameRoster sheet
   Future<bool> syncGameAttendance(GameAttendance attendance) async {
     bool isAuthenticated = await ensureAuthenticated();
     if (!isAuthenticated) {
@@ -1645,8 +1741,42 @@ class SheetsService {
     }
 
     try {
-      // Format the attendance data for Google Sheets
-      // We'll store one row per game with absent player IDs as a comma-separated list
+      // First, try to sync to GameAttendance sheet (new format)
+      bool newFormatSuccess = await _syncToGameAttendanceSheet(attendance);
+      
+      // If that fails or doesn't exist, fall back to GameRoster sheet (backward compatibility)
+      if (!newFormatSuccess) {
+        print('GameAttendance sheet sync failed, falling back to GameRoster format');
+        bool legacySuccess = await _syncToGameRosterSheet(attendance);
+        
+        if (legacySuccess) {
+          print('Successfully synced attendance to GameRoster sheet (legacy format)');
+          if (attendance.isInBox) {
+            attendance.isSynced = true;
+            await attendance.save();
+          }
+          return true;
+        }
+      } else {
+        print('Successfully synced attendance to GameAttendance sheet (new format)');
+        if (attendance.isInBox) {
+          attendance.isSynced = true;
+          await attendance.save();
+        }
+        return true;
+      }
+      
+      return false;
+    } catch (e) {
+      print('Error syncing attendance ${attendance.id}: $e');
+      return false;
+    }
+  }
+
+  /// Sync to the new GameAttendance sheet format
+  Future<bool> _syncToGameAttendanceSheet(GameAttendance attendance) async {
+    try {
+      // Format the attendance data for GameAttendance sheet
       final List<Object> values = [
         attendance.gameId,
         attendance.teamId,
@@ -1682,18 +1812,144 @@ class SheetsService {
         print('Created new attendance record for game ${attendance.gameId}');
       }
 
+      return result != null;
+    } catch (e) {
+      print('Error syncing to GameAttendance sheet: $e');
+      return false;
+    }
+  }
+
+  /// Sync to the legacy GameRoster sheet format (backward compatibility)
+  Future<bool> _syncToGameRosterSheet(GameAttendance attendance) async {
+    try {
+      // Get all players for the team to create individual roster entries
+      final playersBox = Hive.box<Player>('players');
+      final teamPlayers = playersBox.values
+          .where((p) => p.teamId == attendance.teamId)
+          .toList();
+
+      if (teamPlayers.isEmpty) {
+        print('No players found for team ${attendance.teamId}');
+        return false;
+      }
+
+      print('Converting GameAttendance to GameRoster format for ${teamPlayers.length} players');
+
+      // First, remove any existing GameRoster entries for this game
+      await _clearGameRosterEntriesForGame(attendance.gameId);
+
+      // Create individual GameRoster entries for each player
+      List<List<Object>> rosterRows = [];
+      
+      for (final player in teamPlayers) {
+        final status = attendance.absentPlayerIds.contains(player.id) ? 'Absent' : 'Present';
+        rosterRows.add([
+          attendance.gameId,
+          player.id,
+          status,
+        ]);
+      }
+
+      // Batch insert all roster entries
+      final Map<String, dynamic> body = {
+        'values': rosterRows,
+        'majorDimension': 'ROWS',
+      };
+
+      final result = await _makeRequest(
+        'POST',
+        'values/GameRoster!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+        body: body,
+      );
+
       if (result != null) {
-        print('Successfully synced attendance for game ${attendance.gameId}');
-        if (attendance.isInBox) {
-          attendance.isSynced = true;
-          await attendance.save();
-        }
+        print('Successfully created ${rosterRows.length} GameRoster entries for game ${attendance.gameId}');
         return true;
       }
+      
       return false;
     } catch (e) {
-      print('Error syncing attendance ${attendance.id}: $e');
+      print('Error syncing to GameRoster sheet: $e');
       return false;
+    }
+  }
+
+  /// Clear existing GameRoster entries for a specific game
+  Future<void> _clearGameRosterEntriesForGame(String gameId) async {
+    try {
+      // Get all GameRoster data to find rows to delete
+      final result = await _makeRequest('GET', 'values/GameRoster!A:C');
+      if (result == null) return;
+
+      final List<List<dynamic>> values = List<List<dynamic>>.from(result['values'] ?? []);
+      
+      // Find all rows that match this gameId (in reverse order for safe deletion)
+      List<int> rowsToDelete = [];
+      for (int i = values.length - 1; i >= 0; i--) {
+        final row = values[i];
+        if (row.isNotEmpty && row[0]?.toString() == gameId) {
+          rowsToDelete.add(i + 1); // Convert to 1-based indexing
+        }
+      }
+
+      if (rowsToDelete.isEmpty) {
+        print('No existing GameRoster entries found for game $gameId');
+        return;
+      }
+
+      print('Found ${rowsToDelete.length} existing GameRoster entries to clear for game $gameId');
+
+      // Get the GameRoster sheet ID for batch deletion
+      final gameRosterSheetId = await _getSheetId('GameRoster');
+      if (gameRosterSheetId == null) {
+        print('Could not find GameRoster sheet ID');
+        return;
+      }
+
+      // Create batch delete requests (process in chunks to avoid API limits)
+      const chunkSize = 10;
+      for (int i = 0; i < rowsToDelete.length; i += chunkSize) {
+        final chunk = rowsToDelete.skip(i).take(chunkSize).toList();
+        
+        final List<Map<String, dynamic>> deleteRequests = chunk.map((rowIndex) => {
+          'deleteDimension': {
+            'range': {
+              'sheetId': gameRosterSheetId,
+              'dimension': 'ROWS',
+              'startIndex': rowIndex - 1, // Convert to 0-based indexing
+              'endIndex': rowIndex
+            }
+          }
+        }).toList();
+
+        final Map<String, dynamic> batchRequest = {
+          'requests': deleteRequests
+        };
+
+        // Execute batch delete
+        final serviceAuth = await ServiceAccountAuth.instance;
+        final Uri uri = Uri.parse('$_sheetsApiBase/$_spreadsheetId:batchUpdate');
+        
+        final response = await serviceAuth.makeAuthenticatedRequest(
+          uri,
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: json.encode(batchRequest),
+        );
+
+        if (response.statusCode == 200) {
+          print('Successfully deleted ${chunk.length} GameRoster entries');
+        } else {
+          print('Failed to delete GameRoster entries: ${response.statusCode}');
+        }
+
+        // Small delay between chunks to avoid rate limiting
+        if (i + chunkSize < rowsToDelete.length) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+    } catch (e) {
+      print('Error clearing GameRoster entries for game $gameId: $e');
     }
   }
 

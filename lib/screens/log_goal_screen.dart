@@ -18,6 +18,7 @@ class LogGoalScreen extends StatefulWidget {
   final Player? goalScorer;
   final Player? assist1;
   final Player? assist2;
+  final Player? selectedGoalie;
 
   const LogGoalScreen({
     super.key, 
@@ -29,6 +30,7 @@ class LogGoalScreen extends StatefulWidget {
     this.goalScorer,
     this.assist1,
     this.assist2,
+    this.selectedGoalie,
   });
 
   @override
@@ -112,8 +114,10 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
         .toList();
     _goalies.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
     
-    // Set default goalie if available and none selected
-    if (_goalies.isNotEmpty && _selectedGoalie == null) {
+    // Use passed goalie from log stats screen, or set default if none passed and none selected
+    if (widget.selectedGoalie != null) {
+      _selectedGoalie = widget.selectedGoalie;
+    } else if (_goalies.isNotEmpty && _selectedGoalie == null) {
       _selectedGoalie = _goalies.first;
     }
     

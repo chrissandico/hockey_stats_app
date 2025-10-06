@@ -136,7 +136,7 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
   /// This method now uses the efficient GameAttendance model:
   /// 1. Creates/updates a single GameAttendance record with only absent player IDs
   /// 2. Schedules background sync to Google Sheets if the user is signed in
-  /// 3. Closes the dialog immediately after local save
+  /// 3. Shows confirmation of sync status to the user
   Future<void> _saveAttendance() async {
     setState(() {
       _isSaving = true;
@@ -171,20 +171,25 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
 
       print('Saved attendance for game ${widget.gameId}: ${_absentPlayerIds.length} absent players');
 
-      // Schedule background sync to Google Sheets if signed in (non-blocking)
-      if (await _sheetsService.isSignedIn()) {
-        print('Scheduling background sync of attendance to Google Sheets...');
-        // Don't await this - let it run in background
-        _sheetsService.syncPendingAttendanceInBackground().then((result) {
-          print('Background attendance sync completed: $result');
-        }).catchError((error) {
-          print('Background attendance sync failed: $error');
-        });
-      }
-
-      if (mounted) {
-        Navigator.of(context).pop();
-        widget.onComplete();
+      // Check if user is signed in for Google Sheets sync
+      final isSignedIn = await _sheetsService.isSignedIn();
+      
+      if (isSignedIn) {
+        // Show sync status and attempt sync
+        await _showSyncStatusAndSync(gameAttendance);
+      } else {
+        // Not signed in - show local save confirmation
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ Attendance saved locally (Google Sheets sync unavailable - not signed in)'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          Navigator.of(context).pop();
+          widget.onComplete();
+        }
       }
     } catch (e) {
       print('Error saving attendance: $e');
@@ -198,6 +203,90 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
         setState(() {
           _isSaving = false;
         });
+      }
+    }
+  }
+
+  /// Shows sync status dialog and attempts to sync attendance to Google Sheets
+  Future<void> _showSyncStatusAndSync(GameAttendance gameAttendance) async {
+    if (!mounted) return;
+
+    // Show sync status dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Text('Syncing to Google Sheets...'),
+            ],
+          ),
+          content: const Text('Please wait while we update your attendance data in Google Sheets.'),
+        );
+      },
+    );
+
+    try {
+      // Attempt to sync the attendance record
+      print('Attempting to sync attendance to Google Sheets...');
+      final syncSuccess = await _sheetsService.syncGameAttendance(gameAttendance);
+      
+      if (mounted) {
+        // Close the sync status dialog
+        Navigator.of(context).pop();
+        
+        if (syncSuccess) {
+          // Show success confirmation
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ Attendance saved and synced to Google Sheets successfully!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          print('Attendance sync successful');
+        } else {
+          // Show failure message but indicate local save was successful
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠ Attendance saved locally, but Google Sheets sync failed. Will retry automatically.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          print('Attendance sync failed, but saved locally');
+        }
+        
+        // Close the attendance dialog and complete
+        Navigator.of(context).pop();
+        widget.onComplete();
+      }
+    } catch (e) {
+      print('Error during attendance sync: $e');
+      
+      if (mounted) {
+        // Close the sync status dialog
+        Navigator.of(context).pop();
+        
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠ Attendance saved locally, but sync error occurred: ${e.toString()}'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        
+        // Close the attendance dialog and complete
+        Navigator.of(context).pop();
+        widget.onComplete();
       }
     }
   }

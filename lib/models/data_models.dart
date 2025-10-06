@@ -285,7 +285,7 @@ class SyncPreferences extends HiveObject {
     this.syncShots = true,
     this.syncGoals = true,
     this.syncPenalties = true,
-    this.syncAttendance = false, // Default to false since attendance was causing issues
+    this.syncAttendance = true, // Enable by default now that we have backward compatibility
     this.syncOnlyImportantEvents = false,
   });
 
