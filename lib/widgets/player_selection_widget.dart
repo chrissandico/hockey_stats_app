@@ -571,11 +571,8 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     }
 
     setState(() {
-      // Remove player from current position
-      _removePlayerFromLines(player);
-      
-      // Remove player from current position in the service
-      _lineService.removePlayerFromLines(player);
+      // Find the current position of the dragged player
+      LinePosition? currentPosition = _findPlayerPosition(player);
       
       // Check if there's already a player in the target position
       List<List<Player?>> targetLines = position.positionType == 'forward' 
@@ -583,12 +580,32 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
           : _lineService.defenseLines;
       Player? existingPlayer = targetLines[position.lineIndex][position.positionIndex];
       
-      // Update the position in the service
+      // Remove the dragged player from their current position
+      _lineService.removePlayerFromLines(player);
+      
+      // Place the dragged player in the target position
       _lineService.updatePosition(position.positionType, position.lineIndex, position.positionIndex, player);
       
-      // If there was a player in the target position, find them a new spot
-      if (existingPlayer != null) {
-        _lineService.findEmptySpotForPlayer(existingPlayer, position.positionType);
+      // If there was a player in the target position, swap them to the dragged player's original position
+      if (existingPlayer != null && currentPosition != null) {
+        // Place the displaced player in the dragged player's original position
+        _lineService.updatePosition(currentPosition.positionType, currentPosition.lineIndex, currentPosition.positionIndex, existingPlayer);
+      } else if (existingPlayer != null) {
+        // If we couldn't find the original position, find any empty spot for the displaced player
+        // Try to place in appropriate position type first (forward for forward, defense for defense)
+        final isForward = existingPlayer.position == 'C' || 
+                         existingPlayer.position == 'LW' || 
+                         existingPlayer.position == 'RW' ||
+                         existingPlayer.position == 'F';
+        final preferredPositionType = isForward ? 'forward' : 'defense';
+        
+        _lineService.findEmptySpotForPlayer(existingPlayer, preferredPositionType);
+        
+        // If no spot found in preferred type, try the other type (since we now allow flexibility)
+        if (!_isPlayerInLines(existingPlayer)) {
+          final alternatePositionType = isForward ? 'defense' : 'forward';
+          _lineService.findEmptySpotForPlayer(existingPlayer, alternatePositionType);
+        }
       }
     });
     
@@ -601,6 +618,42 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
 
   void _findEmptySpotForPlayer(Player player, String positionType) {
     _lineService.findEmptySpotForPlayer(player, positionType);
+  }
+
+  /// Find the current position of a player in the lines
+  LinePosition? _findPlayerPosition(Player player) {
+    // Check forward lines
+    for (int lineIndex = 0; lineIndex < _lineService.forwardLines.length; lineIndex++) {
+      for (int posIndex = 0; posIndex < _lineService.forwardLines[lineIndex].length; posIndex++) {
+        if (_lineService.forwardLines[lineIndex][posIndex] == player) {
+          return LinePosition(
+            lineIndex: lineIndex,
+            positionIndex: posIndex,
+            positionType: 'forward',
+          );
+        }
+      }
+    }
+    
+    // Check defense lines
+    for (int lineIndex = 0; lineIndex < _lineService.defenseLines.length; lineIndex++) {
+      for (int posIndex = 0; posIndex < _lineService.defenseLines[lineIndex].length; posIndex++) {
+        if (_lineService.defenseLines[lineIndex][posIndex] == player) {
+          return LinePosition(
+            lineIndex: lineIndex,
+            positionIndex: posIndex,
+            positionType: 'defense',
+          );
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /// Check if a player is currently placed in any line position
+  bool _isPlayerInLines(Player player) {
+    return _findPlayerPosition(player) != null;
   }
 
   void _handlePlayerTap(Player player) {
