@@ -242,4 +242,29 @@ class LineConfigurationService {
            player.position == 'LD' || 
            player.position == 'RD';
   }
+
+  /// Reset line configuration to default state using Google Sheets as source of truth
+  Future<void> resetLineConfigurationFromSheets(String gameId, List<Player> currentPlayers) async {
+    try {
+      print('Resetting line configuration for game $gameId using Google Sheets data');
+      
+      // Step 1: Clear corrupted saved configuration
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('forward_lines_$gameId');
+      await prefs.remove('defense_lines_$gameId');
+      print('Cleared saved configuration from SharedPreferences');
+      
+      // Step 2: Reinitialize with Google Sheets data (via currentPlayers)
+      initializeLines(currentPlayers);
+      print('Reinitialized lines with ${currentPlayers.length} players from Google Sheets');
+      
+      // Step 3: Save the clean default state
+      await saveLineConfiguration(gameId);
+      print('Saved clean default configuration');
+      
+    } catch (e) {
+      print('Error resetting line configuration: $e');
+      throw e; // Re-throw to allow UI error handling
+    }
+  }
 }

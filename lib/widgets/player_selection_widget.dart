@@ -656,6 +656,38 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     return _findPlayerPosition(player) != null;
   }
 
+  /// Reset line configuration to default using Google Sheets as source of truth
+  Future<void> _resetLineConfiguration() async {
+    if (_currentGameId != null) {
+      try {
+        // Reset configuration using Google Sheets as source of truth
+        await _lineService.resetLineConfigurationFromSheets(_currentGameId!, widget.players);
+        
+        // Refresh UI
+        if (mounted) {
+          setState(() {});
+        }
+        
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Line configuration reset to default'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      } catch (e) {
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error resetting configuration: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   void _handlePlayerTap(Player player) {
     if (_isPlayerAbsent(player)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1131,23 +1163,14 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.clear_all, size: 18),
-                  tooltip: 'Clear Skaters (Keep Goalie)',
+                  icon: const Icon(Icons.refresh, size: 18),
+                  tooltip: 'Reset Lines to Default',
                   style: IconButton.styleFrom(
                     padding: const EdgeInsets.all(4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  onPressed: () {
-                    // Clear only skaters (D and F), preserve goalie selection
-                    widget.onPlayersOnIceChanged([]);
-                    widget.onGoalScorerChanged(null);
-                    widget.onAssist1Changed(null);
-                    if (widget.onAssist2Changed != null) {
-                      widget.onAssist2Changed!(null);
-                    }
-                    // Note: widget.onGoalieChanged(null) is removed to preserve goalie
-                  },
+                  onPressed: _resetLineConfiguration,
                 ),
               ],
             ),
