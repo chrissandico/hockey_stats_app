@@ -578,15 +578,6 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
 
       if (!mounted) return;
 
-      // Show immediate success feedback
-      String teamDisplayName = team == widget.teamId ? _currentTeamName : 'Opponent';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Shot logged for $teamDisplayName'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-
       // Queue for background sync (non-blocking)
       final backgroundSyncService = BackgroundSyncService();
       backgroundSyncService.queueEventForSync(newShotEvent);
