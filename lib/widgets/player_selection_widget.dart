@@ -327,9 +327,15 @@ class _LinePositionDropTarget extends StatelessWidget {
     final isDefenseman = draggedPlayer.position == 'D' || 
                         draggedPlayer.position == 'LD' || 
                         draggedPlayer.position == 'RD';
+    final isGoalie = draggedPlayer.position == 'G';
     
-    return (position.positionType == 'forward' && isForward) ||
-           (position.positionType == 'defense' && isDefenseman);
+    // Goalies cannot be dropped in skater positions
+    if (isGoalie) return false;
+    
+    // Allow forwards and defensemen to be placed in any skater position
+    // This enables position flexibility during games
+    return (position.positionType == 'forward' || position.positionType == 'defense') &&
+           (isForward || isDefenseman);
   }
 
   @override
