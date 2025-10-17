@@ -225,7 +225,7 @@ class _AttendanceDialogState extends State<AttendanceDialog> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
               SizedBox(width: 12),
-              Text('Syncing to Google Sheets...'),
+              Text('Syncing...'),
             ],
           ),
           content: const Text('Please wait while we update your attendance data in Google Sheets.'),
