@@ -10,6 +10,7 @@ import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:hockey_stats_app/services/centralized_data_service.dart';
+import 'package:hockey_stats_app/services/background_sync_service.dart';
 import 'package:hockey_stats_app/widgets/share_dialog.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
 import 'package:hockey_stats_app/widgets/player_selection_widget.dart';
@@ -519,12 +520,25 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
 
   Future<void> _refreshScore() async {
      if (!mounted) return;
+     
+     // Only show loading state for explicit refresh operations (like sync)
+     // The ValueListenableBuilder will handle automatic updates from local data
      setState(() { _isLoadingScore = true; });
+     
      try {
-        // Force refresh from Google Sheets to get the latest data
-        print('Refreshing score from Google Sheets...');
-        await _centralizedDataService.calculateCurrentScore(widget.gameId, widget.teamId, forceRefresh: true);
+        // Refresh from Google Sheets in background without blocking UI
+        print('Refreshing score from Google Sheets in background...');
         
+        // Use microtask to avoid blocking the UI thread
+        Future.microtask(() async {
+          try {
+            await _centralizedDataService.calculateCurrentScore(widget.gameId, widget.teamId, forceRefresh: true);
+          } catch (e) {
+            print('Background score refresh error: $e');
+          }
+        });
+        
+        // Clear loading state immediately since local data handles the display
         if (mounted) {
            setState(() {
               _isLoadingScore = false;
@@ -559,61 +573,23 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
         goalieOnIceId: (team == 'opponent' && _selectedGoalie != null) ? _selectedGoalie!.id : null,
       );
 
+      // Save to local storage immediately for instant UI update
       await gameEventsBox.put(newShotEvent.id, newShotEvent);
-
-      // Attempt to sync
-      bool syncSuccess = false;
-      String syncError = '';
-      try {
-        syncSuccess = await _sheetsService.syncGameEvent(newShotEvent);
-        if (!syncSuccess) {
-          syncError = "Sync failed - will retry when online.";
-        }
-      } catch (error) {
-        syncError = error.toString();
-        print("Error during sync for quick shot: $error");
-      }
 
       if (!mounted) return;
 
+      // Show immediate success feedback
       String teamDisplayName = team == widget.teamId ? _currentTeamName : 'Opponent';
-      String message;
-      Color? backgroundColor;
-      Widget? icon;
-      
-      if (syncSuccess) {
-        message = 'Shot logged for $teamDisplayName and synced.';
-      } else {
-        // Check if the error is due to being offline
-        if (syncError.toLowerCase().contains('offline') || 
-            syncError.toLowerCase().contains('connection') ||
-            syncError.toLowerCase().contains('network') ||
-            syncError.toLowerCase().contains('retry when online')) {
-          message = 'Shot logged successfully! Your changes will automatically sync when your device is back online.';
-          backgroundColor = Colors.blue;
-          icon = const Icon(Icons.info_outline, color: Colors.white, size: 20);
-        } else {
-          message = 'Shot logged for $teamDisplayName locally - $syncError';
-        }
-      }
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Row(
-            children: [
-              if (icon != null) ...[
-                icon,
-                const SizedBox(width: 8),
-              ],
-              Expanded(child: Text(message)),
-            ],
-          ),
-          backgroundColor: backgroundColor,
-          duration: Duration(seconds: syncSuccess ? 2 : 4),
+          content: Text('Shot logged for $teamDisplayName'),
+          duration: const Duration(seconds: 2),
         ),
       );
 
-      await _refreshScore();
+      // Queue for background sync (non-blocking)
+      final backgroundSyncService = BackgroundSyncService();
+      backgroundSyncService.queueEventForSync(newShotEvent);
 
     } catch (e) {
       print('Error in _logQuickShot: $e');
@@ -1223,23 +1199,30 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                           ),
                           const SizedBox(height: 8),
                           
-                          FutureBuilder<Map<String, int>>(
-                            future: _centralizedDataService.calculateCurrentScore(widget.gameId, widget.teamId),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState == ConnectionState.waiting || _isLoadingScore) {
+                          ValueListenableBuilder(
+                            valueListenable: Hive.box<GameEvent>('gameEvents').listenable(),
+                            builder: (context, Box<GameEvent> box, _) {
+                              if (_isLoadingScore) {
                                 return const Center(
                                   child: SizedBox(height: 30, width: 30, child: CircularProgressIndicator(strokeWidth: 3))
                                 );
                               }
                               
-                              final score = snapshot.data ?? {'Your Team': 0, 'Opponent': 0};
+                              // Calculate score from local data for instant updates
+                              final gameEvents = box.values.where((event) => event.gameId == widget.gameId).toList();
+                              final goalEvents = gameEvents.where((event) => 
+                                event.eventType == 'Shot' && event.isGoal == true
+                              ).toList();
+                              
+                              final yourTeamScore = goalEvents.where((event) => event.team == widget.teamId).length;
+                              final opponentScore = goalEvents.where((event) => event.team == 'opponent').length;
                               
                               return Center(
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
-                                      '${score['Your Team']}',
+                                      '$yourTeamScore',
                                       style: const TextStyle(
                                         fontSize: 24,
                                         fontWeight: FontWeight.bold,
@@ -1254,7 +1237,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                                       ),
                                     ),
                                     Text(
-                                      '${score['Opponent']}',
+                                      '$opponentScore',
                                       style: const TextStyle(
                                         fontSize: 24,
                                         fontWeight: FontWeight.bold,
