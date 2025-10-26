@@ -14,6 +14,8 @@ import 'package:hockey_stats_app/services/background_sync_service.dart';
 import 'package:hockey_stats_app/widgets/share_dialog.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
 import 'package:hockey_stats_app/widgets/player_selection_widget.dart';
+import 'package:hockey_stats_app/services/wakelock_service.dart';
+import 'package:hockey_stats_app/screens/app_settings_screen.dart';
 import 'package:uuid/uuid.dart';
 import 'package:provider/provider.dart';
 
@@ -70,6 +72,9 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     super.initState();
     gameEventsBox = Hive.box<GameEvent>('gameEvents');
     _initializeScreenAsync();
+    
+    // Enable wake lock when entering stats screen
+    WakelockService.enableWakelockIfAllowed();
   }
 
   /// Initialize the screen with optimized async loading
@@ -202,6 +207,21 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     });
     
     try {
+      // First try to load from the new GameAttendance model
+      final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
+      final existingAttendance = attendanceBox.values
+          .where((a) => a.gameId == widget.gameId && a.teamId == widget.teamId)
+          .firstOrNull;
+
+      if (existingAttendance != null) {
+        setState(() {
+          _absentPlayerIds = existingAttendance.absentPlayerIds.toSet();
+        });
+        print('Loaded attendance from GameAttendance: ${_absentPlayerIds.length} absent players');
+        return;
+      }
+
+      // Fallback: Load from old GameRoster model for backward compatibility
       final rosterBox = Hive.box<GameRoster>('gameRoster');
       final existingRoster = rosterBox.values
           .where((r) => r.gameId == widget.gameId)
@@ -214,6 +234,13 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
               .map((r) => r.playerId)
               .toSet();
         });
+        print('Loaded attendance from GameRoster (legacy): ${_absentPlayerIds.length} absent players');
+      } else {
+        // No attendance data found, initialize empty set
+        setState(() {
+          _absentPlayerIds = <String>{};
+        });
+        print('No attendance data found, initialized empty absent players set');
       }
     } catch (e) {
       print('Error loading attendance data: $e');
@@ -243,6 +270,12 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   // Check if a player is absent
   bool _isPlayerAbsent(Player player) {
     return _absentPlayerIds.contains(player.id);
+  }
+
+  // Refresh attendance data (can be called when attendance is updated)
+  Future<void> _refreshAttendanceData() async {
+    print('Refreshing attendance data...');
+    await _loadAttendanceData();
   }
   
   List<Player> _getForwards() {
@@ -603,6 +636,13 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     return _selectedPlayersOnIce.map((player) => player.id).toList();
   }
 
+  @override
+  void dispose() {
+    // Disable wake lock when leaving stats screen
+    WakelockService.disableWakelock();
+    super.dispose();
+  }
+
   Widget _buildLogButton({
     required IconData icon,
     required String label,
@@ -810,10 +850,11 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                     context,
                     MaterialPageRoute(builder: (context) => EditShotListScreen(gameId: widget.gameId, teamId: widget.teamId)),
                   ).then((_) {
-                    print('Returned from EditShotListScreen, refreshing score...');
+                    print('Returned from EditShotListScreen, refreshing score and attendance...');
                     _refreshScore().then((_) {
                       print('Score refresh complete');
                     });
+                    _refreshAttendanceData();
                   });
                 },
               ),
@@ -849,7 +890,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.only(right: 8.0),
+              padding: const EdgeInsets.only(right: 4.0),
               child: IconButton(
                 icon: const Icon(Icons.bar_chart),
                 tooltip: 'View Stats',
@@ -857,6 +898,19 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => ViewStatsScreen(gameId: widget.gameId, teamId: widget.teamId)),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: IconButton(
+                icon: const Icon(Icons.settings),
+                tooltip: 'App Settings',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AppSettingsScreen()),
                   );
                 },
               ),
@@ -1056,7 +1110,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             ),
                           ),
                         ).then((value) {
-                            print('Returned from LogGoalScreen, refreshing score...');
+                            print('Returned from LogGoalScreen, refreshing score and attendance...');
                             _refreshScore().then((_) {
                               print('Score refresh complete');
                               if (value != null && value is int) {
@@ -1065,6 +1119,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                                 });
                               }
                             });
+                            _refreshAttendanceData();
                           });
                         },
                         style: ElevatedButton.styleFrom(
@@ -1113,7 +1168,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                               ),
                             ),
                           ).then((value) {
-                            print('Returned from LogPenaltyScreen, refreshing score...');
+                            print('Returned from LogPenaltyScreen, refreshing score and attendance...');
                             _refreshScore().then((_) {
                               print('Score refresh complete');
                               if (value != null && value is int) {
@@ -1122,6 +1177,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                                 });
                               }
                             });
+                            _refreshAttendanceData();
                           });
                         },
                         style: ElevatedButton.styleFrom(

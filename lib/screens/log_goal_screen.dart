@@ -154,6 +154,21 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
     });
     
     try {
+      // First try to load from the new GameAttendance model
+      final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
+      final existingAttendance = attendanceBox.values
+          .where((a) => a.gameId == widget.gameId && a.teamId == widget.teamId)
+          .firstOrNull;
+
+      if (existingAttendance != null) {
+        setState(() {
+          _absentPlayerIds = existingAttendance.absentPlayerIds.toSet();
+        });
+        print('Loaded attendance from GameAttendance: ${_absentPlayerIds.length} absent players');
+        return;
+      }
+
+      // Fallback: Load from old GameRoster model for backward compatibility
       final rosterBox = Hive.box<GameRoster>('gameRoster');
       final existingRoster = rosterBox.values
           .where((r) => r.gameId == widget.gameId)
@@ -166,6 +181,13 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
               .map((r) => r.playerId)
               .toSet();
         });
+        print('Loaded attendance from GameRoster (legacy): ${_absentPlayerIds.length} absent players');
+      } else {
+        // No attendance data found, initialize empty set
+        setState(() {
+          _absentPlayerIds = <String>{};
+        });
+        print('No attendance data found, initialized empty absent players set');
       }
     } catch (e) {
       print('Error loading attendance data: $e');

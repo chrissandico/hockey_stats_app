@@ -59,6 +59,7 @@ dependencies:
   printing: ^5.12.0 # For PDF utilities and preview
   share_plus: ^7.2.2 # For native sharing capabilities
   shared_preferences: ^2.2.2 # For storing user preferences
+  wakelock_plus: ^1.2.8 # For keeping screen awake during stats tracking
 
 
 dev_dependencies:
