@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Import for haptic feedback
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
 import 'package:hockey_stats_app/models/data_models.dart'; // Import your data models
 import 'package:hockey_stats_app/screens/log_stats_screen.dart'; // We'll create a new screen to hold the logging buttons
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import SheetsService for syncing
+import 'package:hockey_stats_app/services/connectivity_service.dart'; // Import ConnectivityService for checking connectivity
 import 'package:uuid/uuid.dart'; // Import for generating UUIDs
 import 'package:hockey_stats_app/main.dart' as main_logic; // To access functions from main.dart
 import 'package:hockey_stats_app/screens/attendance_dialog.dart'; // Import attendance dialog
@@ -180,6 +182,22 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     }
   }
 
+  // Helper method to sync a single game to Google Sheets when connected
+  Future<bool> _syncGameToSheets(Game game) async {
+    try {
+      // Check if we're online
+      if (!ConnectivityService().isOnline) {
+        return false;
+      }
+      
+      // Sync the specific game to Google Sheets
+      final success = await _sheetsService.syncGame(game);
+      return success;
+    } catch (e) {
+      print('Error syncing game to sheets: $e');
+      return false;
+    }
+  }
 
   // Function to handle game selection and navigation
   void _selectGameAndNavigate() {
@@ -215,6 +233,40 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     }
   }
 
+  // Show game options menu when long-press is detected
+  void _showGameOptions(BuildContext context, Game game) {
+    HapticFeedback.mediumImpact(); // Provide haptic feedback
+    
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Edit Game'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showEditGameDialog(context, game);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Delete Game', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showDeleteGameDialog(context, game);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   // Show dialog to add a new game
   void _showAddGameDialog(BuildContext context) {
     // Controllers for form fields
@@ -222,6 +274,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     final TextEditingController locationController = TextEditingController();
     
     DateTime selectedDate = DateTime.now(); // Initial date
+    String selectedGameType = 'R'; // Default to Regular Season
 
     showDialog(
       context: context,
@@ -259,46 +312,68 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
                     ),
                     const SizedBox(height: 16),
                     
-                // Opponent field
-                TextField(
-                  controller: opponentController,
-                  decoration: const InputDecoration( // const added
-                    labelText: 'Opponent',
-                    hintText: 'Enter opponent team name',
-                  ),
+                    // Opponent field
+                    TextField(
+                      controller: opponentController,
+                      decoration: const InputDecoration( // const added
+                        labelText: 'Opponent',
+                        hintText: 'Enter opponent team name',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Game type dropdown
+                    DropdownButtonFormField<String>(
+                      value: selectedGameType,
+                      decoration: const InputDecoration(
+                        labelText: 'Game Type',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'R', child: Text('Regular Season')),
+                        DropdownMenuItem(value: 'E', child: Text('Exhibition')),
+                        DropdownMenuItem(value: 'T', child: Text('Tournament')),
+                      ],
+                      onChanged: (String? newValue) {
+                        if (newValue != null) {
+                          setStateDialog(() {
+                            selectedGameType = newValue;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Location field
+                    TextField(
+                      controller: locationController,
+                      decoration: const InputDecoration( // const added
+                        labelText: 'Location (optional)',
+                        hintText: 'Enter game location',
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                
-                // Location field
-                TextField(
-                  controller: locationController,
-                  decoration: const InputDecoration( // const added
-                    labelText: 'Location (optional)',
-                    hintText: 'Enter game location',
-                  ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(), // Use dialogContext
+                  child: const Text('Cancel'), // const added
+                ),
+                TextButton(
+                  onPressed: () {
+                    _saveNewGame(
+                      context, // This context should be the original _showAddGameDialog context
+                      selectedDate,
+                      opponentController.text,
+                      locationController.text,
+                      selectedGameType,
+                    );
+                    // Navigator.of(dialogContext).pop(); // Pop is handled in _saveNewGame on success
+                  },
+                  child: const Text('Save'), // const added
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(), // Use dialogContext
-              child: const Text('Cancel'), // const added
-            ),
-            TextButton(
-              onPressed: () {
-                _saveNewGame(
-                  context, // This context should be the original _showAddGameDialog context
-                  selectedDate,
-                  opponentController.text,
-                  locationController.text,
-                );
-                // Navigator.of(dialogContext).pop(); // Pop is handled in _saveNewGame on success
-              },
-              child: const Text('Save'), // const added
-            ),
-          ],
-        );
+            );
           },
         );
       },
@@ -450,16 +525,13 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
         teamId: widget.teamId, // Set the team ID to the current team
       );
       
-      // Update in local database
+      // Update in local database first (offline-first approach)
       await gamesBox.put(gameId, updatedGame);
       
-      // Attempt to sync to Google Sheets if user is signed in
+      // Check connectivity and attempt immediate sync if online
       bool syncedToSheets = false;
-      if (await _sheetsService.isSignedIn()) {
-        // TODO: Implement method in SheetsService to sync a single game
-        // For now, we'll just call syncDataFromSheets() which syncs everything
-        final result = await _sheetsService.syncDataFromSheets();
-        syncedToSheets = result['success'] == true;
+      if (ConnectivityService().isOnline) {
+        syncedToSheets = await _syncGameToSheets(updatedGame);
       }
       
       // Reload games list
@@ -469,13 +541,13 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
       // Close the dialog
       Navigator.of(context).pop();
       
-      // Show success message
+      // Show success message with sync status
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             syncedToSheets
                 ? 'Game updated and synced to Google Sheets'
-                : 'Game updated locally',
+                : 'Game saved locally (will sync when online)',
           ),
         ),
       );
@@ -498,32 +570,60 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     });
     
     try {
-      // Delete from local database
+      // Check if the deleted game is currently selected
+      final bool wasSelected = _selectedGame?.id == gameId;
+      
+      // Find the index of the game being deleted in the sorted list
+      int deletedGameIndex = -1;
+      if (wasSelected) {
+        deletedGameIndex = availableGames.indexWhere((game) => game.id == gameId);
+      }
+      
+      // Delete from local database first (offline-first approach)
       await gamesBox.delete(gameId);
       
-      // Attempt to sync to Google Sheets if user is signed in
+      // Check connectivity and attempt immediate sync if online
       bool syncedToSheets = false;
-      if (await _sheetsService.isSignedIn()) {
-        // TODO: Implement method in SheetsService to sync deletion
-        // For now, we'll just call syncDataFromSheets() which syncs everything
-        final result = await _sheetsService.syncDataFromSheets();
-        syncedToSheets = result['success'] == true;
+      if (ConnectivityService().isOnline) {
+        syncedToSheets = await _sheetsService.deleteGame(gameId);
       }
       
       // Reload games list
       _loadGamesInternal();
+      
+      // Handle selection state after deletion
+      if (wasSelected) {
+        if (availableGames.isEmpty) {
+          // No games remain, clear selection and update screen state
+          _selectedGame = null;
+          _screenState = _ScreenState.noGamesFound;
+        } else {
+          // Auto-select the next available game
+          // Prioritize the next game in the sorted list (same index or previous if at end)
+          if (deletedGameIndex >= 0 && deletedGameIndex < availableGames.length) {
+            _selectedGame = availableGames[deletedGameIndex];
+          } else if (deletedGameIndex >= availableGames.length && availableGames.isNotEmpty) {
+            // Deleted game was at the end, select the last game
+            _selectedGame = availableGames.last;
+          } else {
+            // Fallback to first game
+            _selectedGame = availableGames.first;
+          }
+        }
+      }
+      
       if (mounted) setState(() {}); // Update UI with new list
       
       // Close the dialog
       Navigator.of(context).pop();
       
-      // Show success message
+      // Show success message with sync status
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             syncedToSheets
                 ? 'Game deleted and synced to Google Sheets'
-                : 'Game deleted locally',
+                : 'Game deleted locally (will sync when online)',
           ),
         ),
       );
@@ -545,6 +645,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     DateTime date,
     String opponent,
     String location,
+    String gameType,
   ) async {
     // Validate input
     if (opponent.isEmpty) {
@@ -559,8 +660,15 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     });
     
     try {
-      // Generate a unique ID for the game
-      final String gameId = const Uuid().v4();
+      // Generate a unique ID by finding the highest existing ID and incrementing
+      int maxId = 0;
+      for (var game in gamesBox.values) {
+        final gameIdInt = int.tryParse(game.id) ?? 0;
+        if (gameIdInt > maxId) {
+          maxId = gameIdInt;
+        }
+      }
+      final String gameId = (maxId + 1).toString();
       
       // Create a new Game object with the current team ID
       final Game newGame = Game(
@@ -569,34 +677,46 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
         opponent: opponent,
         location: location.isNotEmpty ? location : null,
         teamId: widget.teamId, // Set the team ID to the current team
+        gameType: gameType,
       );
       
-      // Save to local database
+      // Save to local database first (offline-first approach)
       await gamesBox.put(gameId, newGame);
       
-      // Attempt to sync to Google Sheets if user is signed in
+      // Check connectivity and attempt immediate sync if online
       bool syncedToSheets = false;
-      if (await _sheetsService.isSignedIn()) {
-        // TODO: Implement method in SheetsService to sync a single game
-        // For now, we'll just call syncDataFromSheets() which syncs everything
-        final result = await _sheetsService.syncDataFromSheets();
-        syncedToSheets = result['success'] == true;
+      if (ConnectivityService().isOnline) {
+        syncedToSheets = await _syncGameToSheets(newGame);
       }
       
       // Reload games list
       _loadGamesInternal();
+      
+      // Auto-select the newly created game
+      _selectedGame = availableGames.firstWhere(
+        (game) => game.id == gameId,
+        orElse: () => availableGames.isNotEmpty ? availableGames.first : newGame,
+      );
+      
+      // Update screen state if we now have games
+      if (availableGames.isNotEmpty && _screenState == _ScreenState.noGamesFound) {
+        _screenState = _screenState == _ScreenState.syncFailed 
+            ? _ScreenState.syncFailed 
+            : _ScreenState.dataLoaded;
+      }
+      
       if (mounted) setState(() {}); // Update UI with new list
       
       // Close the dialog
       Navigator.of(context).pop();
       
-      // Show success message
+      // Show success message with sync status
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             syncedToSheets
                 ? 'Game added and synced to Google Sheets'
-                : 'Game added locally',
+                : 'Game saved locally (will sync when online)',
           ),
         ),
       );
@@ -734,6 +854,11 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
         ],
       ),
       body: _buildBody(),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _isPerformingAsyncOperation ? null : () => _showAddGameDialog(context),
+        tooltip: 'Add New Game',
+        child: const Icon(Icons.add),
+      ),
     );
   }
 
@@ -801,7 +926,13 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
             if (availableGames.isEmpty && !_isPerformingAsyncOperation)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 20.0),
-                child: Text('No games available. Add a game to get started.', textAlign: TextAlign.center, style: const TextStyle(fontStyle: FontStyle.italic)),
+                child: Column(
+                  children: [
+                    Text('No games available. Add a game to get started.', textAlign: TextAlign.center, style: const TextStyle(fontStyle: FontStyle.italic)),
+                    const SizedBox(height: 16),
+                    Text('Tap the + button below to add your first game.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                  ],
+                ),
               )
             else
               ListView.builder(
@@ -834,58 +965,63 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
                           end: Alignment.bottomRight,
                         ) : null,
                       ),
-                      child: ListTile(
-                        title: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                gameTitle,
-                                style: TextStyle(
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                  color: isSelected ? Theme.of(context).primaryColor : null,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: _getGameTypeColor(game.gameType),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                _getGameTypeText(game.gameType),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        subtitle: game.location != null ? Text('at ${game.location}') : null,
-                        selected: isSelected,
+                      child: InkWell(
                         onTap: () {
                           setState(() {
                             _selectedGame = game;
                           });
                           _selectGameAndNavigate(); // Navigate immediately
                         },
-                        // trailing: Row( // Removed Edit and Delete buttons
-                        //   mainAxisSize: MainAxisSize.min,
-                        //   children: [
-                        //     IconButton(
-                        //       icon: const Icon(Icons.edit),
-                        //       tooltip: 'Edit Game',
-                        //       onPressed: _isPerformingAsyncOperation ? null : () => _showEditGameDialog(context, game),
-                        //     ),
-                        //     IconButton(
-                        //       icon: const Icon(Icons.delete),
-                        //       tooltip: 'Delete Game',
-                        //       onPressed: _isPerformingAsyncOperation ? null : () => _showDeleteGameDialog(context, game),
-                        //     ),
-                        //   ],
-                        // ),
+                        onLongPress: () {
+                          _showGameOptions(context, game);
+                        },
+                        child: ListTile(
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  gameTitle,
+                                  style: TextStyle(
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                    color: isSelected ? Theme.of(context).primaryColor : null,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _getGameTypeColor(game.gameType),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  _getGameTypeText(game.gameType),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: game.location != null ? Text('at ${game.location}') : null,
+                          selected: isSelected,
+                          // trailing: Row( // Removed Edit and Delete buttons
+                          //   mainAxisSize: MainAxisSize.min,
+                          //   children: [
+                          //     IconButton(
+                          //       icon: const Icon(Icons.edit),
+                          //       tooltip: 'Edit Game',
+                          //       onPressed: _isPerformingAsyncOperation ? null : () => _showEditGameDialog(context, game),
+                          //     ),
+                          //     IconButton(
+                          //       icon: const Icon(Icons.delete),
+                          //       tooltip: 'Delete Game',
+                          //       onPressed: _isPerformingAsyncOperation ? null : () => _showDeleteGameDialog(context, game),
+                          //     ),
+                          //   ],
+                          // ),
+                        ),
                       ),
                     ),
                   );

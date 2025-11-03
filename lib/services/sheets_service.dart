@@ -270,6 +270,147 @@ class SheetsService {
     }
   }
 
+  /// Syncs a single Game to Google Sheets
+  /// Creates a new row if the game doesn't exist, updates if it does
+  Future<bool> syncGame(Game game) async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot sync game: Authentication failed.');
+      return false;
+    }
+
+    // Check if game already exists in Google Sheets
+    final existingRowIndex = await _findGameRow(game.id);
+    
+    // Format the date as YYYY-MM-DD
+    String formattedDate = "${game.date.year}-${game.date.month.toString().padLeft(2, '0')}-${game.date.day.toString().padLeft(2, '0')}";
+
+    final List<Object> values = [
+      game.id,
+      formattedDate,
+      game.opponent,
+      game.location ?? '',
+      game.teamId,
+      game.gameType,
+    ];
+
+    final Map<String, dynamic> body = {
+      'values': [values],
+      'majorDimension': 'ROWS',
+    };
+
+    Map<String, dynamic>? result;
+    
+    if (existingRowIndex != -1) {
+      // Game already exists, update the existing row
+      print('Game ${game.id} already exists at row $existingRowIndex, updating');
+      result = await _makeRequest(
+        'PUT',
+        'values/Games!A$existingRowIndex:F$existingRowIndex?valueInputOption=USER_ENTERED',
+        body: body,
+      );
+      print('Updated existing game ${game.id} at row $existingRowIndex');
+    } else {
+      // Game doesn't exist, append new row
+      result = await _makeRequest(
+        'POST',
+        'values/Games!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+        body: body,
+      );
+      print('Created new game ${game.id}');
+    }
+
+    if (result != null) {
+      print('Successfully synced game ${game.id} to Google Sheets');
+      return true;
+    } else {
+      print('Failed to sync game ${game.id} to Google Sheets');
+      return false;
+    }
+  }
+
+  /// Helper method to find an existing game row in Google Sheets by game ID
+  Future<int> _findGameRow(String gameId) async {
+    try {
+      final result = await _makeRequest('GET', 'values/Games!A:A');
+      if (result == null) return -1;
+
+      final List<List<dynamic>> values = List<List<dynamic>>.from(result['values'] ?? []);
+      
+      // Search through all rows to find matching game ID
+      for (int i = 0; i < values.length; i++) {
+        final row = values[i];
+        if (row.isNotEmpty) {
+          final rowGameId = row[0]?.toString() ?? '';
+          
+          if (rowGameId == gameId) {
+            // Return 1-based row index for Google Sheets API
+            return i + 1;
+          }
+        }
+      }
+      
+      return -1; // Not found
+    } catch (e) {
+      print('Error finding Game row: $e');
+      return -1;
+    }
+  }
+
+  /// Deletes a game from Google Sheets by game ID
+  Future<bool> deleteGame(String gameId) async {
+    bool isAuthenticated = await ensureAuthenticated();
+    if (!isAuthenticated) {
+      print('Cannot delete game: Authentication failed.');
+      return false;
+    }
+
+    // Find the game row
+    final rowIndex = await _findGameRow(gameId);
+    if (rowIndex == -1) {
+      print('Game $gameId not found in Google Sheets');
+      return false; // Game doesn't exist, consider it a success
+    }
+
+    try {
+      // Get the Games sheet ID
+      final gamesSheetId = await _getSheetId('Games');
+      if (gamesSheetId == null) {
+        print('Could not find Games sheet ID');
+        return false;
+      }
+
+      // Delete the row using batchUpdate
+      final Map<String, dynamic> body = {
+        'requests': [
+          {
+            'deleteDimension': {
+              'range': {
+                'sheetId': gamesSheetId,
+                'dimension': 'ROWS',
+                'startIndex': rowIndex - 1, // Convert to 0-based indexing
+                'endIndex': rowIndex, // Exclusive end
+              }
+            }
+          }
+        ]
+      };
+
+      final result = await _makeRequest('POST', ':batchUpdate', body: body);
+      
+      if (result != null) {
+        print('Successfully deleted game $gameId from Google Sheets');
+        return true;
+      } else {
+        print('Failed to delete game $gameId from Google Sheets');
+        return false;
+      }
+    } catch (e) {
+      print('Error deleting game from Google Sheets: $e');
+      return false;
+    }
+  }
+
   Future<bool> syncGameRoster(GameRoster roster) async {
     bool isAuthenticated = await ensureAuthenticated();
     if (!isAuthenticated) {
