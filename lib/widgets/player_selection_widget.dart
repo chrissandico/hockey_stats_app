@@ -534,7 +534,41 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
 
   Future<void> _saveLineConfiguration() async {
     if (_currentGameId != null) {
-      await _lineService.saveLineConfiguration(_currentGameId!);
+      try {
+        await _lineService.saveLineConfiguration(_currentGameId!);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Lineup saved successfully'),
+              duration: Duration(seconds: 2),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error saving lineup: $e'),
+              duration: Duration(seconds: 3),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+  
+  void _resetToSavedConfiguration() {
+    _lineService.resetToSavedConfiguration();
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reset to last saved lineup'),
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -599,7 +633,7 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
       }
     });
     
-    _saveLineConfiguration();
+    // No longer auto-save on every drag - only save when user clicks Save button
   }
 
   void _removePlayerFromLines(Player player) {
@@ -1056,6 +1090,9 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     if (widget.selectedAssist1 != null) assistCount++;
     if (widget.selectedAssist2 != null) assistCount++;
     
+    // Check if there are unsaved changes
+    final hasUnsavedChanges = _lineService.hasUnsavedChanges();
+    
     return Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12.0),
@@ -1138,19 +1175,46 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
             
             const SizedBox(height: 6),
             
-            // Clear skaters button (icon-only) - preserves goalie
+            // Action buttons row
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                // Unsaved changes indicator
+                if (hasUnsavedChanges) ...[
+                  const Icon(Icons.circle, size: 8, color: Colors.orange),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Unsaved',
+                    style: TextStyle(fontSize: 10, color: Colors.orange),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                // Reset button
                 IconButton(
                   icon: const Icon(Icons.refresh, size: 18),
-                  tooltip: 'Reset Lines to Default',
+                  tooltip: 'Reset to Last Saved Lineup',
                   style: IconButton.styleFrom(
                     padding: const EdgeInsets.all(4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  onPressed: _resetLineConfiguration,
+                  onPressed: _resetToSavedConfiguration,
+                ),
+                const SizedBox(width: 4),
+                // Save button
+                IconButton(
+                  icon: Icon(
+                    Icons.save,
+                    size: 18,
+                    color: hasUnsavedChanges ? Colors.blue : Colors.grey,
+                  ),
+                  tooltip: 'Save Current Lineup',
+                  style: IconButton.styleFrom(
+                    padding: const EdgeInsets.all(4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: _saveLineConfiguration,
                 ),
               ],
             ),

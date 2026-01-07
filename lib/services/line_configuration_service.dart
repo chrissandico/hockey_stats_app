@@ -12,13 +12,21 @@ class LineConfigurationService {
   
   LineConfigurationService._internal();
 
-  // Current line configurations - now dynamic
+  // Working line configurations (modified during drag/drop)
   List<List<Player?>> _forwardLines = [];
   List<List<Player?>> _defenseLines = [];
 
-  // Getters for current configurations
+  // Saved line configurations (last explicitly saved state)
+  List<List<Player?>> _savedForwardLines = [];
+  List<List<Player?>> _savedDefenseLines = [];
+
+  // Getters for current working configurations
   List<List<Player?>> get forwardLines => _forwardLines;
   List<List<Player?>> get defenseLines => _defenseLines;
+  
+  // Getters for saved configurations
+  List<List<Player?>> get savedForwardLines => _savedForwardLines;
+  List<List<Player?>> get savedDefenseLines => _savedDefenseLines;
 
   /// Calculate required number of forward lines based on player count
   int _calculateForwardLineCount(int forwardCount) {
@@ -90,8 +98,8 @@ class LineConfigurationService {
       initializeLines(players);
       
       final prefs = await SharedPreferences.getInstance();
-      final forwardConfig = prefs.getString('forward_lines_$gameId');
-      final defenseConfig = prefs.getString('defense_lines_$gameId');
+      final forwardConfig = prefs.getString('saved_forward_lines_$gameId');
+      final defenseConfig = prefs.getString('saved_defense_lines_$gameId');
       
       if (forwardConfig != null) {
         final List<dynamic> config = json.decode(forwardConfig);
@@ -132,14 +140,18 @@ class LineConfigurationService {
           }
         }
       }
+      
+      // Copy loaded configuration to saved state
+      _copyWorkingToSaved();
     } catch (e) {
       print('Error loading line configuration: $e');
       // Fall back to default initialization if loading fails
       initializeLines(players);
+      _copyWorkingToSaved();
     }
   }
 
-  /// Save line configuration to persistent storage
+  /// Save current working line configuration to persistent storage
   Future<void> saveLineConfiguration(String gameId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -148,16 +160,63 @@ class LineConfigurationService {
       final forwardConfig = _forwardLines.map((line) => 
         line.map((player) => player?.id).toList()
       ).toList();
-      await prefs.setString('forward_lines_$gameId', json.encode(forwardConfig));
+      await prefs.setString('saved_forward_lines_$gameId', json.encode(forwardConfig));
       
       // Save defense lines
       final defenseConfig = _defenseLines.map((line) => 
         line.map((player) => player?.id).toList()
       ).toList();
-      await prefs.setString('defense_lines_$gameId', json.encode(defenseConfig));
+      await prefs.setString('saved_defense_lines_$gameId', json.encode(defenseConfig));
+      
+      // Update saved state in memory
+      _copyWorkingToSaved();
+      
+      print('Line configuration saved for game $gameId');
     } catch (e) {
       print('Error saving line configuration: $e');
+      rethrow;
     }
+  }
+  
+  /// Copy working configuration to saved configuration (in memory)
+  void _copyWorkingToSaved() {
+    _savedForwardLines = _forwardLines.map((line) => List<Player?>.from(line)).toList();
+    _savedDefenseLines = _defenseLines.map((line) => List<Player?>.from(line)).toList();
+  }
+  
+  /// Copy saved configuration to working configuration (restore)
+  void _copySavedToWorking() {
+    _forwardLines = _savedForwardLines.map((line) => List<Player?>.from(line)).toList();
+    _defenseLines = _savedDefenseLines.map((line) => List<Player?>.from(line)).toList();
+  }
+  
+  /// Reset working configuration to last saved state
+  void resetToSavedConfiguration() {
+    _copySavedToWorking();
+    print('Reset to last saved configuration');
+  }
+  
+  /// Check if current working configuration differs from saved configuration
+  bool hasUnsavedChanges() {
+    // Compare forward lines
+    if (_forwardLines.length != _savedForwardLines.length) return true;
+    for (int i = 0; i < _forwardLines.length; i++) {
+      if (_forwardLines[i].length != _savedForwardLines[i].length) return true;
+      for (int j = 0; j < _forwardLines[i].length; j++) {
+        if (_forwardLines[i][j]?.id != _savedForwardLines[i][j]?.id) return true;
+      }
+    }
+    
+    // Compare defense lines
+    if (_defenseLines.length != _savedDefenseLines.length) return true;
+    for (int i = 0; i < _defenseLines.length; i++) {
+      if (_defenseLines[i].length != _savedDefenseLines[i].length) return true;
+      for (int j = 0; j < _defenseLines[i].length; j++) {
+        if (_defenseLines[i][j]?.id != _savedDefenseLines[i][j]?.id) return true;
+      }
+    }
+    
+    return false;
   }
 
   /// Update a specific position in the line configuration
@@ -248,10 +307,10 @@ class LineConfigurationService {
     try {
       print('Resetting line configuration for game $gameId using Google Sheets data');
       
-      // Step 1: Clear corrupted saved configuration
+      // Step 1: Clear saved configuration
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('forward_lines_$gameId');
-      await prefs.remove('defense_lines_$gameId');
+      await prefs.remove('saved_forward_lines_$gameId');
+      await prefs.remove('saved_defense_lines_$gameId');
       print('Cleared saved configuration from SharedPreferences');
       
       // Step 2: Reinitialize with Google Sheets data (via currentPlayers)
