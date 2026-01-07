@@ -594,46 +594,45 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
   }
 
   void _handlePlayerDropped(Player player, LinePosition position) {
-    setState(() {
-      // Find the current position of the dragged player
-      LinePosition? currentPosition = _findPlayerPosition(player);
-      
-      // Check if there's already a player in the target position
-      List<List<Player?>> targetLines = position.positionType == 'forward' 
-          ? _lineService.forwardLines 
-          : _lineService.defenseLines;
-      Player? existingPlayer = targetLines[position.lineIndex][position.positionIndex];
-      
-      // Remove the dragged player from their current position
-      _lineService.removePlayerFromLines(player);
-      
-      // Place the dragged player in the target position
-      _lineService.updatePosition(position.positionType, position.lineIndex, position.positionIndex, player);
-      
-      // If there was a player in the target position, swap them to the dragged player's original position
-      if (existingPlayer != null && currentPosition != null) {
-        // Place the displaced player in the dragged player's original position
-        _lineService.updatePosition(currentPosition.positionType, currentPosition.lineIndex, currentPosition.positionIndex, existingPlayer);
-      } else if (existingPlayer != null) {
-        // If we couldn't find the original position, find any empty spot for the displaced player
-        // Try to place in appropriate position type first (forward for forward, defense for defense)
-        final isForward = existingPlayer.position == 'C' || 
-                         existingPlayer.position == 'LW' || 
-                         existingPlayer.position == 'RW' ||
-                         existingPlayer.position == 'F';
-        final preferredPositionType = isForward ? 'forward' : 'defense';
-        
-        _lineService.findEmptySpotForPlayer(existingPlayer, preferredPositionType);
-        
-        // If no spot found in preferred type, try the other type (since we now allow flexibility)
-        if (!_isPlayerInLines(existingPlayer)) {
-          final alternatePositionType = isForward ? 'defense' : 'forward';
-          _lineService.findEmptySpotForPlayer(existingPlayer, alternatePositionType);
-        }
-      }
-    });
+    // Find the current position of the dragged player
+    LinePosition? currentPosition = _findPlayerPosition(player);
     
-    // No longer auto-save on every drag - only save when user clicks Save button
+    // Check if there's already a player in the target position
+    List<List<Player?>> targetLines = position.positionType == 'forward' 
+        ? _lineService.forwardLines 
+        : _lineService.defenseLines;
+    Player? existingPlayer = targetLines[position.lineIndex][position.positionIndex];
+    
+    // Remove the dragged player from their current position
+    _lineService.removePlayerFromLines(player);
+    
+    // Place the dragged player in the target position
+    _lineService.updatePosition(position.positionType, position.lineIndex, position.positionIndex, player);
+    
+    // If there was a player in the target position, swap them to the dragged player's original position
+    if (existingPlayer != null && currentPosition != null) {
+      // Place the displaced player in the dragged player's original position
+      _lineService.updatePosition(currentPosition.positionType, currentPosition.lineIndex, currentPosition.positionIndex, existingPlayer);
+    } else if (existingPlayer != null) {
+      // If we couldn't find the original position, find any empty spot for the displaced player
+      // Try to place in appropriate position type first (forward for forward, defense for defense)
+      final isForward = existingPlayer.position == 'C' || 
+                       existingPlayer.position == 'LW' || 
+                       existingPlayer.position == 'RW' ||
+                       existingPlayer.position == 'F';
+      final preferredPositionType = isForward ? 'forward' : 'defense';
+      
+      _lineService.findEmptySpotForPlayer(existingPlayer, preferredPositionType);
+      
+      // If no spot found in preferred type, try the other type (since we now allow flexibility)
+      if (!_isPlayerInLines(existingPlayer)) {
+        final alternatePositionType = isForward ? 'defense' : 'forward';
+        _lineService.findEmptySpotForPlayer(existingPlayer, alternatePositionType);
+      }
+    }
+    
+    // Trigger rebuild to update unsaved changes indicator
+    setState(() {});
   }
 
   void _removePlayerFromLines(Player player) {
