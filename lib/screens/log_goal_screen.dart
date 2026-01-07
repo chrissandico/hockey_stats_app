@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
+import 'package:hockey_stats_app/services/background_sync_service.dart';
 import 'package:hockey_stats_app/widgets/goal_situation_dialog.dart';
 import 'package:hockey_stats_app/widgets/player_selection_widget.dart';
 
@@ -330,6 +331,18 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
 
     // Check for special situations and show confirmation dialog
     if (_isGoal && _selectedYourTeamPlayersOnIce.length < 5) {
+      // If neither power play nor penalty kill is selected, don't allow logging
+      if (!_isPowerPlay && !_isPenaltyKill) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('You must select either Power Play or Penalty Kill when logging a goal with fewer than 5 players on ice.'),
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+      
       final detectedSituation = _detectGoalSituation();
       
       bool? confirmed = await showDialog<bool>(
@@ -385,64 +398,16 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
         print('  ID: ${savedEvent?.id}');
         print('  IsGoal: ${savedEvent?.isGoal}');
         
-        bool syncSuccess = false;
-        String syncError = '';
-        try {
-          syncSuccess = await _sheetsService.updateEventInSheet(eventToProcess);
-          if (!syncSuccess) {
-            syncError = "Sync failed - please try again later.";
-          }
-        } catch (error) {
-          syncError = error.toString();
-          print("Error during sync for updated event: $error");
-        }
+        // Queue for background sync instead of immediate sync
+        final backgroundSyncService = BackgroundSyncService();
+        backgroundSyncService.queueEventForSync(eventToProcess);
 
         if (!mounted) return;
 
-        if (syncSuccess) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$successMessage and synced.')),
-          );
-          Navigator.pop(context);
-        } else {
-          // Check if the error is due to being offline
-          String message;
-          Color? backgroundColor;
-          Widget? icon;
-          SnackBarAction? action;
-          
-          if (syncError.toLowerCase().contains('offline') || 
-              syncError.toLowerCase().contains('connection') ||
-              syncError.toLowerCase().contains('network') ||
-              syncError.toLowerCase().contains('retry when online')) {
-            message = 'Goal updated successfully! Your changes will automatically sync when your device is back online.';
-            backgroundColor = Colors.blue;
-            icon = const Icon(Icons.info_outline, color: Colors.white, size: 20);
-          } else {
-            message = 'Shot updated locally but sync failed: $syncError';
-            action = SnackBarAction(
-              label: 'Retry Sync',
-              onPressed: _logShot,
-            );
-          }
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  if (icon != null) ...[
-                    icon,
-                    const SizedBox(width: 8),
-                  ],
-                  Expanded(child: Text(message)),
-                ],
-              ),
-              backgroundColor: backgroundColor,
-              duration: Duration(seconds: backgroundColor != null ? 4 : 5),
-              action: action,
-            ),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$successMessage. Syncing in background...')),
+        );
+        Navigator.pop(context);
 
       } else {
         print('Creating new shot event:');
@@ -480,59 +445,16 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
         print('  ID: ${savedEvent?.id}');
         print('  IsGoal: ${savedEvent?.isGoal}');
 
-        bool syncSuccess = false;
-        String syncError = '';
-        try {
-          syncSuccess = await _sheetsService.syncGameEvent(eventToProcess);
-          if (!syncSuccess) {
-            syncError = "Sync failed - please try again later.";
-          }
-        } catch (error) {
-          syncError = error.toString();
-          print("Error during sync for new event: $error");
-        }
+        // Queue for background sync instead of immediate sync
+        final backgroundSyncService = BackgroundSyncService();
+        backgroundSyncService.queueEventForSync(eventToProcess);
 
         if (!mounted) return;
 
-        if (syncSuccess) {
-          Navigator.pop(context, _selectedPeriod);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$successMessage and synced.')),
-          );
-        } else {
-          // Check if the error is due to being offline
-          String message;
-          Color? backgroundColor;
-          Widget? icon;
-          
-          if (syncError.toLowerCase().contains('offline') || 
-              syncError.toLowerCase().contains('connection') ||
-              syncError.toLowerCase().contains('network') ||
-              syncError.toLowerCase().contains('retry when online')) {
-            message = 'Goal logged successfully! Your changes will automatically sync when your device is back online.';
-            backgroundColor = Colors.blue;
-            icon = const Icon(Icons.info_outline, color: Colors.white, size: 20);
-          } else {
-            message = 'Shot saved locally - will sync when online';
-          }
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  if (icon != null) ...[
-                    icon,
-                    const SizedBox(width: 8),
-                  ],
-                  Expanded(child: Text(message)),
-                ],
-              ),
-              backgroundColor: backgroundColor,
-              duration: Duration(seconds: backgroundColor != null ? 4 : 3),
-            ),
-          );
-          Navigator.pop(context, _selectedPeriod);
-        }
+        Navigator.pop(context, _selectedPeriod);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$successMessage. Syncing in background...')),
+        );
       }
 
     } catch (e) {
@@ -606,28 +528,26 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                         ],
                       ),
                       value: tempSelectedPlayers.contains(player),
-                      onChanged: isAbsent 
-                          ? null  // Disable checkbox for absent players
-                          : (bool? value) {
-                              setState(() {
-                                if (value == true) {
-                                  if (!tempSelectedPlayers.contains(player)) {
-                                    if (tempSelectedPlayers.length < 5) {
-                                      tempSelectedPlayers.add(player);
-                                    } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Maximum 5 players can be selected'),
-                                          duration: Duration(seconds: 2),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                } else {
-                                  tempSelectedPlayers.remove(player);
-                                }
-                              });
-                            },
+                      onChanged: (bool? value) {
+                        setState(() {
+                          if (value == true) {
+                            if (!tempSelectedPlayers.contains(player)) {
+                              if (tempSelectedPlayers.length < 5) {
+                                tempSelectedPlayers.add(player);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Maximum 5 players can be selected'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            }
+                          } else {
+                            tempSelectedPlayers.remove(player);
+                          }
+                        });
+                      },
                     );
                   }).toList(),
                 ),
@@ -855,24 +775,13 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (isAbsent)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 16.0),
-                  child: Text(
-                    'This player is marked as absent and cannot be selected.',
-                    style: TextStyle(
-                      color: Colors.red,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ),
               ListTile(
                 leading: const Icon(Icons.sports_hockey, color: Colors.blue),
                 title: const Text('On Ice'),
                 trailing: Switch(
                   value: isOnIce,
                   activeColor: Colors.blue,
-                  onChanged: isAbsent ? null : (value) {
+                  onChanged: (value) {
                     setState(() {
                       if (value) {
                         if (_selectedYourTeamPlayersOnIce.length < 5) {
@@ -899,7 +808,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                 trailing: Switch(
                   value: isShooter,
                   activeColor: Colors.green,
-                  onChanged: isAbsent ? null : (value) {
+                  onChanged: (value) {
                     setState(() {
                       if (value) {
                         _selectedShooter = player;
@@ -917,7 +826,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                 trailing: Switch(
                   value: isAssist,
                   activeColor: Colors.orange,
-                  onChanged: isAbsent ? null : (value) {
+                  onChanged: (value) {
                     setState(() {
                       if (value) {
                         _selectedAssist1 = player;

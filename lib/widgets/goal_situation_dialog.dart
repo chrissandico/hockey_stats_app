@@ -48,47 +48,23 @@ class GoalSituationDialog extends StatelessWidget {
     }
   }
 
-  IconData _getSituationIcon(GoalSituation situation) {
-    switch (situation) {
-      case GoalSituation.powerPlay:
-        return Icons.trending_up;
-      case GoalSituation.shortHanded:
-        return Icons.trending_down;
-      case GoalSituation.evenStrength:
-        return Icons.balance;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final situationName = _getSituationName(detectedSituation);
     final situationDescription = _getSituationDescription(detectedSituation);
     final situationColor = _getSituationColor(detectedSituation);
-    final situationIcon = _getSituationIcon(detectedSituation);
 
     return AlertDialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16.0),
       ),
-      title: Row(
-        children: [
-          Icon(
-            situationIcon,
-            color: situationColor,
-            size: 28,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              '$situationName Goal Detected',
-              style: TextStyle(
-                color: situationColor,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-          ),
-        ],
+      title: Text(
+        '$situationName Goal Detected',
+        style: TextStyle(
+          color: situationColor,
+          fontWeight: FontWeight.bold,
+          fontSize: 18,
+        ),
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -104,24 +80,12 @@ class GoalSituationDialog extends StatelessWidget {
                 width: 1,
               ),
             ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  color: situationColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'You selected $playerCount players on ice',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: situationColor,
-                    ),
-                  ),
-                ),
-              ],
+            child: Text(
+              'You selected $playerCount players on ice',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: situationColor,
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -153,24 +117,12 @@ class GoalSituationDialog extends StatelessWidget {
                 width: 1,
               ),
             ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.help_outline,
-                  color: Colors.blue,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Is this correct?',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.blue.shade700,
-                    ),
-                  ),
-                ),
-              ],
+            child: Text(
+              'Is this correct?',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.blue.shade700,
+              ),
             ),
           ),
         ],

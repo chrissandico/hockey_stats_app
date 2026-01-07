@@ -204,6 +204,18 @@ class BackgroundSyncService {
   
   /// Queue an event for background sync with batching for better performance
   void queueEventForSync(GameEvent event, {Duration? delay}) {
+    // Check if event is already being synced to prevent duplicates
+    if (_syncingEventIds.contains(event.id)) {
+      print('BackgroundSyncService: Event ${event.id} is already being synced, skipping duplicate');
+      return;
+    }
+    
+    // Check if event is already in the pending batch
+    if (_pendingEventBatch.any((e) => e.id == event.id)) {
+      print('BackgroundSyncService: Event ${event.id} is already in pending batch, skipping duplicate');
+      return;
+    }
+    
     print('BackgroundSyncService: Queuing event ${event.id} for batched sync');
     
     // If online, add to batch for efficient processing

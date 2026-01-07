@@ -339,17 +339,6 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   }
   
   void _togglePlayerOnIce(Player player) {
-    // Don't allow selecting absent players
-    if (_isPlayerAbsent(player)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot select absent player'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-    
     setState(() {
       if (_selectedPlayersOnIce.contains(player)) {
         _selectedPlayersOnIce.remove(player);
@@ -1116,6 +1105,17 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                               if (value != null && value is int) {
                                 setState(() {
                                   _selectedPeriod = value;
+                                  // Clear goal scorer and assist selections after logging
+                                  _selectedGoalScorer = null;
+                                  _selectedAssist = null;
+                                  _selectedAssist2 = null;
+                                });
+                              } else {
+                                setState(() {
+                                  // Clear goal scorer and assist selections after logging
+                                  _selectedGoalScorer = null;
+                                  _selectedAssist = null;
+                                  _selectedAssist2 = null;
                                 });
                               }
                             });
@@ -1174,6 +1174,19 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                               if (value != null && value is int) {
                                 setState(() {
                                   _selectedPeriod = value;
+                                  // Clear all player selections after logging penalty
+                                  _selectedGoalScorer = null;
+                                  _selectedAssist = null;
+                                  _selectedAssist2 = null;
+                                  _selectedPlayersOnIce.clear();
+                                });
+                              } else {
+                                setState(() {
+                                  // Clear all player selections after logging penalty
+                                  _selectedGoalScorer = null;
+                                  _selectedAssist = null;
+                                  _selectedAssist2 = null;
+                                  _selectedPlayersOnIce.clear();
                                 });
                               }
                             });
@@ -1509,7 +1522,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 final positionLabel = isForward ? 'F' : 'D';
                 
                 return InkWell(
-                  onTap: isAbsent ? null : () => _togglePlayerOnIce(player),
+                  onTap: () => _togglePlayerOnIce(player),
                   child: Container(
                     decoration: BoxDecoration(
                       color: isAbsent 

@@ -560,16 +560,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
   }
 
   void _handlePlayerDropped(Player player, LinePosition position) {
-    if (_isPlayerAbsent(player)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot move absent player'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
     setState(() {
       // Find the current position of the dragged player
       LinePosition? currentPosition = _findPlayerPosition(player);
@@ -689,16 +679,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
   }
 
   void _handlePlayerTap(Player player) {
-    if (_isPlayerAbsent(player)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cannot select absent player'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
     final isGoalie = _isGoalie(player);
     
     if (isGoalie) {

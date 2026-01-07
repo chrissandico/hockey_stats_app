@@ -502,28 +502,26 @@ class _LogShotScreenState extends State<LogShotScreen> {
                         ],
                       ),
                       value: tempSelectedPlayers.contains(player),
-                      onChanged: isAbsent 
-                          ? null  // Disable checkbox for absent players
-                          : (bool? value) {
-                              setState(() {
-                                if (value == true) {
-                                  if (!tempSelectedPlayers.contains(player)) {
-                                    if (tempSelectedPlayers.length < 5) {
-                                      tempSelectedPlayers.add(player);
-                                    } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Maximum 5 players can be selected'),
-                                          duration: Duration(seconds: 2),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                } else {
-                                  tempSelectedPlayers.remove(player);
-                                }
-                              });
-                            },
+                      onChanged: (bool? value) {
+                        setState(() {
+                          if (value == true) {
+                            if (!tempSelectedPlayers.contains(player)) {
+                              if (tempSelectedPlayers.length < 5) {
+                                tempSelectedPlayers.add(player);
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Maximum 5 players can be selected'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              }
+                            }
+                          } else {
+                            tempSelectedPlayers.remove(player);
+                          }
+                        });
+                      },
                     );
                   }).toList(),
                 ),
@@ -761,24 +759,13 @@ class _LogShotScreenState extends State<LogShotScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (isAbsent)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 16.0),
-                  child: Text(
-                    'This player is marked as absent and cannot be selected.',
-                    style: TextStyle(
-                      color: Colors.red,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ),
               ListTile(
                 leading: const Icon(Icons.sports_hockey, color: Colors.blue),
                 title: const Text('On Ice'),
                 trailing: Switch(
                   value: isOnIce,
                   activeColor: Colors.blue,
-                  onChanged: isAbsent ? null : (value) {
+                  onChanged: (value) {
                     setState(() {
                       if (value) {
                         if (_selectedYourTeamPlayersOnIce.length < 5) {
@@ -805,7 +792,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
                 trailing: Switch(
                   value: isShooter,
                   activeColor: Colors.green,
-                  onChanged: isAbsent ? null : (value) {
+                  onChanged: (value) {
                     setState(() {
                       if (value) {
                         _selectedShooter = player;
@@ -823,7 +810,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
                 trailing: Switch(
                   value: isAssist,
                   activeColor: Colors.orange,
-                  onChanged: isAbsent ? null : (value) {
+                  onChanged: (value) {
                     setState(() {
                       if (value) {
                         _selectedAssist1 = player;

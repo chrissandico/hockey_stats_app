@@ -4,6 +4,7 @@ import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/screens/view_stats_screen.dart';
 import 'package:uuid/uuid.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import the service
+import 'package:hockey_stats_app/services/background_sync_service.dart';
 
 class LogPenaltyScreen extends StatefulWidget {
   final String gameId;
@@ -276,82 +277,29 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       // Save to Hive
       await gameEventsBox.put(penaltyEvent.id, penaltyEvent);
 
-      // Attempt sync to Google Sheets and wait for result
-      bool syncSuccess = false;
-      String syncError = '';
-      try {
-        if (isEditing) {
-          syncSuccess = await _sheetsService.updateEventInSheet(penaltyEvent);
-        } else {
-          syncSuccess = await _sheetsService.syncGameEvent(penaltyEvent);
-        }
-        
-        if (syncSuccess) {
-          print("Penalty event ${penaltyEvent.id} ${isEditing ? 'updated' : 'synced'} successfully.");
-        } else {
-          syncError = "Sync failed - please try again later.";
-          print("Penalty event ${penaltyEvent.id} sync failed.");
-        }
-      } catch (error) {
-        syncError = error.toString();
-        print("Error during sync for penalty event ${penaltyEvent.id}: $error");
-      }
+      // Queue for background sync instead of immediate sync
+      final backgroundSyncService = BackgroundSyncService();
+      backgroundSyncService.queueEventForSync(penaltyEvent);
 
       // If all operations are successful
       if (!mounted) return;
 
-      if (syncSuccess) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Penalty ${isEditing ? 'updated' : 'logged'} and synced for #${_selectedPlayer!.jerseyNumber}.')),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Penalty ${isEditing ? 'updated' : 'logged'} for #${_selectedPlayer!.jerseyNumber}. Syncing in background...')),
+      );
 
-        // Clear the form only if creating new penalty
-        if (!isEditing) {
-          setState(() {
-            _selectedPlayer = null;
-            _penaltyType = null;
-            _penaltyDuration = null;
-            _isLogging = false;
-          });
-        }
-        
-        // Navigate back
-        Navigator.pop(context, _selectedPeriod);
-      } else {
-        // Check if the error is due to being offline
-        String message;
-        Color? backgroundColor;
-        Widget? icon;
-        
-        if (syncError.toLowerCase().contains('offline') || 
-            syncError.toLowerCase().contains('connection') ||
-            syncError.toLowerCase().contains('network') ||
-            syncError.toLowerCase().contains('retry when online')) {
-          message = 'Penalty ${isEditing ? 'updated' : 'logged'} successfully! Your changes will automatically sync when your device is back online.';
-          backgroundColor = Colors.blue;
-          icon = const Icon(Icons.info_outline, color: Colors.white, size: 20);
-        } else {
-          message = 'Penalty ${isEditing ? 'updated' : 'saved'} locally - will sync when online';
-        }
-        
-        Navigator.pop(context, _selectedPeriod);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                if (icon != null) ...[
-                  icon,
-                  const SizedBox(width: 8),
-                ],
-                Expanded(child: Text(message)),
-              ],
-            ),
-            backgroundColor: backgroundColor,
-            duration: Duration(seconds: backgroundColor != null ? 4 : 3),
-          ),
-        );
-        setState(() { _isLogging = false; });
+      // Clear the form only if creating new penalty
+      if (!isEditing) {
+        setState(() {
+          _selectedPlayer = null;
+          _penaltyType = null;
+          _penaltyDuration = null;
+          _isLogging = false;
+        });
       }
+      
+      // Navigate back
+      Navigator.pop(context, _selectedPeriod);
 
     } catch (e) {
       if (!mounted) return;

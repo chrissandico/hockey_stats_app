@@ -387,6 +387,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     final TextEditingController locationController = TextEditingController(text: game.location ?? '');
     
     DateTime selectedDate = game.date; // Initial date
+    String selectedGameType = game.gameType; // Initial game type
 
     showDialog(
       context: context,
@@ -424,47 +425,69 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
                     ),
                     const SizedBox(height: 16),
                     
-                // Opponent field
-                TextField(
-                  controller: opponentController,
-                  decoration: const InputDecoration( // const added
-                    labelText: 'Opponent',
-                    hintText: 'Enter opponent team name',
-                  ),
+                    // Opponent field
+                    TextField(
+                      controller: opponentController,
+                      decoration: const InputDecoration( // const added
+                        labelText: 'Opponent',
+                        hintText: 'Enter opponent team name',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Game type dropdown
+                    DropdownButtonFormField<String>(
+                      value: selectedGameType,
+                      decoration: const InputDecoration(
+                        labelText: 'Game Type',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'R', child: Text('Regular Season')),
+                        DropdownMenuItem(value: 'E', child: Text('Exhibition')),
+                        DropdownMenuItem(value: 'T', child: Text('Tournament')),
+                      ],
+                      onChanged: (String? newValue) {
+                        if (newValue != null) {
+                          setStateDialog(() {
+                            selectedGameType = newValue;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Location field
+                    TextField(
+                      controller: locationController,
+                      decoration: const InputDecoration( // const added
+                        labelText: 'Location (optional)',
+                        hintText: 'Enter game location',
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                
-                // Location field
-                TextField(
-                  controller: locationController,
-                  decoration: const InputDecoration( // const added
-                    labelText: 'Location (optional)',
-                    hintText: 'Enter game location',
-                  ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(), // Use dialogContext
+                  child: const Text('Cancel'), // const added
+                ),
+                TextButton(
+                  onPressed: () {
+                    _updateGame(
+                      context, // This context should be the original _showEditGameDialog context
+                      game.id,
+                      selectedDate,
+                      opponentController.text,
+                      locationController.text,
+                      selectedGameType,
+                    );
+                    // Navigator.of(dialogContext).pop(); // Pop is handled in _updateGame on success
+                  },
+                  child: const Text('Save'), // const added
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(), // Use dialogContext
-              child: const Text('Cancel'), // const added
-            ),
-            TextButton(
-              onPressed: () {
-                _updateGame(
-                  context, // This context should be the original _showEditGameDialog context
-                  game.id,
-                  selectedDate,
-                  opponentController.text,
-                  locationController.text,
-                );
-                // Navigator.of(dialogContext).pop(); // Pop is handled in _updateGame on success
-              },
-              child: const Text('Save'), // const added
-            ),
-          ],
-        );
+            );
           },
         );
       },
@@ -502,6 +525,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     DateTime date,
     String opponent,
     String location,
+    String gameType,
   ) async {
     // Validate input
     if (opponent.isEmpty) {
@@ -523,6 +547,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
         opponent: opponent,
         location: location.isNotEmpty ? location : null,
         teamId: widget.teamId, // Set the team ID to the current team
+        gameType: gameType,
       );
       
       // Update in local database first (offline-first approach)

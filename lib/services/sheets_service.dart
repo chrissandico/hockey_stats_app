@@ -28,6 +28,10 @@ class SheetsService {
   
   // Cache authentication status for better performance
   static const Duration _authCacheValidDuration = Duration(minutes: 10);
+  
+  // Sync locks to prevent duplicate syncs
+  final Set<String> _syncingEventIds = <String>{};
+  final Set<String> _syncingGameIds = <String>{};
 
   /// Initialize the service with service account authentication
   Future<void> _initialize() async {
@@ -200,73 +204,87 @@ class SheetsService {
   }
 
   Future<bool> syncGameEvent(GameEvent event) async {
-    bool isAuthenticated = await ensureAuthenticated();
-    if (!isAuthenticated) {
-      print('Cannot sync event: Authentication failed.');
+    // Check if event is already being synced
+    if (_syncingEventIds.contains(event.id)) {
+      print('Event ${event.id} is already being synced, skipping duplicate sync attempt');
       return false;
     }
-
-    // Check if event already exists in Google Sheets to prevent duplicates
-    final existingRowIndex = await _findEventRow(event.id);
     
-    // Format the timestamp in a more readable format: YYYY-MM-DD HH:MM:SS
-    String formattedTimestamp = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}-${event.timestamp.day.toString().padLeft(2, '0')} ${event.timestamp.hour.toString().padLeft(2, '0')}:${event.timestamp.minute.toString().padLeft(2, '0')}:${event.timestamp.second.toString().padLeft(2, '0')}";
-
-    final List<Object> values = [
-      event.id,
-      event.gameId,
-      formattedTimestamp,
-      event.period,
-      event.eventType,
-      event.team,
-      event.primaryPlayerId,
-      event.assistPlayer1Id ?? '',
-      event.assistPlayer2Id ?? '',
-      event.isGoal ?? false,
-      _goalSituationToString(event.goalSituation),
-      event.penaltyType ?? '',
-      event.penaltyDuration ?? 0,
-      event.yourTeamPlayersOnIce?.join(',') ?? '',
-      event.goalieOnIceId ?? '',
-    ];
-
-    final Map<String, dynamic> body = {
-      'values': [values],
-      'majorDimension': 'ROWS',
-    };
-
-    Map<String, dynamic>? result;
+    // Add to syncing set
+    _syncingEventIds.add(event.id);
     
-    if (existingRowIndex != -1) {
-      // Event already exists, update the existing row instead of creating duplicate
-      print('Event ${event.id} already exists at row $existingRowIndex, updating instead of creating duplicate');
-      result = await _makeRequest(
-        'PUT',
-        'values/Events!A$existingRowIndex:O$existingRowIndex?valueInputOption=USER_ENTERED',
-        body: body,
-      );
-      print('Updated existing event ${event.id} at row $existingRowIndex');
-    } else {
-      // Event doesn't exist, append new row
-      result = await _makeRequest(
-        'POST',
-        'values/Events!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
-        body: body,
-      );
-      print('Created new event ${event.id}');
-    }
-
-    if (result != null) {
-      print('Successfully synced event ${event.id}');
-      // Immediately update the sync status to prevent race conditions
-      if (event.isInBox) {
-        event.isSynced = true;
-        await event.save();
+    try {
+      bool isAuthenticated = await ensureAuthenticated();
+      if (!isAuthenticated) {
+        print('Cannot sync event: Authentication failed.');
+        return false;
       }
-      return true;
-    } else {
-      print('Failed to sync event ${event.id}');
-      return false;
+
+      // Check if event already exists in Google Sheets to prevent duplicates
+      final existingRowIndex = await _findEventRow(event.id);
+      
+      // Format the timestamp in a more readable format: YYYY-MM-DD HH:MM:SS
+      String formattedTimestamp = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}-${event.timestamp.day.toString().padLeft(2, '0')} ${event.timestamp.hour.toString().padLeft(2, '0')}:${event.timestamp.minute.toString().padLeft(2, '0')}:${event.timestamp.second.toString().padLeft(2, '0')}";
+
+      final List<Object> values = [
+        event.id,
+        event.gameId,
+        formattedTimestamp,
+        event.period,
+        event.eventType,
+        event.team,
+        event.primaryPlayerId,
+        event.assistPlayer1Id ?? '',
+        event.assistPlayer2Id ?? '',
+        event.isGoal ?? false,
+        _goalSituationToString(event.goalSituation),
+        event.penaltyType ?? '',
+        event.penaltyDuration ?? 0,
+        event.yourTeamPlayersOnIce?.join(',') ?? '',
+        event.goalieOnIceId ?? '',
+      ];
+
+      final Map<String, dynamic> body = {
+        'values': [values],
+        'majorDimension': 'ROWS',
+      };
+
+      Map<String, dynamic>? result;
+      
+      if (existingRowIndex != -1) {
+        // Event already exists, update the existing row instead of creating duplicate
+        print('Event ${event.id} already exists at row $existingRowIndex, updating instead of creating duplicate');
+        result = await _makeRequest(
+          'PUT',
+          'values/Events!A$existingRowIndex:O$existingRowIndex?valueInputOption=USER_ENTERED',
+          body: body,
+        );
+        print('Updated existing event ${event.id} at row $existingRowIndex');
+      } else {
+        // Event doesn't exist, append new row
+        result = await _makeRequest(
+          'POST',
+          'values/Events!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS',
+          body: body,
+        );
+        print('Created new event ${event.id}');
+      }
+
+      if (result != null) {
+        print('Successfully synced event ${event.id}');
+        // Immediately update the sync status to prevent race conditions
+        if (event.isInBox) {
+          event.isSynced = true;
+          await event.save();
+        }
+        return true;
+      } else {
+        print('Failed to sync event ${event.id}');
+        return false;
+      }
+    } finally {
+      // Always remove from syncing set
+      _syncingEventIds.remove(event.id);
     }
   }
 
@@ -1184,6 +1202,15 @@ class SheetsService {
 
   /// Syncs a single event with improved error handling and deduplication.
   Future<bool> _syncGameEventWithRetry(GameEvent event) async {
+    // Check if event is already being synced
+    if (_syncingEventIds.contains(event.id)) {
+      print('_syncGameEventWithRetry: Event ${event.id} is already being synced, skipping duplicate sync attempt');
+      return false;
+    }
+    
+    // Add to syncing set
+    _syncingEventIds.add(event.id);
+    
     try {
       // Check if event already exists in Google Sheets to prevent duplicates
       final existingRowIndex = await _findEventRow(event.id);
@@ -1246,6 +1273,9 @@ class SheetsService {
     } catch (e) {
       print('Error in _syncGameEventWithRetry: $e');
       return false;
+    } finally {
+      // Always remove from syncing set
+      _syncingEventIds.remove(event.id);
     }
   }
 

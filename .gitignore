@@ -55,3 +55,7 @@ key.properties
 *.apk
 *.aab
 android/app/google-services.json
+
+# Documentation and summary files
+*.md
+!README.md
