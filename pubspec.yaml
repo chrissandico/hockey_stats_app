@@ -1,5 +1,5 @@
 name: hockey_stats_app
-description: "A new Flutter project."
+description: "Offline-first hockey statistics tracker with Google Sheets synchronization. Track shots, goals, penalties, and player stats during live games."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

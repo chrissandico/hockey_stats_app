@@ -2,7 +2,7 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     
     <application
-        android:label="Waxers Stats Tracker"
+        android:label="The Shift"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_new_launcher">
         <meta-data
