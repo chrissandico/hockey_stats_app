@@ -51,11 +51,45 @@ assets/config/service_account.json
 key.properties
 *.keystore
 
-# Build artifacts
+# Build artifacts - APKs and AABs
 *.apk
 *.aab
 android/app/google-services.json
 
-# Documentation and summary files
-*.md
-!README.md
+# Test files in root (should be in test/ folder)
+test_*.dart
+
+# Workspace files
+*.code-workspace
+
+# PDF documents
+*.pdf
+
+# Kiro AI assistant files (local only)
+.kiro/
+
+# Documentation - Keep only essential docs
+# Internal development summaries
+*_SUMMARY.md
+*_FIX_SUMMARY.md
+*_IMPLEMENTATION_SUMMARY.md
+*_OPTIMIZATION_SUMMARY.md
+CLAUDE.md
+COMPLETE_CHANGES_SUMMARY.md
+
+# Play Store preparation docs (keep locally, not in repo)
+PLAY_STORE_*.md
+GITHUB_PAGES_SETUP.md
+NEXT_STEPS.md
+
+# Keep these essential docs:
+# README.md
+# RELEASE_NOTES.md
+# NEW_USER_GUIDE.md
+# ADMIN_GUIDE.md
+# GOOGLE_SHEETS_SETUP.md
+# MULTI_TEAM_SETUP.md
+# LOGO_INSTRUCTIONS.md
+# HOW_TO_RUN.md
+# SETUP.md
+# docs/ (privacy policy for GitHub Pages)
