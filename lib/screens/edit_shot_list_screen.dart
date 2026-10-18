@@ -87,7 +87,15 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Event'),
-        content: Text('Are you sure you want to delete this ${event.eventType.toLowerCase()}?'),
+        content: Text(
+          // Synthetic penalties (blank player + 'Unspecified') are created by the
+          // PP/PK mode toggle and carry the PP/PK opportunity count with them.
+          event.eventType == 'Penalty' &&
+                  event.primaryPlayerId.isEmpty &&
+                  (event.penaltyType == null || event.penaltyType == 'Unspecified')
+              ? 'This entry marks a power play / penalty kill (it was created by the PP/PK mode toggle, not a called penalty). Deleting it changes the PP/PK opportunity count. Delete it?'
+              : 'Are you sure you want to delete this ${event.eventType.toLowerCase()}?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),

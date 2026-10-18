@@ -120,4 +120,110 @@ void main() {
       expect(corsi19.shotSharePercentage, equals(100.0));
     });
   });
+
+  // Regression fixtures for the GoalSituation perspective fix (2026-10-18).
+  // Canonical definition (WEB_APP_STATS_SPEC.md, Column K): goalSituation is
+  // OUR team's manpower state. The same two fixtures exist in the viewer's
+  // test suite and must produce identical numbers.
+  group('Plan fixtures — canonical definition (2026-10-18)', () {
+    const String teamId = 'my_team';
+    final skater = Player(id: 'p88', jerseyNumber: 88, teamId: teamId, position: 'C');
+    final winger = Player(id: 'p19', jerseyNumber: 19, teamId: teamId, position: 'LW');
+
+    GameEvent shot(String id, String team, bool goal, GoalSituation? sit,
+            {List<String>? onIce}) =>
+        GameEvent(
+          id: id,
+          gameId: 'g1',
+          timestamp: DateTime.now(),
+          period: 1,
+          eventType: 'Shot',
+          team: team,
+          primaryPlayerId: 'x',
+          isGoal: goal,
+          goalSituation: sit,
+          yourTeamPlayersOnIce: onIce,
+        );
+
+    GameEvent pen(String id, String team) => GameEvent(
+          id: id,
+          gameId: 'g1',
+          timestamp: DateTime.now(),
+          period: 1,
+          eventType: 'Penalty',
+          team: team,
+          primaryPlayerId: 'x',
+        );
+
+    test('Fixture 1 — canonical game: PP 1/1, PK 1/2, SHGF 1, SHGA 1, index 150', () {
+      final onIce = [skater.id, winger.id];
+      final events = <GameEvent>[
+        pen('c1', 'opponent'), // PP opportunity
+        shot('c2', teamId, true, GoalSituation.powerPlay, onIce: onIce), // our PP goal
+        shot('c3', teamId, false, GoalSituation.powerPlay), // our PP shot
+        shot('c4', 'opponent', true, GoalSituation.powerPlay, onIce: onIce), // their SH goal
+        pen('c5', teamId), // PK opp (mode/synthetic)
+        pen('c6', teamId), // PK opp (real penalty)
+        shot('c7', 'opponent', true, GoalSituation.shortHanded, onIce: onIce), // their PP goal
+        shot('c8', teamId, true, GoalSituation.shortHanded, onIce: [skater.id]), // our SH goal
+        shot('c9', 'opponent', true, GoalSituation.evenStrength, onIce: onIce), // their ES goal
+      ];
+
+      final st = StatsService.getSpecialTeamsStats(events, teamId);
+      expect(st.ppGoals, equals(1));
+      expect(st.ppOpportunities, equals(1));
+      expect(st.ppPercentage, equals(100.0));
+      expect(st.ppShots, equals(2));
+      expect(st.pkOpportunities, equals(2));
+      expect(st.pkGoalsConceded, equals(1)); // only their PP goal — NOT their SH goal
+      expect(st.pkPercentage, equals(50.0));
+      expect(st.pkShotsAllowed, equals(1));
+      expect(st.shGoalsFor, equals(1));
+      expect(st.shGoalsAgainst, equals(1));
+      expect(st.netSpecialTeamsGoals, equals(0));
+      expect(st.combinedSpecialTeamsIndex, equals(150.0));
+
+      // +/- attribution: PP goal 0, SH against -1, PP against 0, SH for +1, ES against -1
+      expect(StatsService.calculatePlusMinus(skater, events, teamId), equals(-1));
+      expect(StatsService.calculatePlusMinus(winger, events, teamId), equals(-2));
+    });
+
+    test("Fixture 2 — Phil's game logged the fixed way: PK 2/4 = 50%, index 100", () {
+      final events = <GameEvent>[
+        pen('p1', 'opponent'),
+        pen('p2', 'opponent'), // 2 PP opportunities
+        shot('p3', teamId, true, GoalSituation.powerPlay), // our PP goal (1/2)
+        pen('p4', teamId),
+        pen('p5', teamId),
+        pen('p6', teamId),
+        pen('p7', teamId), // 4 PK opportunities
+        shot('p8', 'opponent', true, GoalSituation.shortHanded), // their PP goal
+        shot('p9', 'opponent', true, GoalSituation.shortHanded), // their PP goal
+        shot('p10', 'opponent', true, GoalSituation.powerPlay), // their SH goal
+      ];
+
+      final st = StatsService.getSpecialTeamsStats(events, teamId);
+      expect(st.ppGoals, equals(1));
+      expect(st.ppOpportunities, equals(2));
+      expect(st.ppPercentage, equals(50.0));
+      expect(st.pkOpportunities, equals(4));
+      expect(st.pkGoalsConceded, equals(2));
+      expect(st.pkPercentage, equals(50.0));
+      expect(st.shGoalsAgainst, equals(1));
+      expect(st.netSpecialTeamsGoals, equals(-2));
+      expect(st.combinedSpecialTeamsIndex, equals(100.0));
+    });
+
+    test('Plus/minus rule table incl. unrecorded situation = even strength', () {
+      final onIce = [skater.id];
+      final events = <GameEvent>[
+        shot('m1', teamId, true, GoalSituation.powerPlay, onIce: onIce), // our PP goal: 0
+        shot('m2', teamId, true, GoalSituation.shortHanded, onIce: onIce), // our SH goal: +1
+        shot('m3', 'opponent', true, GoalSituation.shortHanded, onIce: onIce), // their PP goal: 0
+        shot('m4', 'opponent', true, GoalSituation.powerPlay, onIce: onIce), // their SH goal: -1
+        shot('m5', 'opponent', true, null, onIce: onIce), // unrecorded: counts as ES: -1
+      ];
+      expect(StatsService.calculatePlusMinus(skater, events, teamId), equals(-1));
+    });
+  });
 }

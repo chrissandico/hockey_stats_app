@@ -1286,8 +1286,11 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             _refreshScore().then((_) {
                               print('Score refresh complete');
                               setState(() {
-                                // Automatically reset situation to Even Strength after a goal
-                                _currentSituation = GoalSituation.evenStrength;
+                                // Situation mode intentionally PERSISTS after a goal:
+                                // a short-handed goal never ends a penalty kill, and a
+                                // power-play goal may not end a 5-on-3. The keeper ends
+                                // the mode with the PP/PK toggle. (The old auto-reset
+                                // silently stamped later events Even Strength.)
                                 if (value != null && value is int) {
                                   _selectedPeriod = value;
                                 }
@@ -1347,13 +1350,21 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             ),
                           ).then((value) {
                             print('Returned from LogPenaltyScreen, refreshing score and attendance...');
+                            // LogPenaltyScreen returns {'period': n, 'saved': true} only when a
+                            // penalty was actually logged; backing out returns the period int
+                            // (or null) and must NOT change the game situation.
+                            final bool penaltySaved = value is Map && value['saved'] == true;
+                            final int? returnedPeriod = value is Map
+                                ? (value['period'] is int ? value['period'] as int : null)
+                                : (value is int ? value : null);
                             _refreshScore().then((_) {
                               print('Score refresh complete');
                               setState(() {
-                                // Switch mode to Penalty Kill when returning from logging a detailed team penalty
-                                _currentSituation = GoalSituation.shortHanded;
-                                if (value != null && value is int) {
-                                  _selectedPeriod = value;
+                                if (penaltySaved) {
+                                  _currentSituation = GoalSituation.shortHanded;
+                                }
+                                if (returnedPeriod != null) {
+                                  _selectedPeriod = returnedPeriod;
                                 }
                                 // Clear goal scorer and assist selections after logging penalty
                                 _selectedGoalScorer = null;

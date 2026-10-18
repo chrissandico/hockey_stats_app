@@ -73,25 +73,31 @@ class StatsService {
     // Calculate plus/minus for when the player is on the ice when a goal is scored
     for (var event in gameEvents) {
       if (event.eventType == 'Shot' && event.isGoal == true) {
-        
-        // RULE 1: Power Play Goal - No +/- awarded to anyone
-        if (event.goalSituation == GoalSituation.powerPlay) {
-          continue; // Skip this goal entirely - no plus/minus changes
+        // CANONICAL RULE (WEB_APP_STATS_SPEC.md, Column K + +/- table):
+        // +/- is awarded only when the SCORING team was at even strength or
+        // short-handed; a goal scored by a team on its own power play awards
+        // nothing. goalSituation records OUR team's manpower state, so the
+        // scorer's state depends on who scored:
+        //   our PP goal  (powerPlay stamp, our goal)     -> skip
+        //   our SH goal  (shortHanded stamp, our goal)   -> +1
+        //   their PP goal (shortHanded stamp, their goal) -> skip
+        //   their SH goal (powerPlay stamp, their goal)   -> -1
+        //   even strength, or situation not recorded (null) -> award
+        final scoredByYourTeam = event.team == teamId;
+        final scorerHadPowerPlay = scoredByYourTeam
+            ? event.goalSituation == GoalSituation.powerPlay
+            : event.goalSituation == GoalSituation.shortHanded;
+        if (scorerHadPowerPlay) {
+          continue;
         }
-        
-        // RULE 2 & 3: Even Strength and Short-Handed Goals - Award +/-
-        if (event.goalSituation == GoalSituation.evenStrength || 
-            event.goalSituation == GoalSituation.shortHanded) {
-          
-          bool playerWasOnIce = _wasPlayerOnIce(player, event, teamId);
-          
-          if (event.team == teamId && playerWasOnIce) {
-            // Player gets +1 for team goal (scoring team)
-            plusMinus++;
-          } else if (event.team == 'opponent' && playerWasOnIce) {
-            // Player gets -1 for opponent goal (defending team)
-            plusMinus--;
-          }
+
+        if (!_wasPlayerOnIce(player, event, teamId)) {
+          continue;
+        }
+        if (scoredByYourTeam) {
+          plusMinus++;
+        } else {
+          plusMinus--;
         }
       }
     }
@@ -111,16 +117,14 @@ class StatsService {
                event.assistPlayer1Id == player.id || 
                event.assistPlayer2Id == player.id;
       }
-    } else if (event.team == 'opponent') {
-      // For opponent goals, check if player was on ice for your team
+    } else {
+      // For opponent goals (any team value other than teamId), check if player was on ice for your team
       if (event.yourTeamPlayersOnIce != null && event.yourTeamPlayersOnIce!.isNotEmpty) {
         return event.yourTeamPlayersOnIce!.contains(player.id);
       }
       // If no players on ice data for opponent goals, we can't determine plus/minus
       return false;
     }
-    
-    return false;
   }
 
   /// Calculate goals for a player
@@ -332,13 +336,20 @@ class StatsService {
     for (final event in gameEvents) {
       final isYourTeam = event.team == teamId;
 
+      // CANONICAL DEFINITION (WEB_APP_STATS_SPEC.md, Column K): goalSituation is
+      // OUR team's manpower state, independent of who the event belongs to:
+      //   powerPlay   = WE have the advantage
+      //   shortHanded = WE are short-handed ("Penalty Kill" in the Sheet)
+      // An opponent goal stamped powerPlay is a SHORT-HANDED goal against (they
+      // scored while we had the power play) — never a PK concession — and an
+      // opponent goal stamped shortHanded is their POWER-PLAY goal.
       if (event.eventType == 'Shot') {
         if (event.isGoal == true) {
           if (event.goalSituation == GoalSituation.powerPlay) {
             if (isYourTeam) {
               ppGoals++;
             } else {
-              pkGoalsConceded++;
+              shGoalsAgainst++;
             }
           } else if (event.goalSituation == GoalSituation.shortHanded) {
             if (isYourTeam) {
@@ -353,9 +364,9 @@ class StatsService {
         if (event.goalSituation == GoalSituation.powerPlay) {
           if (isYourTeam) {
             ppShots++;
-          } else {
-            pkShotsAllowed++;
           }
+          // Opponent shots while WE have the power play are short-handed shots
+          // against — they are NOT shots allowed on our penalty kill.
         } else if (event.goalSituation == GoalSituation.shortHanded) {
           if (!isYourTeam) {
             pkShotsAllowed++;

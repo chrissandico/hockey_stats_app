@@ -258,6 +258,7 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
           primaryPlayerId: _selectedPlayer!.id,
           penaltyType: finalPenaltyType,
           penaltyDuration: _penaltyDuration,
+          yourTeamPlayersOnIce: existingEvent.yourTeamPlayersOnIce, // Preserve on-ice list on edit
           isSynced: false, // Mark as needing sync since we modified it
           version: (existingEvent.version ?? 1) + 1, // Increment version
         );
@@ -305,8 +306,9 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
         });
       }
       
-      // Navigate back
-      Navigator.pop(context, _selectedPeriod);
+      // Navigate back with a saved marker so callers can tell a logged
+      // penalty apart from backing out (which returns the period int).
+      Navigator.pop(context, {'period': _selectedPeriod, 'saved': true});
 
     } catch (e) {
       if (!mounted) return;
