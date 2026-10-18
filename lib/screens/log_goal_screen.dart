@@ -956,6 +956,9 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                 const SizedBox(height: 12.0),
 
                 // Goal Situation Selection (Compact)
+                // Labels are phrased as OUR team's manpower state (canonical
+                // definition, WEB_APP_STATS_SPEC.md Column K), whichever team
+                // scored — the stored value never changes meaning.
                 Card(
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8.0),
@@ -997,7 +1000,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                                       ),
                                       const SizedBox(width: 4),
                                       const Text(
-                                        'Power Play',
+                                        'We have the Power Play',
                                         style: TextStyle(fontSize: 11),
                                       ),
                                     ],
@@ -1036,7 +1039,7 @@ class _LogGoalScreenState extends State<LogGoalScreen> {
                                       ),
                                       const SizedBox(width: 4),
                                       const Text(
-                                        'Penalty Kill',
+                                        "We're on the Penalty Kill",
                                         style: TextStyle(fontSize: 11),
                                       ),
                                     ],

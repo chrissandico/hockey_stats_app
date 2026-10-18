@@ -87,6 +87,8 @@ Once signed in, you can immediately start tracking stats:
 - Verify the period number before logging events
 - Double-check player numbers when recording shots or penalties
 - If multiple people are tracking, coordinate who is tracking what (e.g., one person for shots, another for penalties)
+- **Power Play / Penalty Kill:** the situation always describes *our* team — "We have the Power Play" / "We're on the Penalty Kill" — no matter which team scores or takes the shot. Turn the mode off when the penalty expires; it stays on after a goal until you do.
+- **Matching (coincident) penalties:** when both teams get a penalty on the same play, the game is still even strength — don't turn on Power Play or Penalty Kill mode; just log the penalties.
 
 ### 6. Troubleshooting
 

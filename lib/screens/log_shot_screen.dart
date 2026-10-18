@@ -980,18 +980,22 @@ class _LogShotScreenState extends State<LogShotScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Goal Situation',
+                            "Goal Situation (our team's state)",
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
+                          ),
+                          const Text(
+                            'Whichever team this event is for, record OUR manpower state.',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
                           ),
                           const SizedBox(height: 12),
                           Row(
                             children: [
                               Expanded(
                                 child: CheckboxListTile(
-                                  title: const Text('Power Play'),
+                                  title: const Text('We have the Power Play'),
                                   value: _isPowerPlay,
                                   onChanged: (bool? value) {
                                     setState(() {
@@ -1006,7 +1010,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
                               ),
                               Expanded(
                                 child: CheckboxListTile(
-                                  title: const Text('Penalty Kill'),
+                                  title: const Text("We're on the Penalty Kill"),
                                   value: _isPenaltyKill,
                                   onChanged: (bool? value) {
                                     setState(() {
