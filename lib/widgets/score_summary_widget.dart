@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
+import 'package:hockey_stats_app/services/stats_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class ScoreSummaryWidget extends StatelessWidget {
@@ -631,9 +632,84 @@ class ScoreSummaryWidget extends StatelessWidget {
                 ),
               ),
             ),
+
+            const SizedBox(height: 12),
+
+            // Special Teams & Discipline Summary Card
+            Builder(
+              builder: (context) {
+                final stStats = StatsService.getSpecialTeamsStats(gameEvents, teamId);
+                final ppPctStr = stStats.ppPercentage.toStringAsFixed(1);
+                final pkPctStr = stStats.pkPercentage.toStringAsFixed(1);
+                final combinedStr = stStats.combinedSpecialTeamsIndex.toStringAsFixed(1);
+
+                return Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blueGrey.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.bolt, color: Colors.amber, size: 18),
+                          SizedBox(width: 4),
+                          Text(
+                            'Special Teams & Discipline',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildStStatBox(
+                            'Power Play',
+                            '${stStats.ppGoals}/${stStats.ppOpportunities}',
+                            '$ppPctStr%',
+                            '${stStats.ppShotsPerOpp.toStringAsFixed(1)} S/PP',
+                            Colors.amber.shade900,
+                          ),
+                          _buildStStatBox(
+                            'Penalty Kill',
+                            '${stStats.pkSuccesses}/${stStats.pkOpportunities}',
+                            '$pkPctStr%',
+                            '${stStats.pkShotsAllowedPerOpp.toStringAsFixed(1)} SA/PK',
+                            Colors.cyan.shade900,
+                          ),
+                          _buildStStatBox(
+                            'ST Index',
+                            '$combinedStr%',
+                            stStats.combinedSpecialTeamsIndex >= 100 ? 'Target ≥ 100%' : 'Below Target',
+                            'Net ST: ${stStats.netSpecialTeamsGoals > 0 ? "+${stStats.netSpecialTeamsGoals}" : stStats.netSpecialTeamsGoals}',
+                            stStats.combinedSpecialTeamsIndex >= 100 ? Colors.green.shade800 : Colors.red.shade800,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildStStatBox(String label, String mainVal, String subVal, String extraVal, Color color) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54)),
+        const SizedBox(height: 2),
+        Text(mainVal, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color)),
+        Text(subVal, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+        Text(extraVal, style: const TextStyle(fontSize: 10, color: Colors.black87)),
+      ],
     );
   }
 }

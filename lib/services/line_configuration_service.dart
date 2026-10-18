@@ -20,6 +20,13 @@ class LineConfigurationService {
   List<List<Player?>> _savedForwardLines = [];
   List<List<Player?>> _savedDefenseLines = [];
 
+  // Active Line Selection for On-Ice Tracking
+  int _activeForwardLineIndex = 0;
+  int _activeDefenseLineIndex = 0;
+
+  int get activeForwardLineIndex => _activeForwardLineIndex;
+  int get activeDefenseLineIndex => _activeDefenseLineIndex;
+
   // Getters for current working configurations
   List<List<Player?>> get forwardLines => _forwardLines;
   List<List<Player?>> get defenseLines => _defenseLines;
@@ -91,63 +98,142 @@ class LineConfigurationService {
     }
   }
 
-  /// Load line configuration from persistent storage
-  Future<void> loadLineConfiguration(String gameId, List<Player> players) async {
+  String? _loadedGameId;
+
+  /// Sync player references in current line configurations with updated Player list
+  void syncPlayerReferences(List<Player> players) {
+    if (players.isEmpty) return;
+
+    final playerMap = {for (var p in players) p.id: p};
+
+    for (int i = 0; i < _forwardLines.length; i++) {
+      for (int j = 0; j < _forwardLines[i].length; j++) {
+        final current = _forwardLines[i][j];
+        if (current != null && playerMap.containsKey(current.id)) {
+          _forwardLines[i][j] = playerMap[current.id];
+        }
+      }
+    }
+
+    for (int i = 0; i < _defenseLines.length; i++) {
+      for (int j = 0; j < _defenseLines[i].length; j++) {
+        final current = _defenseLines[i][j];
+        if (current != null && playerMap.containsKey(current.id)) {
+          _defenseLines[i][j] = playerMap[current.id];
+        }
+      }
+    }
+
+    for (int i = 0; i < _savedForwardLines.length; i++) {
+      for (int j = 0; j < _savedForwardLines[i].length; j++) {
+        final current = _savedForwardLines[i][j];
+        if (current != null && playerMap.containsKey(current.id)) {
+          _savedForwardLines[i][j] = playerMap[current.id];
+        }
+      }
+    }
+
+    for (int i = 0; i < _savedDefenseLines.length; i++) {
+      for (int j = 0; j < _savedDefenseLines[i].length; j++) {
+        final current = _savedDefenseLines[i][j];
+        if (current != null && playerMap.containsKey(current.id)) {
+          _savedDefenseLines[i][j] = playerMap[current.id];
+        }
+      }
+    }
+  }
+
+  /// Auto-save working line configuration to persistent storage
+  Future<void> saveWorkingLines(String gameId) async {
     try {
-      // First initialize lines with current players to set up structure
+      final prefs = await SharedPreferences.getInstance();
+
+      final workingFConfig = _forwardLines.map((line) =>
+        line.map((player) => player?.id).toList()
+      ).toList();
+      await prefs.setString('working_forward_lines_$gameId', json.encode(workingFConfig));
+
+      final workingDConfig = _defenseLines.map((line) =>
+        line.map((player) => player?.id).toList()
+      ).toList();
+      await prefs.setString('working_defense_lines_$gameId', json.encode(workingDConfig));
+    } catch (e) {
+      print('Error auto-saving working line configuration: $e');
+    }
+  }
+
+  /// Load line configuration from persistent storage
+  Future<void> loadLineConfiguration(String gameId, List<Player> players, {bool forceReload = false}) async {
+    try {
+      if (players.isEmpty) return;
+
+      // If lines are already loaded for this game and not forcing reload, just sync player object references
+      if (!forceReload && _loadedGameId == gameId && _forwardLines.isNotEmpty && _defenseLines.isNotEmpty) {
+        syncPlayerReferences(players);
+        return;
+      }
+
+      _loadedGameId = gameId;
+
+      // Initialize structure with current players
       initializeLines(players);
       
       final prefs = await SharedPreferences.getInstance();
-      final forwardConfig = prefs.getString('saved_forward_lines_$gameId');
-      final defenseConfig = prefs.getString('saved_defense_lines_$gameId');
-      
-      if (forwardConfig != null) {
-        final List<dynamic> config = json.decode(forwardConfig);
-        for (int i = 0; i < config.length && i < _forwardLines.length; i++) {
-          for (int j = 0; j < config[i].length && j < 3; j++) {
-            final playerId = config[i][j];
-            if (playerId != null) {
-              final player = players.firstWhere(
-                (p) => p.id == playerId,
-                orElse: () => Player(id: '', jerseyNumber: 0),
-              );
-              if (player.id.isNotEmpty) {
-                _forwardLines[i][j] = player;
-              }
-            } else {
-              _forwardLines[i][j] = null;
-            }
-          }
-        }
+
+      final teamId = players.where((p) => p.teamId != null && p.teamId!.isNotEmpty).firstOrNull?.teamId;
+
+      // 1. Check if there's a game-specific working or saved config
+      String? fConfigStr = prefs.getString('working_forward_lines_$gameId') ??
+                           prefs.getString('saved_forward_lines_$gameId');
+      String? dConfigStr = prefs.getString('working_defense_lines_$gameId') ??
+                           prefs.getString('saved_defense_lines_$gameId');
+
+      // 2. If no game-specific config exists yet for a new game, fallback to team default config or 'current_game'
+      if ((fConfigStr == null || dConfigStr == null) && teamId != null && teamId.isNotEmpty) {
+        fConfigStr ??= prefs.getString('saved_forward_lines_team_$teamId') ??
+                       prefs.getString('saved_forward_lines_current_game');
+        dConfigStr ??= prefs.getString('saved_defense_lines_team_$teamId') ??
+                       prefs.getString('saved_defense_lines_current_game');
       }
-      
-      if (defenseConfig != null) {
-        final List<dynamic> config = json.decode(defenseConfig);
-        for (int i = 0; i < config.length && i < _defenseLines.length; i++) {
-          for (int j = 0; j < config[i].length && j < 2; j++) {
-            final playerId = config[i][j];
-            if (playerId != null) {
-              final player = players.firstWhere(
-                (p) => p.id == playerId,
-                orElse: () => Player(id: '', jerseyNumber: 0),
-              );
-              if (player.id.isNotEmpty) {
-                _defenseLines[i][j] = player;
-              }
-            } else {
-              _defenseLines[i][j] = null;
-            }
-          }
-        }
+
+      if (fConfigStr != null && dConfigStr != null) {
+        _applyConfigList(json.decode(fConfigStr), _forwardLines, players, 3);
+        _applyConfigList(json.decode(dConfigStr), _defenseLines, players, 2);
+        _copyWorkingToSaved();
+      } else {
+        // Default saved is initial default
+        _copyWorkingToSaved();
       }
-      
-      // Copy loaded configuration to saved state
-      _copyWorkingToSaved();
     } catch (e) {
       print('Error loading line configuration: $e');
-      // Fall back to default initialization if loading fails
       initializeLines(players);
       _copyWorkingToSaved();
+    }
+  }
+
+  void _applyConfigList(List<dynamic> config, List<List<Player?>> targetLines, List<Player> players, int maxPos) {
+    for (int i = 0; i < config.length && i < targetLines.length; i++) {
+      for (int j = 0; j < maxPos; j++) {
+        if (j < config[i].length) {
+          final playerId = config[i][j];
+          if (playerId != null) {
+            final player = players.firstWhere(
+              (p) => p.id == playerId,
+              orElse: () => Player(id: '', jerseyNumber: 0),
+            );
+            if (player.id.isNotEmpty) {
+              targetLines[i][j] = player;
+            } else {
+              targetLines[i][j] = null;
+            }
+          } else {
+            targetLines[i][j] = null;
+          }
+        } else {
+          // Explicitly clear extra slots if loaded row had fewer slots than maxPos
+          targetLines[i][j] = null;
+        }
+      }
     }
   }
 
@@ -156,22 +242,36 @@ class LineConfigurationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      // Save forward lines
-      final forwardConfig = _forwardLines.map((line) => 
+      final forwardConfig = _forwardLines.map((line) =>
         line.map((player) => player?.id).toList()
       ).toList();
-      await prefs.setString('saved_forward_lines_$gameId', json.encode(forwardConfig));
-      
-      // Save defense lines
-      final defenseConfig = _defenseLines.map((line) => 
+      final defenseConfig = _defenseLines.map((line) =>
         line.map((player) => player?.id).toList()
       ).toList();
-      await prefs.setString('saved_defense_lines_$gameId', json.encode(defenseConfig));
-      
+
+      final fJson = json.encode(forwardConfig);
+      final dJson = json.encode(defenseConfig);
+
+      // Save game-specific config
+      await prefs.setString('saved_forward_lines_$gameId', fJson);
+      await prefs.setString('working_forward_lines_$gameId', fJson);
+      await prefs.setString('saved_defense_lines_$gameId', dJson);
+      await prefs.setString('working_defense_lines_$gameId', dJson);
+
+      // Also save as team default config so future games start with this lineup!
+      final teamId = _forwardLines.expand((line) => line).whereType<Player>().firstOrNull?.teamId ??
+                     _defenseLines.expand((line) => line).whereType<Player>().firstOrNull?.teamId;
+      if (teamId != null && teamId.isNotEmpty) {
+        await prefs.setString('saved_forward_lines_team_$teamId', fJson);
+        await prefs.setString('saved_defense_lines_team_$teamId', dJson);
+      }
+      await prefs.setString('saved_forward_lines_current_game', fJson);
+      await prefs.setString('saved_defense_lines_current_game', dJson);
+
       // Update saved state in memory
       _copyWorkingToSaved();
       
-      print('Line configuration saved for game $gameId');
+      print('Line configuration saved for game $gameId (and updated team default)');
     } catch (e) {
       print('Error saving line configuration: $e');
       rethrow;
@@ -191,8 +291,9 @@ class LineConfigurationService {
   }
   
   /// Reset working configuration to last saved state
-  void resetToSavedConfiguration() {
+  void resetToSavedConfiguration(String gameId) {
     _copySavedToWorking();
+    saveWorkingLines(gameId);
     print('Reset to last saved configuration');
   }
   
@@ -288,12 +389,45 @@ class LineConfigurationService {
     return players;
   }
 
+  /// Set active line selection for live on-ice tracking
+  void setActiveLineIndices(int forwardIndex, int defenseIndex) {
+    if (forwardIndex >= 0 && forwardIndex < _forwardLines.length) {
+      _activeForwardLineIndex = forwardIndex;
+    }
+    if (defenseIndex >= 0 && defenseIndex < _defenseLines.length) {
+      _activeDefenseLineIndex = defenseIndex;
+    }
+  }
+
+  /// Get list of active on-ice players (combination of active forward line + defense pair)
+  List<Player> getActiveOnIcePlayers() {
+    final List<Player> active = [];
+
+    if (_activeForwardLineIndex < _forwardLines.length) {
+      for (final player in _forwardLines[_activeForwardLineIndex]) {
+        if (player != null) active.add(player);
+      }
+    }
+
+    if (_activeDefenseLineIndex < _defenseLines.length) {
+      for (final player in _defenseLines[_activeDefenseLineIndex]) {
+        if (player != null) active.add(player);
+      }
+    }
+
+    return active;
+  }
+
+  /// Get active on-ice player IDs for auto-populating GameEvents
+  List<String> getActiveOnIcePlayerIds() {
+    return getActiveOnIcePlayers().map((p) => p.id).toList();
+  }
+
   /// Helper methods for position checking
   bool _isForward(Player player) {
-    return player.position == 'C' || 
-           player.position == 'LW' || 
-           player.position == 'RW' ||
-           player.position == 'F';
+    if (player.position == 'G') return false;
+    if (_isDefenseman(player)) return false;
+    return true; // Fallback: Treat any non-goalie, non-defense skater as forward so they are never omitted
   }
   
   bool _isDefenseman(Player player) {

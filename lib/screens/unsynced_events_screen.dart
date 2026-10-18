@@ -270,7 +270,7 @@ class _UnsyncedEventsScreenState extends State<UnsyncedEventsScreen> {
     
     if (isShot) {
       eventTypeText = isGoal ? 'Goal' : 'Shot';
-      if (isGoal && event.goalSituation != null) {
+      if (event.goalSituation != null) {
         switch (event.goalSituation!) {
           case GoalSituation.powerPlay:
             detailText = ' (Power Play)';
@@ -279,7 +279,7 @@ class _UnsyncedEventsScreenState extends State<UnsyncedEventsScreen> {
             detailText = ' (Penalty Kill)';
             break;
           case GoalSituation.evenStrength:
-            detailText = ' (Even Strength)';
+            if (isGoal) detailText = ' (Even Strength)';
             break;
         }
       }

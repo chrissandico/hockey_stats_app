@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:hive/hive.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
 import 'package:hockey_stats_app/services/stats_service.dart';
@@ -46,6 +47,56 @@ class PdfService {
     }
   }
 
+  // Flexible goalie check (handles G, GK, Goalie case-insensitively, or player used as goalie in game events)
+  bool _isGoalie(Player player, List<GameEvent> gameEvents) {
+    final pos = player.position?.trim().toUpperCase() ?? '';
+    if (pos == 'G' || pos == 'GK' || pos == 'GOALIE') {
+      return true;
+    }
+    return gameEvents.any((e) => e.goalieOnIceId == player.id);
+  }
+
+  // Calculate game winning goal scorer ID
+  String? _getGameWinningGoalPlayerId(List<GameEvent> gameEvents, String teamId) {
+    final yourTeamGoals = gameEvents
+        .where((e) => e.eventType == 'Shot' && e.isGoal == true && e.team == teamId)
+        .toList();
+    final opponentGoals = gameEvents
+        .where((e) => e.eventType == 'Shot' && e.isGoal == true && e.team == 'opponent')
+        .toList();
+
+    if (yourTeamGoals.length <= opponentGoals.length) {
+      return null; // Didn't win
+    }
+
+    yourTeamGoals.sort((a, b) {
+      if (a.period != b.period) return a.period.compareTo(b.period);
+      return a.timestamp.compareTo(b.timestamp);
+    });
+
+    final gwgIndex = opponentGoals.length;
+    if (gwgIndex < yourTeamGoals.length) {
+      return yourTeamGoals[gwgIndex].primaryPlayerId;
+    }
+    return null;
+  }
+
+  // Calculate team shooting % and team save %
+  Map<String, String> _getTeamShootingAndSavePct(List<GameEvent> gameEvents, String teamId) {
+    final teamShots = gameEvents.where((e) => e.eventType == 'Shot' && e.team == teamId).length;
+    final teamGoals = gameEvents.where((e) => e.eventType == 'Shot' && e.isGoal == true && e.team == teamId).length;
+    final teamShPct = teamShots > 0 ? (teamGoals / teamShots * 100) : 0.0;
+
+    final oppShots = gameEvents.where((e) => e.eventType == 'Shot' && e.team == 'opponent').length;
+    final oppGoals = gameEvents.where((e) => e.eventType == 'Shot' && e.isGoal == true && e.team == 'opponent').length;
+    final teamSvPct = oppShots > 0 ? ((oppShots - oppGoals) / oppShots * 100) : 0.0;
+
+    return {
+      'shPct': '${teamShPct.toStringAsFixed(1)}%',
+      'svPct': '${teamSvPct.toStringAsFixed(1)}%',
+    };
+  }
+
   Future<File> generateGameStatsPdf({
     required List<Player> players,
     required List<GameEvent> gameEvents,
@@ -75,14 +126,16 @@ class PdfService {
       logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
     } catch (e) {
       print('Failed to load team logo: $e');
-      // Try fallback to generic logo
       try {
-        final logoBytes = await rootBundle.load('assets/logos/waxers_logo.png'); // Use PNG instead of corrupted SVG
+        final logoBytes = await rootBundle.load('assets/logos/waxers_logo.png');
         logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
       } catch (e2) {
         print('Failed to load fallback logo: $e2');
       }
     }
+
+    // Flexible goalie detection
+    final goalies = players.where((player) => _isGoalie(player, currentGameEvents)).toList();
 
     pdf.addPage(
       pw.Page(
@@ -92,48 +145,43 @@ class PdfService {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              // Compact header
+              // Header
               _buildCompactHeader(logoImage, game, currentGameEvents, teamId),
-              pw.SizedBox(height: 12),
-              
-              // Main content in single-column layout
-              pw.Expanded(
-                child: pw.Column(
+              pw.SizedBox(height: 8),
+
+              // Team Statistics & Score Summary Section
+              _buildCompactTeamStatsOnly(players, currentGameEvents, teamId, game),
+              pw.SizedBox(height: 8),
+
+              // Skater Player Statistics
+              pw.Text(
+                'Player Statistics',
+                style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 4),
+              _buildCompactPlayerStatsTable(players, currentGameEvents, teamId),
+              pw.SizedBox(height: 8),
+
+              // Bottom Section: Goalie Stats & Game Logs
+              if (goalies.isNotEmpty) ...[
+                pw.Row(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    // Team Statistics at top
-                    _buildCompactTeamStatsOnly(players, currentGameEvents, teamId, game),
-                    pw.SizedBox(height: 16),
-                    
-                    // Player Stats section
-                    pw.Text(
-                      'Player Stats',
-                      style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
-                    ),
-                    pw.SizedBox(height: 8),
                     pw.Expanded(
-                      flex: 3,
-                      child: _buildCompactPlayerStatsTable(players, currentGameEvents, teamId),
+                      flex: 1,
+                      child: _buildFullWidthGoalieStats(goalies, currentGameEvents, teamId),
                     ),
-                    
-                    // Goalie Stats section (if goalies exist)
-                    ...() {
-                      final goalies = players.where((player) => player.position == 'G').toList();
-                      if (goalies.isEmpty) return <pw.Widget>[];
-                      
-                      return [
-                        pw.SizedBox(height: 16),
-                        pw.Text(
-                          'Goalie Stats',
-                          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
-                        ),
-                        pw.SizedBox(height: 8),
-                        _buildFullWidthGoalieStats(goalies, currentGameEvents, teamId),
-                      ];
-                    }(),
+                    pw.SizedBox(width: 8),
+                    pw.Expanded(
+                      flex: 1,
+                      child: _buildGameLogsBox(currentGameEvents, players, teamId, game),
+                    ),
                   ],
                 ),
-              ),
+              ] else ...[
+                // If no goalies on roster/events, display full-width game logs so no ugly empty box is shown
+                _buildGameLogsBox(currentGameEvents, players, teamId, game),
+              ],
             ],
           );
         },
@@ -146,111 +194,6 @@ class PdfService {
     final file = File('${output.path}/$filename');
     await file.writeAsBytes(await pdf.save());
     return file;
-  }
-
-  // Build a score summary widget for the PDF
-  pw.Widget _buildScoreSummary(List<GameEvent> gameEvents, String teamId) {
-    // Calculate the score
-    int yourTeamScore = gameEvents.where((event) => 
-      event.eventType == 'Shot' && 
-      event.isGoal == true && 
-      event.team == teamId
-    ).length;
-
-    int opponentScore = gameEvents.where((event) => 
-      event.eventType == 'Shot' && 
-      event.isGoal == true && 
-      event.team == 'opponent'
-    ).length;
-
-    // Return a row with the score
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.center,
-      children: [
-        pw.Text(
-          'Score: ',
-          style: const pw.TextStyle(fontSize: 14),
-        ),
-        pw.Text(
-          '$yourTeamScore',
-          style: pw.TextStyle(
-            fontSize: 16, 
-            fontWeight: pw.FontWeight.bold,
-            color: PdfColors.blue,
-          ),
-        ),
-        pw.Text(
-          ' - ',
-          style: pw.TextStyle(
-            fontSize: 16, 
-            fontWeight: pw.FontWeight.bold,
-          ),
-        ),
-        pw.Text(
-          '$opponentScore',
-          style: pw.TextStyle(
-            fontSize: 16, 
-            fontWeight: pw.FontWeight.bold,
-            color: PdfColors.red,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // Build team statistics section
-  pw.Widget _buildTeamStats(List<Player> players, List<GameEvent> gameEvents, String teamId) {
-    // Calculate team shots on goal
-    final teamSOG = gameEvents.where((event) => 
-      event.eventType == 'Shot' && 
-      event.team == teamId
-    ).length;
-
-    final opponentSOG = gameEvents.where((event) => 
-      event.eventType == 'Shot' && 
-      event.team == 'opponent'
-    ).length;
-
-    // Get top scorers and defensemen
-    final topScorers = _getTopScorers(players, gameEvents);
-    final topDefensemen = _getTopDefensemen(players, gameEvents, teamId);
-
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.blue50,
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
-        border: pw.Border.all(color: PdfColors.blue200),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            'TEAM STATISTICS',
-            style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800),
-          ),
-          pw.SizedBox(height: 8),
-          pw.Text(
-            'Shots on Goal: $teamSOG - $opponentSOG',
-            style: const pw.TextStyle(fontSize: 14),
-          ),
-          pw.SizedBox(height: 4),
-          pw.Text(
-            topScorers.isNotEmpty 
-                ? 'Top Scorer${topScorers.length > 1 ? 's' : ''}: ${_formatPlayerList(topScorers, 'points')}'
-                : 'Top Scorer: None',
-            style: const pw.TextStyle(fontSize: 14),
-          ),
-          pw.SizedBox(height: 4),
-          pw.Text(
-            topDefensemen.isNotEmpty 
-                ? 'Top Defensem${topDefensemen.length > 1 ? 'en' : 'an'}: ${_formatPlayerList(topDefensemen, 'plusminus')}'
-                : 'Top Defenseman: None',
-            style: const pw.TextStyle(fontSize: 14),
-          ),
-        ],
-      ),
-    );
   }
 
   // Get all players tied for highest points
@@ -281,10 +224,7 @@ class PdfService {
 
     if (playerStats.isEmpty) return [];
 
-    // Find the highest points total
     final maxPoints = playerStats.map((p) => p['points'] as int).reduce((a, b) => a > b ? a : b);
-    
-    // Return all players with the highest points
     return playerStats.where((p) => p['points'] == maxPoints).toList();
   }
 
@@ -293,8 +233,8 @@ class PdfService {
     final defensemanStats = <Map<String, dynamic>>[];
 
     for (final player in players) {
-      // Only include defensemen
-      if (player.position == 'D' || player.position == 'LD' || player.position == 'RD') {
+      final pos = player.position?.trim().toUpperCase() ?? '';
+      if (pos == 'D' || pos == 'LD' || pos == 'RD' || pos == 'DEFENSE') {
         final plusMinus = StatsService.calculatePlusMinus(player, gameEvents, teamId);
         defensemanStats.add({
           'player': player,
@@ -305,97 +245,10 @@ class PdfService {
 
     if (defensemanStats.isEmpty) return [];
 
-    // Find the highest plus/minus
     final maxPlusMinus = defensemanStats.map((p) => p['plusminus'] as int).reduce((a, b) => a > b ? a : b);
-    
-    // Return all defensemen with the highest plus/minus
     return defensemanStats.where((p) => p['plusminus'] == maxPlusMinus).toList();
   }
 
-  // Build the player stats table
-  pw.Widget _buildPlayerStatsTable(List<Player> players, List<GameEvent> gameEvents, String teamId) {
-    print('PDF: Building player stats table with ${players.length} players');
-    
-    if (players.isEmpty) {
-      return pw.Container(
-        padding: const pw.EdgeInsets.all(16),
-        decoration: pw.BoxDecoration(
-          border: pw.Border.all(color: PdfColors.grey400),
-          borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-        ),
-        child: pw.Text(
-          'No player data available for this game.',
-          style: pw.TextStyle(fontSize: 14, fontStyle: pw.FontStyle.italic),
-        ),
-      );
-    }
-
-    // Sort players by jersey number
-    final sortedPlayers = List<Player>.from(players);
-    sortedPlayers.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
-
-    return pw.Table(
-      border: pw.TableBorder.all(),
-      columnWidths: {
-        0: const pw.FlexColumnWidth(1), // #
-        1: const pw.FlexColumnWidth(1), // POS
-        2: const pw.FlexColumnWidth(1), // G
-        3: const pw.FlexColumnWidth(1), // A
-        4: const pw.FlexColumnWidth(1), // +/-
-        5: const pw.FlexColumnWidth(1), // PIM
-      },
-      children: [
-        // Table header
-        pw.TableRow(
-          decoration: pw.BoxDecoration(
-            color: PdfColors.grey300,
-          ),
-          children: [
-            pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('#', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
-            pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('POS', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
-            pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('G', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
-            pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('A', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
-            pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('+/-', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
-            pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('PIM', style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
-          ],
-        ),
-        // Player rows
-        ...sortedPlayers.map((player) {
-          final goals = gameEvents.where((event) => 
-            event.eventType == 'Shot' && 
-            event.isGoal == true && 
-            event.primaryPlayerId == player.id
-          ).length;
-
-          final assists = gameEvents.where((event) => 
-            event.eventType == 'Shot' && 
-            event.isGoal == true && 
-            (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)
-          ).length;
-
-          final plusMinus = StatsService.calculatePlusMinus(player, gameEvents, teamId);
-
-          final pim = gameEvents
-            .where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id)
-            .map((event) => event.penaltyDuration ?? 0)
-            .fold(0, (a, b) => a + b);
-
-          return pw.TableRow(
-            children: [
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(player.jerseyNumber.toString())),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(player.position ?? 'N/A')),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(goals.toString())),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(assists.toString())),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(plusMinus.toString())),
-              pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text(pim.toString())),
-            ],
-          );
-        }),
-      ],
-    );
-  }
-
-  // Format a list of players for display
   String _formatPlayerList(List<Map<String, dynamic>> playerStats, String statType) {
     return playerStats.map((stat) {
       final player = stat['player'] as Player;
@@ -410,8 +263,7 @@ class PdfService {
     }).join(', ');
   }
 
-
-  // Build compact header with logo and game info in horizontal layout
+  // Build compact header with logo and game info
   pw.Widget _buildCompactHeader(pw.MemoryImage? logoImage, Game game, List<GameEvent> gameEvents, String teamId) {
     return pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -422,14 +274,14 @@ class PdfService {
           children: [
             if (logoImage != null)
               pw.SizedBox(
-                height: 40,
-                width: 40,
+                height: 36,
+                width: 36,
                 child: pw.Image(logoImage),
               ),
             pw.SizedBox(width: 8),
             pw.Text(
-              'Game Stats',
-              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+              'Game Stats Report',
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
             ),
           ],
         ),
@@ -443,326 +295,47 @@ class PdfService {
               children: [
                 pw.Text(
                   'vs ${game.opponent}',
-                  style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+                  style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
                 ),
-                pw.SizedBox(width: 8),
+                pw.SizedBox(width: 6),
                 pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: pw.BoxDecoration(
                     color: _getGameTypeColor(game.gameType),
-                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                    borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
                   ),
                   child: pw.Text(
                     _getGameTypeText(game.gameType),
                     style: pw.TextStyle(
                       color: PdfColors.white,
-                      fontSize: 10,
+                      fontSize: 8,
                       fontWeight: pw.FontWeight.bold,
                     ),
                   ),
                 ),
               ],
             ),
-            pw.SizedBox(height: 2),
+            pw.SizedBox(height: 1),
             pw.Text(
               _formatDate(game.date),
-              style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+              style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
             ),
             if (game.location != null) ...[
-              pw.SizedBox(height: 2),
+              pw.SizedBox(height: 1),
               pw.Text(
                 game.location!,
-                style: const pw.TextStyle(fontSize: 10),
+                style: const pw.TextStyle(fontSize: 8),
               ),
             ],
           ],
         ),
         
-        // Right side - Empty space (score moved to team stats)
-        pw.SizedBox(width: 80),
+        pw.SizedBox(width: 60),
       ],
     );
   }
 
-  // Build compact score display
-  pw.Widget _buildCompactScore(List<GameEvent> gameEvents, String teamId) {
-    int yourTeamScore = gameEvents.where((event) => 
-      event.eventType == 'Shot' && 
-      event.isGoal == true && 
-      event.team == teamId
-    ).length;
-
-    int opponentScore = gameEvents.where((event) => 
-      event.eventType == 'Shot' && 
-      event.isGoal == true && 
-      event.team == 'opponent'
-    ).length;
-
-    return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey600),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-      ),
-      child: pw.Row(
-        mainAxisSize: pw.MainAxisSize.min,
-        children: [
-          pw.Text(
-            '$yourTeamScore',
-            style: pw.TextStyle(
-              fontSize: 16, 
-              fontWeight: pw.FontWeight.bold,
-              color: PdfColors.blue,
-            ),
-          ),
-          pw.Text(
-            ' - ',
-            style: pw.TextStyle(
-              fontSize: 16, 
-              fontWeight: pw.FontWeight.bold,
-            ),
-          ),
-          pw.Text(
-            '$opponentScore',
-            style: pw.TextStyle(
-              fontSize: 16, 
-              fontWeight: pw.FontWeight.bold,
-              color: PdfColors.red,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Build compact team statistics section with goalie stats
-  pw.Widget _buildCompactTeamStats(List<Player> players, List<GameEvent> gameEvents, String teamId) {
-    final teamSOG = gameEvents.where((event) => 
-      event.eventType == 'Shot' && 
-      event.team == teamId
-    ).length;
-
-    final opponentSOG = gameEvents.where((event) => 
-      event.eventType == 'Shot' && 
-      event.team == 'opponent'
-    ).length;
-
-    final topScorers = _getTopScorers(players, gameEvents);
-    final topDefensemen = _getTopDefensemen(players, gameEvents, teamId);
-
-    // Get goalies for stats
-    final goalies = players.where((player) => player.position == 'G').toList();
-    goalies.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
-
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        // Team Statistics
-        pw.Container(
-          padding: const pw.EdgeInsets.all(8),
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.grey400),
-            borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-          ),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                'TEAM STATISTICS',
-                style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.SizedBox(height: 6),
-              
-              // Add Final Score as first item
-              pw.Text(
-                'Final Score:',
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.Row(
-                children: [
-                  pw.Text(
-                    '${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == teamId).length}',
-                    style: pw.TextStyle(
-                      fontSize: 12, 
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.blue,
-                    ),
-                  ),
-                  pw.Text(
-                    ' - ',
-                    style: pw.TextStyle(
-                      fontSize: 12, 
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                  pw.Text(
-                    '${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == 'opponent').length}',
-                    style: pw.TextStyle(
-                      fontSize: 12, 
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.red,
-                    ),
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 4),
-              
-              pw.Text(
-                'Shots on Goal:',
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.Text(
-                '$teamSOG - $opponentSOG',
-                style: const pw.TextStyle(fontSize: 10),
-              ),
-              pw.SizedBox(height: 4),
-              pw.Text(
-                'Top Scorers:',
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.Text(
-                topScorers.isNotEmpty 
-                    ? _formatPlayerList(topScorers, 'points')
-                    : 'None',
-                style: const pw.TextStyle(fontSize: 9),
-              ),
-              pw.SizedBox(height: 4),
-              pw.Text(
-                'Top Defensemen:',
-                style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.Text(
-                topDefensemen.isNotEmpty 
-                    ? _formatPlayerList(topDefensemen, 'plusminus')
-                    : 'None',
-                style: const pw.TextStyle(fontSize: 9),
-              ),
-            ],
-          ),
-        ),
-        
-        // Goalie Statistics
-        if (goalies.isNotEmpty) ...[
-          pw.SizedBox(height: 12),
-          _buildCompactGoalieStats(goalies, gameEvents, teamId),
-        ],
-      ],
-    );
-  }
-
-  // Build compact goalie statistics section
-  pw.Widget _buildCompactGoalieStats(List<Player> goalies, List<GameEvent> gameEvents, String teamId) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(8),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey400),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            'GOALIE STATISTICS',
-            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.SizedBox(height: 8),
-          
-          // Goalie stats table
-          pw.Table(
-            border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.5),
-            columnWidths: {
-              0: const pw.FlexColumnWidth(1), // #
-              1: const pw.FlexColumnWidth(1), // SA
-              2: const pw.FlexColumnWidth(1), // GA
-              3: const pw.FlexColumnWidth(1), // SV
-              4: const pw.FlexColumnWidth(1.2), // SV%
-              5: const pw.FlexColumnWidth(1), // GP
-            },
-            children: [
-              // Header row
-              pw.TableRow(
-                decoration: pw.BoxDecoration(color: PdfColors.grey300),
-                children: [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text('#', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text('SA', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text('GA', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text('SV', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text('SV%', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(3),
-                    child: pw.Text('GP', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
-                  ),
-                ],
-              ),
-              
-              // Goalie data rows
-              ...goalies.map((goalie) {
-                final goalieStats = StatsService.getGoalieStats(goalie, gameEvents, teamId);
-                return pw.TableRow(
-                  children: [
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(goalie.jerseyNumber.toString(), style: const pw.TextStyle(fontSize: 8)),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(goalieStats.shotsAgainst.toString(), style: const pw.TextStyle(fontSize: 8)),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(goalieStats.goalsAgainst.toString(), style: const pw.TextStyle(fontSize: 8)),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(goalieStats.saves.toString(), style: const pw.TextStyle(fontSize: 8)),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(
-                        goalieStats.savePercentage > 0 
-                            ? '${(goalieStats.savePercentage * 100).toStringAsFixed(1)}%'
-                            : '0.0%',
-                        style: const pw.TextStyle(fontSize: 8),
-                      ),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(3),
-                      child: pw.Text(goalieStats.gamesPlayed.toString(), style: const pw.TextStyle(fontSize: 8)),
-                    ),
-                  ],
-                );
-              }),
-            ],
-          ),
-          
-          pw.SizedBox(height: 6),
-          
-          // Legend
-          pw.Text(
-            'SA=Shots Against, GA=Goals Against, SV=Saves, SV%=Save %, GP=Games Played',
-            style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Build compact team statistics section (without goalie stats)
+  // Build compact team statistics section with score summary
   pw.Widget _buildCompactTeamStatsOnly(List<Player> players, List<GameEvent> gameEvents, String teamId, Game game) {
     final teamSOG = gameEvents.where((event) => 
       event.eventType == 'Shot' && 
@@ -774,174 +347,165 @@ class PdfService {
       event.team == 'opponent'
     ).length;
 
+    final yourTeamGoals = gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == teamId).length;
+    final opponentGoals = gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == 'opponent').length;
+
     final topScorers = _getTopScorers(players, gameEvents);
     final topDefensemen = _getTopDefensemen(players, gameEvents, teamId);
+    final teamEff = _getTeamShootingAndSavePct(gameEvents, teamId);
+
+    // Load attendance to flag scratches/DNP
+    List<String> dnpJerseys = [];
+    if (gameEvents.isNotEmpty) {
+      try {
+        final gameId = gameEvents.first.gameId;
+        final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
+        final attendance = attendanceBox.values
+            .where((a) => a.gameId == gameId && a.teamId == teamId)
+            .firstOrNull;
+        if (attendance != null && attendance.absentPlayerIds.isNotEmpty) {
+          final absentSet = attendance.absentPlayerIds.toSet();
+          dnpJerseys = players
+              .where((p) => absentSet.contains(p.id))
+              .map((p) => '#${p.jerseyNumber}')
+              .toList();
+        }
+      } catch (e) {
+        print('Error loading attendance for team stats: $e');
+      }
+    }
 
     return pw.Container(
-      padding: const pw.EdgeInsets.all(12),
+      padding: const pw.EdgeInsets.all(8),
       decoration: pw.BoxDecoration(
         border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
         borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
       ),
-      child: pw.Column(
+      child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          
-          // Final Score
-          pw.Row(
-            children: [
-              pw.Text(
-                'Final Score: ',
-                style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.Text(
-                '${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == teamId).length}',
-                style: pw.TextStyle(
-                  fontSize: 14, 
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.blue,
+          // Left Box: Score, SOG, Top Performers, Shooting % / Save %
+          pw.Expanded(
+            flex: 3,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Row(
+                  children: [
+                    pw.Text(
+                      'Final Score: ',
+                      style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                    ),
+                    pw.Text(
+                      '$yourTeamGoals',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue800,
+                      ),
+                    ),
+                    pw.Text(' - ', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                    pw.Text(
+                      '$opponentGoals',
+                      style: pw.TextStyle(
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.red800,
+                      ),
+                    ),
+                    pw.SizedBox(width: 12),
+                    pw.Text(
+                      'Shots on Goal: $teamSOG - $opponentSOG',
+                      style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ],
                 ),
-              ),
-              pw.Text(
-                ' - ',
-                style: pw.TextStyle(
-                  fontSize: 14, 
-                  fontWeight: pw.FontWeight.bold,
+                pw.SizedBox(height: 3),
+
+                // Team Shooting & Save %
+                pw.Text(
+                  'Team Shooting: ${teamEff['shPct']}  |  Team Save %: ${teamEff['svPct']}',
+                  style: pw.TextStyle(fontSize: 8, color: PdfColors.grey800),
                 ),
-              ),
-              pw.Text(
-                '${gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == 'opponent').length}',
-                style: pw.TextStyle(
-                  fontSize: 14, 
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColors.red,
+                pw.SizedBox(height: 3),
+
+                pw.Text(
+                  topScorers.isNotEmpty
+                      ? 'Top Scorers: ${_formatPlayerList(topScorers, 'points')}'
+                      : 'Top Scorers: None',
+                  style: const pw.TextStyle(fontSize: 8),
                 ),
-              ),
-            ],
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  topDefensemen.isNotEmpty
+                      ? 'Top Defensemen: ${_formatPlayerList(topDefensemen, 'plusminus')}'
+                      : 'Top Defensemen: None',
+                  style: const pw.TextStyle(fontSize: 8),
+                ),
+                pw.SizedBox(height: 4),
+
+                // Special Teams & Discipline Summary Box
+                builderSpecialTeamsPdfBox(gameEvents, teamId),
+              ],
+            ),
           ),
-          pw.SizedBox(height: 6),
-          
-          pw.Text(
-            'Shots on Goal: $teamSOG - $opponentSOG',
-            style: const pw.TextStyle(fontSize: 12),
+          pw.SizedBox(width: 12),
+
+          // Right Box: Score Summary by Period + Scratches
+          pw.Expanded(
+            flex: 2,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                _buildScoreSummaryTable(gameEvents, teamId, game),
+                if (dnpJerseys.isNotEmpty) ...[
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Scratches / DNP: ${dnpJerseys.join(', ')}',
+                    style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700, fontStyle: pw.FontStyle.italic),
+                  ),
+                ],
+              ],
+            ),
           ),
-          pw.SizedBox(height: 4),
-          pw.Text(
-            topScorers.isNotEmpty 
-                ? 'Top Scorers: ${_formatPlayerList(topScorers, 'points')}'
-                : 'Top Scorers: None',
-            style: const pw.TextStyle(fontSize: 12),
-          ),
-          pw.SizedBox(height: 4),
-          pw.Text(
-            topDefensemen.isNotEmpty 
-                ? 'Top Defensemen: ${_formatPlayerList(topDefensemen, 'plusminus')}'
-                : 'Top Defensemen: None',
-            style: const pw.TextStyle(fontSize: 12),
-          ),
-          pw.SizedBox(height: 6),
-          
-          // Score Summary Table
-          _buildScoreSummaryTable(gameEvents, teamId, game),
         ],
       ),
     );
   }
 
-  // Build full-width goalie statistics section
-  pw.Widget _buildFullWidthGoalieStats(List<Player> goalies, List<GameEvent> gameEvents, String teamId) {
+  // Build Special Teams & Discipline Box
+  pw.Widget builderSpecialTeamsPdfBox(List<GameEvent> gameEvents, String teamId) {
+    final st = StatsService.getSpecialTeamsStats(gameEvents, teamId);
+    final ppStr = '${st.ppGoals}/${st.ppOpportunities} (${st.ppPercentage.toStringAsFixed(1)}%) | S/PP: ${st.ppShotsPerOpp.toStringAsFixed(1)}';
+    final pkStr = '${st.pkSuccesses}/${st.pkOpportunities} (${st.pkPercentage.toStringAsFixed(1)}%) | SA/PK: ${st.pkShotsAllowedPerOpp.toStringAsFixed(1)}';
+    final stIndex = 'ST Index: ${st.combinedSpecialTeamsIndex.toStringAsFixed(1)}%';
+    final netSt = 'Net ST: ${st.netSpecialTeamsGoals > 0 ? "+${st.netSpecialTeamsGoals}" : st.netSpecialTeamsGoals}';
+    final netPen = 'Penalties: Taken ${st.penaltiesTaken}, Drawn ${st.penaltiesDrawn} (${st.netPenalties >= 0 ? "+${st.netPenalties}" : st.netPenalties})';
+
     return pw.Container(
-      padding: const pw.EdgeInsets.all(12),
+      padding: const pw.EdgeInsets.all(4),
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
-        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+        color: PdfColors.grey100,
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(3)),
+        border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
       ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          // Goalie stats table
-          pw.Container(
-            width: 400, // Make table narrower
-            child: pw.Table(
-              border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.5),
-              columnWidths: {
-                0: const pw.FlexColumnWidth(0.8), // #
-                1: const pw.FlexColumnWidth(1), // SA
-                2: const pw.FlexColumnWidth(1), // GA
-                3: const pw.FlexColumnWidth(1), // SV
-                4: const pw.FlexColumnWidth(1.2), // SV%
-              },
-              children: [
-                // Header row
-                pw.TableRow(
-                  decoration: pw.BoxDecoration(color: PdfColors.grey300),
-                  children: [
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Center(child: pw.Text('#', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Center(child: pw.Text('SA', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Center(child: pw.Text('GA', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Center(child: pw.Text('SV', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Center(child: pw.Text('SV%', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold))),
-                    ),
-                  ],
-                ),
-                
-                // Goalie data rows
-                ...goalies.map((goalie) {
-                  final goalieStats = StatsService.getGoalieStats(goalie, gameEvents, teamId);
-                  return pw.TableRow(
-                    children: [
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Center(child: pw.Text(goalie.jerseyNumber.toString(), style: const pw.TextStyle(fontSize: 11))),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Center(child: pw.Text(goalieStats.shotsAgainst.toString(), style: const pw.TextStyle(fontSize: 11))),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Center(child: pw.Text(goalieStats.goalsAgainst.toString(), style: const pw.TextStyle(fontSize: 11))),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Center(child: pw.Text(goalieStats.saves.toString(), style: const pw.TextStyle(fontSize: 11))),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(6),
-                        child: pw.Center(child: pw.Text(
-                          goalieStats.savePercentage > 0 
-                              ? '${(goalieStats.savePercentage * 100).toStringAsFixed(1)}%'
-                              : '0.0%',
-                          style: const pw.TextStyle(fontSize: 11),
-                        )),
-                      ),
-                    ],
-                  );
-                }),
-              ],
-            ),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('Power Play: $ppStr', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+              pw.Text('Penalty Kill: $pkStr', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+            ],
           ),
-          
-          pw.SizedBox(height: 8),
-          
-          // Legend
-          pw.Text(
-            'SA = Shots Against, GA = Goals Against, SV = Saves, SV% = Save Percentage',
-            style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+          pw.SizedBox(height: 2),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('$stIndex | $netSt', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
+              pw.Text(netPen, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+            ],
           ),
         ],
       ),
@@ -950,21 +514,11 @@ class PdfService {
 
   // Build tabular score summary display
   pw.Widget _buildScoreSummaryTable(List<GameEvent> gameEvents, String teamId, Game game) {
-    // Calculate goals and shots by period for both teams
-    final Map<int, int> yourTeamGoalsByPeriod = {};
-    final Map<int, int> opponentGoalsByPeriod = {};
-    final Map<int, int> yourTeamShotsByPeriod = {};
-    final Map<int, int> opponentShotsByPeriod = {};
+    final Map<int, int> yourTeamGoalsByPeriod = {1: 0, 2: 0, 3: 0, 4: 0};
+    final Map<int, int> opponentGoalsByPeriod = {1: 0, 2: 0, 3: 0, 4: 0};
+    final Map<int, int> yourTeamShotsByPeriod = {1: 0, 2: 0, 3: 0, 4: 0};
+    final Map<int, int> opponentShotsByPeriod = {1: 0, 2: 0, 3: 0, 4: 0};
     
-    // Initialize periods 1-4 (including OT)
-    for (int period = 1; period <= 4; period++) {
-      yourTeamGoalsByPeriod[period] = 0;
-      opponentGoalsByPeriod[period] = 0;
-      yourTeamShotsByPeriod[period] = 0;
-      opponentShotsByPeriod[period] = 0;
-    }
-    
-    // Count goals and shots by period
     for (final event in gameEvents) {
       if (event.eventType == 'Shot') {
         final period = event.period;
@@ -984,202 +538,97 @@ class PdfService {
       }
     }
     
-    // Calculate totals
     final yourTeamTotal = yourTeamGoalsByPeriod.values.fold(0, (a, b) => a + b);
     final opponentTotal = opponentGoalsByPeriod.values.fold(0, (a, b) => a + b);
     final yourTeamShotsTotal = yourTeamShotsByPeriod.values.fold(0, (a, b) => a + b);
     final opponentShotsTotal = opponentShotsByPeriod.values.fold(0, (a, b) => a + b);
     
-    // Determine which periods to show (always show 1-3, show OT only if there were goals or shots)
     final showOT = (yourTeamGoalsByPeriod[4] ?? 0) > 0 || (opponentGoalsByPeriod[4] ?? 0) > 0 ||
                    (yourTeamShotsByPeriod[4] ?? 0) > 0 || (opponentShotsByPeriod[4] ?? 0) > 0;
     
-    // Get team names
-    final yourTeamName = 'Your Team'; // Could be enhanced to get actual team name
+    final yourTeamName = 'Your Team';
     final opponentName = game.opponent;
     
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
         pw.Text(
-          'Score Summary:',
-          style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+          'Score Summary by Period:',
+          style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
         ),
-        pw.SizedBox(height: 4),
-        pw.Container(
-          width: 300,
-          child: pw.Table(
-            border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.5),
-            columnWidths: showOT ? {
-              0: const pw.FlexColumnWidth(2.5), // Team
-              1: const pw.FlexColumnWidth(1), // 1
-              2: const pw.FlexColumnWidth(1), // 2
-              3: const pw.FlexColumnWidth(1), // 3
-              4: const pw.FlexColumnWidth(1), // OT
-              5: const pw.FlexColumnWidth(1), // T
-            } : {
-              0: const pw.FlexColumnWidth(2.5), // Team
-              1: const pw.FlexColumnWidth(1), // 1
-              2: const pw.FlexColumnWidth(1), // 2
-              3: const pw.FlexColumnWidth(1), // 3
-              4: const pw.FlexColumnWidth(1), // T
-            },
-            children: [
-              // Header row
-              pw.TableRow(
-                decoration: pw.BoxDecoration(color: PdfColors.grey300),
-                children: showOT ? [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Text('Team', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('1', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('2', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('3', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('OT', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('T', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                ] : [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Text('Team', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('1', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('2', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('3', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('T', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                ],
-              ),
-              
-              // Your team row
-              pw.TableRow(
-                children: showOT ? [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Text(yourTeamName, style: const pw.TextStyle(fontSize: 9)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[1] ?? 0} [${yourTeamShotsByPeriod[1] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[2] ?? 0} [${yourTeamShotsByPeriod[2] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[3] ?? 0} [${yourTeamShotsByPeriod[3] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[4] ?? 0} [${yourTeamShotsByPeriod[4] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('$yourTeamTotal [$yourTeamShotsTotal]', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                ] : [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Text(yourTeamName, style: const pw.TextStyle(fontSize: 9)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[1] ?? 0} [${yourTeamShotsByPeriod[1] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[2] ?? 0} [${yourTeamShotsByPeriod[2] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[3] ?? 0} [${yourTeamShotsByPeriod[3] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('$yourTeamTotal [$yourTeamShotsTotal]', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                ],
-              ),
-              
-              // Opponent team row
-              pw.TableRow(
-                children: showOT ? [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Text(opponentName, style: const pw.TextStyle(fontSize: 9)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[1] ?? 0} [${opponentShotsByPeriod[1] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[2] ?? 0} [${opponentShotsByPeriod[2] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[3] ?? 0} [${opponentShotsByPeriod[3] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[4] ?? 0} [${opponentShotsByPeriod[4] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('$opponentTotal [$opponentShotsTotal]', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                ] : [
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Text(opponentName, style: const pw.TextStyle(fontSize: 9)),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[1] ?? 0} [${opponentShotsByPeriod[1] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[2] ?? 0} [${opponentShotsByPeriod[2] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[3] ?? 0} [${opponentShotsByPeriod[3] ?? 0}]', style: const pw.TextStyle(fontSize: 9))),
-                  ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(4),
-                    child: pw.Center(child: pw.Text('$opponentTotal [$opponentShotsTotal]', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))),
-                  ),
-                ],
-              ),
-            ],
-          ),
+        pw.SizedBox(height: 2),
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.5),
+          columnWidths: showOT ? {
+            0: const pw.FlexColumnWidth(2.2),
+            1: const pw.FlexColumnWidth(1),
+            2: const pw.FlexColumnWidth(1),
+            3: const pw.FlexColumnWidth(1),
+            4: const pw.FlexColumnWidth(1),
+            5: const pw.FlexColumnWidth(1),
+          } : {
+            0: const pw.FlexColumnWidth(2.2),
+            1: const pw.FlexColumnWidth(1),
+            2: const pw.FlexColumnWidth(1),
+            3: const pw.FlexColumnWidth(1),
+            4: const pw.FlexColumnWidth(1),
+          },
+          children: [
+            // Header row
+            pw.TableRow(
+              decoration: pw.BoxDecoration(color: PdfColors.grey300),
+              children: showOT ? [
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Text('Team', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('1', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('2', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('3', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('OT', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('T', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+              ] : [
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Text('Team', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('1', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('2', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('3', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('T', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+              ],
+            ),
+
+            // Your team row
+            pw.TableRow(
+              children: showOT ? [
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Text(yourTeamName, style: const pw.TextStyle(fontSize: 8))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[1]} [${yourTeamShotsByPeriod[1]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[2]} [${yourTeamShotsByPeriod[2]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[3]} [${yourTeamShotsByPeriod[3]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[4]} [${yourTeamShotsByPeriod[4]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('$yourTeamTotal [$yourTeamShotsTotal]', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+              ] : [
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Text(yourTeamName, style: const pw.TextStyle(fontSize: 8))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[1]} [${yourTeamShotsByPeriod[1]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[2]} [${yourTeamShotsByPeriod[2]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${yourTeamGoalsByPeriod[3]} [${yourTeamShotsByPeriod[3]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('$yourTeamTotal [$yourTeamShotsTotal]', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+              ],
+            ),
+
+            // Opponent team row
+            pw.TableRow(
+              children: showOT ? [
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Text(opponentName, style: const pw.TextStyle(fontSize: 8))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[1]} [${opponentShotsByPeriod[1]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[2]} [${opponentShotsByPeriod[2]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[3]} [${opponentShotsByPeriod[3]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[4]} [${opponentShotsByPeriod[4]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('$opponentTotal [$opponentShotsTotal]', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+              ] : [
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Text(opponentName, style: const pw.TextStyle(fontSize: 8))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[1]} [${opponentShotsByPeriod[1]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[2]} [${opponentShotsByPeriod[2]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('${opponentGoalsByPeriod[3]} [${opponentShotsByPeriod[3]}]', style: const pw.TextStyle(fontSize: 7)))),
+                pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('$opponentTotal [$opponentShotsTotal]', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+              ],
+            ),
+          ],
         ),
       ],
     );
@@ -1196,134 +645,420 @@ class PdfService {
         ),
         child: pw.Text(
           'No player data available for this game.',
-          style: pw.TextStyle(fontSize: 12, fontStyle: pw.FontStyle.italic),
+          style: pw.TextStyle(fontSize: 10, fontStyle: pw.FontStyle.italic),
         ),
       );
     }
 
-    // Sort players by jersey number
+    Set<String> absentPlayerIds = {};
+    if (gameEvents.isNotEmpty) {
+      try {
+        final gameId = gameEvents.first.gameId;
+        final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
+        final attendance = attendanceBox.values
+            .where((a) => a.gameId == gameId && a.teamId == teamId)
+            .firstOrNull;
+        if (attendance != null) {
+          absentPlayerIds = attendance.absentPlayerIds.toSet();
+        }
+      } catch (e) {
+        print('Error loading attendance for PDF: $e');
+      }
+    }
+
+    final gwgPlayerId = _getGameWinningGoalPlayerId(gameEvents, teamId);
+
     final sortedPlayers = List<Player>.from(players);
     sortedPlayers.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
 
-    // Dynamic font size based on number of players
     double fontSize;
     double padding;
     if (sortedPlayers.length > 20) {
-      fontSize = 8;
-      padding = 3;
+      fontSize = 7;
+      padding = 2;
     } else if (sortedPlayers.length > 15) {
-      fontSize = 9;
-      padding = 4;
+      fontSize = 8;
+      padding = 2.5;
     } else {
-      fontSize = 10;
-      padding = 5;
+      fontSize = 8.5;
+      padding = 3;
     }
 
-    return pw.Container(
-      width: 500, // Make table narrower
-      child: pw.Table(
-        border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.5),
-        columnWidths: {
-          0: const pw.FlexColumnWidth(0.7), // #
-          1: const pw.FlexColumnWidth(0.9), // POS
-          2: const pw.FlexColumnWidth(0.6), // G
-          3: const pw.FlexColumnWidth(0.6), // A
-          4: const pw.FlexColumnWidth(0.7), // PTS
-          5: const pw.FlexColumnWidth(0.8), // +/-
-          6: const pw.FlexColumnWidth(0.8), // PIM
-        },
-        children: [
-          // Table header
-          pw.TableRow(
-            decoration: pw.BoxDecoration(
-              color: PdfColors.grey300,
-            ),
-            children: [
-              pw.Padding(
-                padding: pw.EdgeInsets.all(padding),
-                child: pw.Center(child: pw.Text('#', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
-              ),
-              pw.Padding(
-                padding: pw.EdgeInsets.all(padding),
-                child: pw.Center(child: pw.Text('POS', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
-              ),
-              pw.Padding(
-                padding: pw.EdgeInsets.all(padding),
-                child: pw.Center(child: pw.Text('G', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
-              ),
-              pw.Padding(
-                padding: pw.EdgeInsets.all(padding),
-                child: pw.Center(child: pw.Text('A', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
-              ),
-              pw.Padding(
-                padding: pw.EdgeInsets.all(padding),
-                child: pw.Center(child: pw.Text('PTS', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
-              ),
-              pw.Padding(
-                padding: pw.EdgeInsets.all(padding),
-                child: pw.Center(child: pw.Text('+/-', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
-              ),
-              pw.Padding(
-                padding: pw.EdgeInsets.all(padding),
-                child: pw.Center(child: pw.Text('PIM', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
-              ),
-            ],
-          ),
-          // Player rows
-          ...sortedPlayers.map((player) {
-            final goals = gameEvents.where((event) => 
-              event.eventType == 'Shot' && 
-              event.isGoal == true && 
-              event.primaryPlayerId == player.id
-            ).length;
-
-            final assists = gameEvents.where((event) => 
-              event.eventType == 'Shot' && 
-              event.isGoal == true && 
-              (event.assistPlayer1Id == player.id || event.assistPlayer2Id == player.id)
-            ).length;
-
-            final points = goals + assists;
-            final plusMinus = StatsService.calculatePlusMinus(player, gameEvents, teamId);
-
-            final pim = gameEvents
-              .where((event) => event.eventType == 'Penalty' && event.primaryPlayerId == player.id)
-              .map((event) => event.penaltyDuration ?? 0)
-              .fold(0, (a, b) => a + b);
-
-            return pw.TableRow(
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.5),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(0.7), // #
+            1: pw.FlexColumnWidth(1.2), // POS
+            2: pw.FlexColumnWidth(0.7), // G
+            3: pw.FlexColumnWidth(0.7), // A
+            4: pw.FlexColumnWidth(0.8), // PTS
+            5: pw.FlexColumnWidth(0.8), // +/-
+            6: pw.FlexColumnWidth(0.8), // PIM
+            7: pw.FlexColumnWidth(1.2), // SF/SA
+          },
+          children: [
+            // Header row
+            pw.TableRow(
+              decoration: pw.BoxDecoration(color: PdfColors.grey300),
               children: [
                 pw.Padding(
                   padding: pw.EdgeInsets.all(padding),
-                  child: pw.Center(child: pw.Text(player.jerseyNumber.toString(), style: pw.TextStyle(fontSize: fontSize))),
+                  child: pw.Center(child: pw.Text('#', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
                 ),
                 pw.Padding(
                   padding: pw.EdgeInsets.all(padding),
-                  child: pw.Center(child: pw.Text(player.position ?? 'N/A', style: pw.TextStyle(fontSize: fontSize))),
+                  child: pw.Center(child: pw.Text('POS', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
                 ),
                 pw.Padding(
                   padding: pw.EdgeInsets.all(padding),
-                  child: pw.Center(child: pw.Text(goals.toString(), style: pw.TextStyle(fontSize: fontSize))),
+                  child: pw.Center(child: pw.Text('G', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
                 ),
                 pw.Padding(
                   padding: pw.EdgeInsets.all(padding),
-                  child: pw.Center(child: pw.Text(assists.toString(), style: pw.TextStyle(fontSize: fontSize))),
+                  child: pw.Center(child: pw.Text('A', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
                 ),
                 pw.Padding(
                   padding: pw.EdgeInsets.all(padding),
-                  child: pw.Center(child: pw.Text(points.toString(), style: pw.TextStyle(fontSize: fontSize))),
+                  child: pw.Center(child: pw.Text('PTS', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
                 ),
                 pw.Padding(
                   padding: pw.EdgeInsets.all(padding),
-                  child: pw.Center(child: pw.Text(plusMinus.toString(), style: pw.TextStyle(fontSize: fontSize))),
+                  child: pw.Center(child: pw.Text('+/-', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
                 ),
                 pw.Padding(
                   padding: pw.EdgeInsets.all(padding),
-                  child: pw.Center(child: pw.Text(pim.toString(), style: pw.TextStyle(fontSize: fontSize))),
+                  child: pw.Center(child: pw.Text('PIM', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
+                ),
+                pw.Padding(
+                  padding: pw.EdgeInsets.all(padding),
+                  child: pw.Center(child: pw.Text('SF/SA', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
                 ),
               ],
-            );
-          }),
+            ),
+
+            // Player Rows
+            ...sortedPlayers.map((player) {
+              final isAbsent = absentPlayerIds.contains(player.id);
+              final goals = StatsService.calculateGoals(player, gameEvents);
+              final assists = StatsService.calculateAssists(player, gameEvents);
+              final points = goals + assists;
+              final plusMinus = StatsService.calculatePlusMinus(player, gameEvents, teamId);
+              final pim = StatsService.calculatePenaltyMinutes(player, gameEvents);
+
+              final onIceStats = StatsService.getOnIceShotStats(player, gameEvents, teamId);
+              final sfSaStr = '${onIceStats.shotsForOnIce}/${onIceStats.shotsAgainstOnIce}';
+
+              final isGwg = gwgPlayerId != null && gwgPlayerId == player.id;
+              final goalsStr = isGwg ? '$goals*' : goals.toString();
+
+              final cellTextColor = isAbsent ? PdfColors.grey600 : PdfColors.black;
+              final cellFontStyle = isAbsent ? pw.FontStyle.italic : pw.FontStyle.normal;
+
+              return pw.TableRow(
+                decoration: isAbsent ? const pw.BoxDecoration(color: PdfColors.grey200) : null,
+                children: [
+                  pw.Padding(
+                    padding: pw.EdgeInsets.all(padding),
+                    child: pw.Center(child: pw.Text(player.jerseyNumber.toString(), style: pw.TextStyle(fontSize: fontSize, color: cellTextColor, fontStyle: cellFontStyle))),
+                  ),
+                  pw.Padding(
+                    padding: pw.EdgeInsets.all(padding),
+                    child: pw.Center(
+                      child: pw.Text(
+                        isAbsent ? '${player.position ?? 'N/A'} (DNP)' : (player.position ?? 'N/A'),
+                        style: pw.TextStyle(fontSize: fontSize, color: cellTextColor, fontStyle: cellFontStyle),
+                      ),
+                    ),
+                  ),
+                  pw.Padding(
+                    padding: pw.EdgeInsets.all(padding),
+                    child: pw.Center(child: pw.Text(goalsStr, style: pw.TextStyle(fontSize: fontSize, color: cellTextColor, fontStyle: cellFontStyle, fontWeight: isGwg ? pw.FontWeight.bold : pw.FontWeight.normal))),
+                  ),
+                  pw.Padding(
+                    padding: pw.EdgeInsets.all(padding),
+                    child: pw.Center(child: pw.Text(assists.toString(), style: pw.TextStyle(fontSize: fontSize, color: cellTextColor, fontStyle: cellFontStyle))),
+                  ),
+                  pw.Padding(
+                    padding: pw.EdgeInsets.all(padding),
+                    child: pw.Center(child: pw.Text(points.toString(), style: pw.TextStyle(fontSize: fontSize, color: cellTextColor, fontStyle: cellFontStyle, fontWeight: pw.FontWeight.bold))),
+                  ),
+                  pw.Padding(
+                    padding: pw.EdgeInsets.all(padding),
+                    child: pw.Center(child: pw.Text(plusMinus.toString(), style: pw.TextStyle(fontSize: fontSize, color: cellTextColor, fontStyle: cellFontStyle))),
+                  ),
+                  pw.Padding(
+                    padding: pw.EdgeInsets.all(padding),
+                    child: pw.Center(child: pw.Text(pim.toString(), style: pw.TextStyle(fontSize: fontSize, color: cellTextColor, fontStyle: cellFontStyle))),
+                  ),
+                  pw.Padding(
+                    padding: pw.EdgeInsets.all(padding),
+                    child: pw.Center(child: pw.Text(sfSaStr, style: pw.TextStyle(fontSize: fontSize, color: cellTextColor, fontStyle: cellFontStyle))),
+                  ),
+                ],
+              );
+            }),
+          ],
+        ),
+        pw.SizedBox(height: 3),
+        pw.Text(
+          '* GWG = Game Winning Goal Scorer  |  SF/SA = On-Ice Shots For / Shots Against  |  DNP = Did Not Play',
+          style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+        ),
+      ],
+    );
+  }
+
+  // Build full-width goalie statistics section
+  pw.Widget _buildFullWidthGoalieStats(List<Player> goalies, List<GameEvent> gameEvents, String teamId) {
+    if (goalies.isEmpty) {
+      return pw.SizedBox();
+    }
+
+    final isOnlyGoalie = goalies.length == 1;
+
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(6),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'GOALIE STATISTICS',
+            style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Table(
+            border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.5),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(0.8), // #
+              1: pw.FlexColumnWidth(0.9), // SA
+              2: pw.FlexColumnWidth(0.9), // GA
+              3: pw.FlexColumnWidth(0.9), // SV
+              4: pw.FlexColumnWidth(1.2), // SV%
+              5: pw.FlexColumnWidth(1.2), // EV SV%
+              6: pw.FlexColumnWidth(1.2), // PK SV%
+            },
+            children: [
+              // Header row
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: PdfColors.grey300),
+                children: [
+                  pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('#', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                  pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('SA', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                  pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('GA', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                  pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('SV', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                  pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('SV%', style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)))),
+                  pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('EV SV%', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)))),
+                  pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text('PK SV%', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)))),
+                ],
+              ),
+
+              // Goalie data rows
+              ...goalies.map((goalie) {
+                final goalieStats = StatsService.getGoalieStats(
+                  goalie,
+                  gameEvents,
+                  teamId,
+                  teamGoalies: goalies,
+                );
+
+                // Calculate Situational SV% (Even Strength vs PK)
+                final evShots = gameEvents.where((e) =>
+                  e.eventType == 'Shot' &&
+                  e.team != teamId &&
+                  e.goalSituation == GoalSituation.evenStrength &&
+                  (e.goalieOnIceId == goalie.id || (isOnlyGoalie && (e.goalieOnIceId == null || e.goalieOnIceId!.isEmpty)))
+                ).length;
+
+                final evGoals = gameEvents.where((e) =>
+                  e.eventType == 'Shot' &&
+                  e.isGoal == true &&
+                  e.team != teamId &&
+                  e.goalSituation == GoalSituation.evenStrength &&
+                  (e.goalieOnIceId == goalie.id || (isOnlyGoalie && (e.goalieOnIceId == null || e.goalieOnIceId!.isEmpty)))
+                ).length;
+
+                final evSvPctStr = evShots > 0 ? '${((evShots - evGoals) / evShots * 100).toStringAsFixed(1)}%' : '0.0%';
+
+                final pkShots = gameEvents.where((e) =>
+                  e.eventType == 'Shot' &&
+                  e.team != teamId &&
+                  e.goalSituation == GoalSituation.powerPlay &&
+                  (e.goalieOnIceId == goalie.id || (isOnlyGoalie && (e.goalieOnIceId == null || e.goalieOnIceId!.isEmpty)))
+                ).length;
+
+                final pkGoals = gameEvents.where((e) =>
+                  e.eventType == 'Shot' &&
+                  e.isGoal == true &&
+                  e.team != teamId &&
+                  e.goalSituation == GoalSituation.powerPlay &&
+                  (e.goalieOnIceId == goalie.id || (isOnlyGoalie && (e.goalieOnIceId == null || e.goalieOnIceId!.isEmpty)))
+                ).length;
+
+                final pkSvPctStr = pkShots > 0 ? '${((pkShots - pkGoals) / pkShots * 100).toStringAsFixed(1)}%' : '0.0%';
+
+                return pw.TableRow(
+                  children: [
+                    pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text(goalie.jerseyNumber.toString(), style: const pw.TextStyle(fontSize: 8)))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text(goalieStats.shotsAgainst.toString(), style: const pw.TextStyle(fontSize: 8)))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text(goalieStats.goalsAgainst.toString(), style: const pw.TextStyle(fontSize: 8)))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text(goalieStats.saves.toString(), style: const pw.TextStyle(fontSize: 8)))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text(
+                      goalieStats.savePercentage > 0
+                          ? '${(goalieStats.savePercentage * 100).toStringAsFixed(1)}%'
+                          : '0.0%',
+                      style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+                    ))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text(evSvPctStr, style: const pw.TextStyle(fontSize: 7)))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(3), child: pw.Center(child: pw.Text(pkSvPctStr, style: const pw.TextStyle(fontSize: 7)))),
+                  ],
+                );
+              }),
+            ],
+          ),
+          pw.SizedBox(height: 3),
+          pw.Text(
+            'SA = Shots Against | GA = Goals Against | SV = Saves | SV% = Save % | EV SV% = Even Strength SV% | PK SV% = Penalty Kill SV%',
+            style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build Chronological Game Event Logs (Scoring Log + Penalty Log)
+  pw.Widget _buildGameLogsBox(List<GameEvent> gameEvents, List<Player> players, String teamId, Game game) {
+    final playerJerseyMap = {for (var p in players) p.id: p.jerseyNumber};
+
+    // Goals Log
+    final goals = gameEvents.where((e) => e.eventType == 'Shot' && e.isGoal == true).toList();
+    goals.sort((a, b) {
+      if (a.period != b.period) return a.period.compareTo(b.period);
+      return a.timestamp.compareTo(b.timestamp);
+    });
+
+    int yourTeamScore = 0;
+    int opponentScore = 0;
+    final goalRows = <pw.Widget>[];
+
+    for (final goal in goals) {
+      final isYourTeam = goal.team == teamId;
+      if (isYourTeam) {
+        yourTeamScore++;
+      } else {
+        opponentScore++;
+      }
+
+      final periodStr = goal.period == 4 ? 'OT' : 'P${goal.period}';
+      final timeStr = (goal.gameClockTime != null && goal.gameClockTime!.isNotEmpty) ? goal.gameClockTime! : '';
+      final sitStr = goal.goalSituation == GoalSituation.powerPlay ? ' (PP)' : (goal.goalSituation == GoalSituation.shortHanded ? ' (SH)' : '');
+
+      String scorerStr = '';
+      if (isYourTeam) {
+        final j = playerJerseyMap[goal.primaryPlayerId];
+        scorerStr = j != null ? '#$j' : 'Your Team';
+        final assists = <String>[];
+        if (goal.assistPlayer1Id != null && playerJerseyMap.containsKey(goal.assistPlayer1Id)) {
+          assists.add('#${playerJerseyMap[goal.assistPlayer1Id]}');
+        }
+        if (goal.assistPlayer2Id != null && playerJerseyMap.containsKey(goal.assistPlayer2Id)) {
+          assists.add('#${playerJerseyMap[goal.assistPlayer2Id]}');
+        }
+        if (assists.isNotEmpty) {
+          scorerStr += ' (A: ${assists.join(', ')})';
+        }
+      } else {
+        scorerStr = game.opponent;
+      }
+
+      goalRows.add(
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 0.5),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(
+                '$periodStr ${timeStr.isNotEmpty ? timeStr + ' ' : ''}| $scorerStr$sitStr',
+                style: pw.TextStyle(
+                  fontSize: 7.5,
+                  color: isYourTeam ? PdfColors.blue800 : PdfColors.red800,
+                  fontWeight: isYourTeam ? pw.FontWeight.bold : pw.FontWeight.normal,
+                ),
+              ),
+              pw.Text('$yourTeamScore-$opponentScore', style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Penalty Log
+    final penalties = gameEvents.where((e) => e.eventType == 'Penalty').toList();
+    penalties.sort((a, b) {
+      if (a.period != b.period) return a.period.compareTo(b.period);
+      return a.timestamp.compareTo(b.timestamp);
+    });
+
+    final penaltyRows = <pw.Widget>[];
+    for (final penalty in penalties.take(6)) {
+      final isYourTeam = penalty.team == teamId;
+      final periodStr = penalty.period == 4 ? 'OT' : 'P${penalty.period}';
+      final timeStr = (penalty.gameClockTime != null && penalty.gameClockTime!.isNotEmpty) ? penalty.gameClockTime! : '';
+
+      String pStr = '';
+      if (isYourTeam) {
+        final j = playerJerseyMap[penalty.primaryPlayerId];
+        pStr = j != null ? '#$j' : 'Your Team';
+      } else {
+        pStr = game.opponent;
+      }
+
+      final pType = penalty.penaltyType ?? 'Penalty';
+      final pDur = penalty.penaltyDuration != null ? '${penalty.penaltyDuration}m' : '2m';
+
+      penaltyRows.add(
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 0.5),
+          child: pw.Text(
+            '$periodStr ${timeStr.isNotEmpty ? timeStr + ' ' : ''}| $pStr - $pType ($pDur)',
+            style: pw.TextStyle(
+              fontSize: 7.5,
+              color: isYourTeam ? PdfColors.blue800 : PdfColors.black,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(6),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text('SCORING SUMMARY LOG', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 2),
+          if (goalRows.isEmpty)
+            pw.Text('No goals logged.', style: const pw.TextStyle(fontSize: 7.5, fontStyle: pw.FontStyle.italic))
+          else
+            ...goalRows,
+
+          pw.SizedBox(height: 4),
+          pw.Text('PENALTY LOG', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 2),
+          if (penaltyRows.isEmpty)
+            pw.Text('No penalties logged.', style: const pw.TextStyle(fontSize: 7.5, fontStyle: pw.FontStyle.italic))
+          else
+            ...penaltyRows,
         ],
       ),
     );

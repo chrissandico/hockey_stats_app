@@ -83,6 +83,10 @@ class BackgroundSyncService {
     try {
       print('BackgroundSyncService: Starting background sync...');
       
+      // Sync pending deletions first to clean up Google Sheets
+      final deletionResults = await _sheetsService.syncPendingDeletions();
+      print('BackgroundSyncService: Deletions sync - Success: ${deletionResults['success']}, Failed: ${deletionResults['failed']}');
+
       // Sync pending events
       final eventResults = await _sheetsService.syncPendingEventsInBackground();
       print('BackgroundSyncService: Events sync - Success: ${eventResults['success']}, Failed: ${eventResults['failed']}');
@@ -95,8 +99,8 @@ class BackgroundSyncService {
       final attendanceResults = await _sheetsService.syncPendingAttendanceInBackground();
       print('BackgroundSyncService: Attendance sync - Success: ${attendanceResults['success']}, Failed: ${attendanceResults['failed']}');
       
-      final totalSuccess = (eventResults['success'] ?? 0) + (rosterResults['success'] ?? 0) + (attendanceResults['success'] ?? 0);
-      final totalFailed = (eventResults['failed'] ?? 0) + (rosterResults['failed'] ?? 0) + (attendanceResults['failed'] ?? 0);
+      final totalSuccess = (deletionResults['success'] ?? 0) + (eventResults['success'] ?? 0) + (rosterResults['success'] ?? 0) + (attendanceResults['success'] ?? 0);
+      final totalFailed = (deletionResults['failed'] ?? 0) + (eventResults['failed'] ?? 0) + (rosterResults['failed'] ?? 0) + (attendanceResults['failed'] ?? 0);
       
       if (totalFailed == 0 && totalSuccess > 0) {
         _syncStatusController.add(SyncStatus.success);
@@ -191,11 +195,15 @@ class BackgroundSyncService {
     try {
       final gameEventsBox = Hive.box<GameEvent>('gameEvents');
       final gameRosterBox = Hive.box<GameRoster>('gameRoster');
-      
+      int pendingDeletions = 0;
+      if (Hive.isBoxOpen('pendingDeletions')) {
+        pendingDeletions = Hive.box<String>('pendingDeletions').length;
+      }
+
       final pendingEvents = gameEventsBox.values.where((event) => !event.isSynced).length;
       final pendingRoster = gameRosterBox.values.where((roster) => !roster.isSynced).length;
       
-      return pendingEvents + pendingRoster;
+      return pendingEvents + pendingRoster + pendingDeletions;
     } catch (e) {
       print('BackgroundSyncService: Error getting pending items count: $e');
       return 0;

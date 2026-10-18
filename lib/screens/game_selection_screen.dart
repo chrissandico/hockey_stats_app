@@ -6,6 +6,8 @@ import 'package:hockey_stats_app/models/data_models.dart'; // Import your data m
 import 'package:hockey_stats_app/screens/log_stats_screen.dart'; // We'll create a new screen to hold the logging buttons
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import SheetsService for syncing
 import 'package:hockey_stats_app/services/connectivity_service.dart'; // Import ConnectivityService for checking connectivity
+import 'package:hockey_stats_app/services/centralized_data_service.dart';
+import 'package:hockey_stats_app/services/memory_cache_service.dart';
 import 'package:uuid/uuid.dart'; // Import for generating UUIDs
 import 'package:hockey_stats_app/main.dart' as main_logic; // To access functions from main.dart
 import 'package:hockey_stats_app/screens/attendance_dialog.dart'; // Import attendance dialog
@@ -149,37 +151,71 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
         _selectedGame = availableGames.isNotEmpty ? availableGames.first : null;
     }
   }
-  
-  // Retry sync method for when sync fails
-  Future<void> _retrySync() async {
-    if (!mounted) return;
+
+  /// Full manual refresh from Google Sheets
+  Future<void> _fullSyncFromSheets() async {
+    if (!mounted || _isPerformingAsyncOperation) return;
     setState(() {
       _isPerformingAsyncOperation = true;
       _errorMessage = null;
     });
 
-    final syncResult = await main_logic.attemptInitialDataSyncIfSignedIn();
-    if (!mounted) return;
-    
-    _loadGamesInternal(); // Refresh game list from Hive
+    try {
+      final syncResult = await _sheetsService.syncDataFromSheets();
+      CentralizedDataService().clearCache();
 
-    if (syncResult['status'] == 'sync_success') {
-      setState(() {
-        _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.dataLoaded;
-        _errorMessage = null;
-      });
-    } else {
-      setState(() {
-        _errorMessage = syncResult['message'] as String?;
-        _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.syncFailed;
-      });
+      if (!mounted) return;
+      _loadGamesInternal(); // Refresh game list from Hive
+
+      if (syncResult['success'] == true) {
+        setState(() {
+          _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.dataLoaded;
+          _errorMessage = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Data refreshed successfully from Google Sheets'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      } else {
+        final msg = syncResult['message'] as String? ?? 'Network error';
+        setState(() {
+          _errorMessage = msg;
+          _screenState = availableGames.isEmpty ? _ScreenState.noGamesFound : _ScreenState.syncFailed;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Refresh failed: $msg'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error syncing from sheets: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error refreshing from Google Sheets: $e'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPerformingAsyncOperation = false;
+        });
+      }
     }
-    
-    if (mounted) {
-      setState(() {
-        _isPerformingAsyncOperation = false;
-      });
-    }
+  }
+
+  // Retry sync method for when sync fails
+  Future<void> _retrySync() async {
+    await _fullSyncFromSheets();
   }
 
   // Helper method to sync a single game to Google Sheets when connected
@@ -612,7 +648,16 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
       if (ConnectivityService().isOnline) {
         syncedToSheets = await _sheetsService.deleteGame(gameId);
       }
-      
+
+      if (!syncedToSheets) {
+        await _sheetsService.queuePendingDeletion(gameId, type: 'game');
+      }
+
+      // Clear caches
+      CentralizedDataService().invalidateEvent(gameId);
+      CentralizedDataService().clearCache();
+      MemoryCacheService().removeGame(gameId);
+
       // Reload games list
       _loadGamesInternal();
       
@@ -757,24 +802,16 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     }
   }
 
-  // Build the sync status indicator
+  // Build the sync status indicator / refresh button
   Widget _buildSyncIndicator() {
     return IconButton(
-      icon: _screenState == _ScreenState.initialLoading
-          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+      icon: _isPerformingAsyncOperation || _screenState == _ScreenState.initialLoading
+          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
           : _screenState == _ScreenState.syncFailed
               ? const Icon(Icons.sync_problem, color: Colors.orange)
-              : const Icon(Icons.cloud_done, color: Colors.green),
-      tooltip: _screenState == _ScreenState.initialLoading
-          ? 'Syncing with Google Sheets...'
-          : _screenState == _ScreenState.syncFailed
-              ? 'Sync failed. Tap to retry.'
-              : 'Data synced with Google Sheets',
-      onPressed: _isPerformingAsyncOperation
-          ? null
-          : _screenState == _ScreenState.syncFailed
-              ? _retrySync
-              : null,
+              : const Icon(Icons.refresh),
+      tooltip: 'Refresh from Google Sheets',
+      onPressed: _isPerformingAsyncOperation ? null : _fullSyncFromSheets,
     );
   }
 

@@ -171,6 +171,18 @@ class GameEvent extends HiveObject {
   @HiveField(16)
   String? goalieOnIceId;
 
+  @HiveField(17)
+  String? gameClockTime;
+
+  @HiveField(18)
+  int? shiftDuration;
+
+  @HiveField(19)
+  double? shotX;
+
+  @HiveField(20)
+  double? shotY;
+
   GameEvent({
     required this.id,
     required this.gameId,
@@ -189,6 +201,10 @@ class GameEvent extends HiveObject {
     int? version,
     this.goalSituation,
     this.goalieOnIceId,
+    this.gameClockTime,
+    this.shiftDuration,
+    this.shotX,
+    this.shotY,
   }) : version = version ?? 1 {
     this.isGoal = isGoal ?? false;
   }

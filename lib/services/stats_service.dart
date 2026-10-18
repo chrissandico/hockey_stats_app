@@ -1,4 +1,61 @@
 import 'package:hockey_stats_app/models/data_models.dart';
+import 'dart:math';
+
+class SpecialTeamsStats {
+  final int ppGoals;
+  final int ppOpportunities;
+  final double ppPercentage;
+  final int pkOpportunities;
+  final int pkGoalsConceded;
+  final int pkSuccesses;
+  final double pkPercentage;
+  final int shGoalsFor;
+  final int shGoalsAgainst;
+  final int ppShots;
+  final double ppShotsPerOpp;
+  final int pkShotsAllowed;
+  final double pkShotsAllowedPerOpp;
+  final int netSpecialTeamsGoals;
+  final double combinedSpecialTeamsIndex;
+  final int penaltiesDrawn;
+  final int penaltiesTaken;
+  final int netPenalties;
+
+  SpecialTeamsStats({
+    required this.ppGoals,
+    required this.ppOpportunities,
+    required this.ppPercentage,
+    required this.pkOpportunities,
+    required this.pkGoalsConceded,
+    required this.pkSuccesses,
+    required this.pkPercentage,
+    required this.shGoalsFor,
+    required this.shGoalsAgainst,
+    required this.ppShots,
+    required this.ppShotsPerOpp,
+    required this.pkShotsAllowed,
+    required this.pkShotsAllowedPerOpp,
+    required this.netSpecialTeamsGoals,
+    required this.combinedSpecialTeamsIndex,
+    required this.penaltiesDrawn,
+    required this.penaltiesTaken,
+    required this.netPenalties,
+  });
+}
+
+class OnIceShotStats {
+  final int shotsForOnIce;
+  final int shotsAgainstOnIce;
+  final int netShotsOnIce;
+  final double shotSharePercentage;
+
+  OnIceShotStats({
+    required this.shotsForOnIce,
+    required this.shotsAgainstOnIce,
+    required this.netShotsOnIce,
+    required this.shotSharePercentage,
+  });
+}
 
 class StatsService {
   /// Calculates plus/minus for a player based on the 3-rule system:
@@ -105,6 +162,14 @@ class StatsService {
     ).length;
   }
 
+  /// Calculate shooting percentage (SH%) for a player
+  static double calculateShootingPercentage(Player player, List<GameEvent> gameEvents) {
+    final shots = calculateShots(player, gameEvents);
+    if (shots == 0) return 0.0;
+    final goals = calculateGoals(player, gameEvents);
+    return (goals / shots) * 100;
+  }
+
   /// Get complete player statistics
   static PlayerSeasonStats getPlayerStats(Player player, List<GameEvent> gameEvents, String teamId) {
     return PlayerSeasonStats(
@@ -121,55 +186,93 @@ class StatsService {
   }
 
   /// Calculate shots against for a goalie
-  static int calculateShotsAgainst(Player goalie, List<GameEvent> gameEvents, String teamId) {
+  static int calculateShotsAgainst(
+    Player goalie,
+    List<GameEvent> gameEvents,
+    String teamId, {
+    List<Player>? teamGoalies,
+  }) {
     if (goalie.position != 'G') return 0;
-    
+    final isOnlyGoalie = teamGoalies != null &&
+        teamGoalies.length == 1 &&
+        teamGoalies.first.id == goalie.id;
+
     return gameEvents.where((event) => 
       event.eventType == 'Shot' && 
       event.team != teamId && // Opponent shots
-      event.goalieOnIceId == goalie.id
+      (event.goalieOnIceId == goalie.id ||
+          (isOnlyGoalie && (event.goalieOnIceId == null || event.goalieOnIceId!.isEmpty)))
     ).length;
   }
 
   /// Calculate goals against for a goalie
-  static int calculateGoalsAgainst(Player goalie, List<GameEvent> gameEvents, String teamId) {
+  static int calculateGoalsAgainst(
+    Player goalie,
+    List<GameEvent> gameEvents,
+    String teamId, {
+    List<Player>? teamGoalies,
+  }) {
     if (goalie.position != 'G') return 0;
-    
+    final isOnlyGoalie = teamGoalies != null &&
+        teamGoalies.length == 1 &&
+        teamGoalies.first.id == goalie.id;
+
     return gameEvents.where((event) => 
       event.eventType == 'Shot' && 
       event.isGoal == true &&
       event.team != teamId && // Opponent goals
-      event.goalieOnIceId == goalie.id
+      (event.goalieOnIceId == goalie.id ||
+          (isOnlyGoalie && (event.goalieOnIceId == null || event.goalieOnIceId!.isEmpty)))
     ).length;
   }
 
   /// Calculate saves for a goalie
-  static int calculateSaves(Player goalie, List<GameEvent> gameEvents, String teamId) {
+  static int calculateSaves(
+    Player goalie,
+    List<GameEvent> gameEvents,
+    String teamId, {
+    List<Player>? teamGoalies,
+  }) {
     if (goalie.position != 'G') return 0;
     
-    final shotsAgainst = calculateShotsAgainst(goalie, gameEvents, teamId);
-    final goalsAgainst = calculateGoalsAgainst(goalie, gameEvents, teamId);
+    final shotsAgainst = calculateShotsAgainst(goalie, gameEvents, teamId, teamGoalies: teamGoalies);
+    final goalsAgainst = calculateGoalsAgainst(goalie, gameEvents, teamId, teamGoalies: teamGoalies);
     return shotsAgainst - goalsAgainst;
   }
 
   /// Calculate save percentage for a goalie
-  static double calculateSavePercentage(Player goalie, List<GameEvent> gameEvents, String teamId) {
+  static double calculateSavePercentage(
+    Player goalie,
+    List<GameEvent> gameEvents,
+    String teamId, {
+    List<Player>? teamGoalies,
+  }) {
     if (goalie.position != 'G') return 0.0;
     
-    final shotsAgainst = calculateShotsAgainst(goalie, gameEvents, teamId);
+    final shotsAgainst = calculateShotsAgainst(goalie, gameEvents, teamId, teamGoalies: teamGoalies);
     if (shotsAgainst == 0) return 0.0;
     
-    final saves = calculateSaves(goalie, gameEvents, teamId);
+    final saves = calculateSaves(goalie, gameEvents, teamId, teamGoalies: teamGoalies);
     return saves / shotsAgainst;
   }
 
   /// Calculate games played for a goalie
-  static int calculateGamesPlayed(Player goalie, List<GameEvent> gameEvents) {
+  static int calculateGamesPlayed(
+    Player goalie,
+    List<GameEvent> gameEvents, {
+    List<Player>? teamGoalies,
+  }) {
     if (goalie.position != 'G') return 0;
     
+    final isOnlyGoalie = teamGoalies != null &&
+        teamGoalies.length == 1 &&
+        teamGoalies.first.id == goalie.id;
+
     // Count unique games where the goalie was on ice
     final uniqueGames = gameEvents
-        .where((event) => event.goalieOnIceId == goalie.id)
+        .where((event) =>
+            event.goalieOnIceId == goalie.id ||
+            (isOnlyGoalie && (event.goalieOnIceId == null || event.goalieOnIceId!.isEmpty)))
         .map((event) => event.gameId)
         .toSet();
     
@@ -177,7 +280,12 @@ class StatsService {
   }
 
   /// Get complete goalie statistics
-  static GoalieSeasonStats getGoalieStats(Player goalie, List<GameEvent> gameEvents, String teamId) {
+  static GoalieSeasonStats getGoalieStats(
+    Player goalie,
+    List<GameEvent> gameEvents,
+    String teamId, {
+    List<Player>? teamGoalies,
+  }) {
     if (goalie.position != 'G') {
       return GoalieSeasonStats(playerId: goalie.id);
     }
@@ -186,14 +294,20 @@ class StatsService {
       playerId: goalie.id,
       playerName: '#${goalie.jerseyNumber}',
       playerJerseyNumber: goalie.jerseyNumber,
-      shotsAgainst: calculateShotsAgainst(goalie, gameEvents, teamId),
-      goalsAgainst: calculateGoalsAgainst(goalie, gameEvents, teamId),
-      gamesPlayed: calculateGamesPlayed(goalie, gameEvents),
+      shotsAgainst: calculateShotsAgainst(goalie, gameEvents, teamId, teamGoalies: teamGoalies),
+      goalsAgainst: calculateGoalsAgainst(goalie, gameEvents, teamId, teamGoalies: teamGoalies),
+      gamesPlayed: calculateGamesPlayed(goalie, gameEvents, teamGoalies: teamGoalies),
     );
     
+    final isOnlyGoalie = teamGoalies != null &&
+        teamGoalies.length == 1 &&
+        teamGoalies.first.id == goalie.id;
+
     // Add games played tracking
     final uniqueGames = gameEvents
-        .where((event) => event.goalieOnIceId == goalie.id)
+        .where((event) =>
+            event.goalieOnIceId == goalie.id ||
+            (isOnlyGoalie && (event.goalieOnIceId == null || event.goalieOnIceId!.isEmpty)))
         .map((event) => event.gameId)
         .toSet();
     
@@ -202,5 +316,161 @@ class StatsService {
     }
     
     return stats;
+  }
+
+  /// Calculates complete special teams statistics (PP%, PK%, Shots/PP, Shots Allowed/PK, Net ST Goals)
+  static SpecialTeamsStats getSpecialTeamsStats(List<GameEvent> gameEvents, String teamId) {
+    int ppGoals = 0;
+    int rawPpOpps = 0;
+    int pkGoalsConceded = 0;
+    int rawPkOpps = 0;
+    int shGoalsFor = 0;
+    int shGoalsAgainst = 0;
+    int ppShots = 0;
+    int pkShotsAllowed = 0;
+
+    for (final event in gameEvents) {
+      final isYourTeam = event.team == teamId;
+
+      if (event.eventType == 'Shot') {
+        if (event.isGoal == true) {
+          if (event.goalSituation == GoalSituation.powerPlay) {
+            if (isYourTeam) {
+              ppGoals++;
+            } else {
+              pkGoalsConceded++;
+            }
+          } else if (event.goalSituation == GoalSituation.shortHanded) {
+            if (isYourTeam) {
+              shGoalsFor++;
+            } else {
+              pkGoalsConceded++;
+            }
+          }
+        }
+
+        // Shot counts on power play / penalty kill
+        if (event.goalSituation == GoalSituation.powerPlay) {
+          if (isYourTeam) {
+            ppShots++;
+          } else {
+            pkShotsAllowed++;
+          }
+        } else if (event.goalSituation == GoalSituation.shortHanded) {
+          if (!isYourTeam) {
+            pkShotsAllowed++;
+          }
+        }
+      } else if (event.eventType == 'Penalty') {
+        if (isYourTeam) {
+          rawPkOpps++;
+        } else {
+          rawPpOpps++;
+        }
+      }
+    }
+
+    // Ensure opportunities account for PP goals scored/conceded even if penalties weren't logged explicitly
+    final ppOpps = max(rawPpOpps, ppGoals);
+    final pkOpps = max(rawPkOpps, pkGoalsConceded);
+
+    final ppPct = ppOpps > 0 ? (ppGoals / ppOpps) * 100 : 0.0;
+    final pkSuccesses = pkOpps - pkGoalsConceded;
+    final pkPct = pkOpps > 0 ? (pkSuccesses / pkOpps) * 100 : 100.0;
+
+    final ppShotsPerOpp = ppOpps > 0 ? ppShots / ppOpps : 0.0;
+    final pkShotsAllowedPerOpp = pkOpps > 0 ? pkShotsAllowed / pkOpps : 0.0;
+
+    final netStGoals = (ppGoals + shGoalsFor) - (pkGoalsConceded + shGoalsAgainst);
+    final combinedStIndex = ppPct + pkPct;
+
+    final penaltiesTaken = rawPkOpps;
+    final penaltiesDrawn = rawPpOpps;
+    final netPenalties = penaltiesDrawn - penaltiesTaken;
+
+    return SpecialTeamsStats(
+      ppGoals: ppGoals,
+      ppOpportunities: ppOpps,
+      ppPercentage: ppPct,
+      pkOpportunities: pkOpps,
+      pkGoalsConceded: pkGoalsConceded,
+      pkSuccesses: pkSuccesses,
+      pkPercentage: pkPct,
+      shGoalsFor: shGoalsFor,
+      shGoalsAgainst: shGoalsAgainst,
+      ppShots: ppShots,
+      ppShotsPerOpp: ppShotsPerOpp,
+      pkShotsAllowed: pkShotsAllowed,
+      pkShotsAllowedPerOpp: pkShotsAllowedPerOpp,
+      netSpecialTeamsGoals: netStGoals,
+      combinedSpecialTeamsIndex: combinedStIndex,
+      penaltiesDrawn: penaltiesDrawn,
+      penaltiesTaken: penaltiesTaken,
+      netPenalties: netPenalties,
+    );
+  }
+
+  /// Calculates on-ice shot differential (Player Corsi) for a skater
+  static OnIceShotStats getOnIceShotStats(Player player, List<GameEvent> gameEvents, String teamId) {
+    if (player.position == 'G') {
+      return OnIceShotStats(
+        shotsForOnIce: 0,
+        shotsAgainstOnIce: 0,
+        netShotsOnIce: 0,
+        shotSharePercentage: 0.0,
+      );
+    }
+
+    int shotsFor = 0;
+    int shotsAgainst = 0;
+
+    for (final event in gameEvents) {
+      if (event.eventType == 'Shot') {
+        final onIce = event.yourTeamPlayersOnIce;
+        if (onIce != null && onIce.contains(player.id)) {
+          if (event.team == teamId) {
+            shotsFor++;
+          } else {
+            shotsAgainst++;
+          }
+        }
+      }
+    }
+
+    final netShots = shotsFor - shotsAgainst;
+    final totalShots = shotsFor + shotsAgainst;
+    final share = totalShots > 0 ? (shotsFor / totalShots) * 100 : 0.0;
+
+    return OnIceShotStats(
+      shotsForOnIce: shotsFor,
+      shotsAgainstOnIce: shotsAgainst,
+      netShotsOnIce: netShots,
+      shotSharePercentage: share,
+    );
+  }
+
+  /// Returns list of shots faced by a specified goalie (or opponent goalie)
+  static List<GameEvent> getShotsFacedByGoalie(
+    Player goalie,
+    List<GameEvent> gameEvents,
+    String teamId, {
+    List<Player>? teamGoalies,
+    bool isOpponentGoalie = false,
+  }) {
+    if (isOpponentGoalie) {
+      // Shots faced by opponent goalie are shots taken by your team
+      return gameEvents.where((e) => e.eventType == 'Shot' && e.team == teamId).toList();
+    }
+
+    final isOnlyGoalie = teamGoalies != null &&
+        teamGoalies.length == 1 &&
+        teamGoalies.first.id == goalie.id;
+
+    return gameEvents.where((event) =>
+      event.eventType == 'Shot' &&
+      event.team != teamId &&
+      (event.goalieOnIceId == goalie.id ||
+          (isOnlyGoalie && (event.goalieOnIceId == null || event.goalieOnIceId!.isEmpty)))
+    ).toList();
   }
 }

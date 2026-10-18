@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/services/pdf_service.dart';
+import 'package:hockey_stats_app/services/stats_service.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
 import 'package:hockey_stats_app/widgets/email_dialog.dart';
 import 'package:printing/printing.dart';
@@ -54,6 +55,74 @@ class _ShareDialogState extends State<ShareDialog> {
         setState(() {
           _isGeneratingPdf = false;
         });
+      }
+    }
+  }
+
+  Future<void> _shareQuickTextSummary() async {
+    try {
+      final teamContextService = TeamContextService();
+      final teamName = await teamContextService.getCurrentTeamName();
+      final opponentName = widget.game.opponent;
+
+      final Map<int, int> teamShots = {1: 0, 2: 0, 3: 0, 4: 0};
+      final Map<int, int> oppShots = {1: 0, 2: 0, 3: 0, 4: 0};
+      int teamGoals = 0;
+      int oppGoals = 0;
+
+      for (final event in widget.gameEvents) {
+        if (event.eventType == 'Shot') {
+          final p = event.period.clamp(1, 4);
+          if (event.team == widget.teamId) {
+            teamShots[p] = (teamShots[p] ?? 0) + 1;
+            if (event.isGoal == true) teamGoals++;
+          } else if (event.team == 'opponent') {
+            oppShots[p] = (oppShots[p] ?? 0) + 1;
+            if (event.isGoal == true) oppGoals++;
+          }
+        }
+      }
+
+      final int teamTotalShots = teamShots.values.fold(0, (a, b) => a + b);
+      final int oppTotalShots = oppShots.values.fold(0, (a, b) => a + b);
+
+      final goalies = widget.players.where((p) => p.position == 'G').toList();
+      final List<String> goalieLines = [];
+      for (final g in goalies) {
+        final stats = StatsService.getGoalieStats(g, widget.gameEvents, widget.teamId, teamGoalies: goalies);
+        if (stats.shotsAgainst > 0) {
+          final svPctStr = (stats.savePercentage * 100).toStringAsFixed(1);
+          goalieLines.add('• #${g.jerseyNumber}: ${stats.saves}/${stats.shotsAgainst} SV ($svPctStr%)');
+        }
+      }
+
+      final StringBuffer buffer = StringBuffer();
+      buffer.writeln('🏒 Game Update: $teamName vs $opponentName');
+      buffer.writeln('Score: $teamGoals - $oppGoals\n');
+      buffer.writeln('Shots on Goal by Period:');
+      buffer.writeln('• $teamName: P1: ${teamShots[1]} | P2: ${teamShots[2]} | P3: ${teamShots[3]}${(teamShots[4] ?? 0) > 0 ? " | OT: ${teamShots[4]}" : ""} (Total: $teamTotalShots)');
+      buffer.writeln('• $opponentName: P1: ${oppShots[1]} | P2: ${oppShots[2]} | P3: ${oppShots[3]}${(oppShots[4] ?? 0) > 0 ? " | OT: ${oppShots[4]}" : ""} (Total: $oppTotalShots)\n');
+
+      if (goalieLines.isNotEmpty) {
+        buffer.writeln('Goalie Stats:');
+        for (final line in goalieLines) {
+          buffer.writeln(line);
+        }
+      }
+
+      await Share.share(
+        buffer.toString(),
+        subject: '$teamName vs $opponentName Game Update',
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error sharing text summary: $e')),
+        );
       }
     }
   }
@@ -230,6 +299,16 @@ class _ShareDialogState extends State<ShareDialog> {
             ),
             const SizedBox(height: 12),
 
+            // Quick Text Coach Option
+            _buildShareOption(
+              icon: Icons.send_to_mobile,
+              title: 'Quick Text Update (SMS / WhatsApp)',
+              subtitle: 'Send instant period score & shots on goal text',
+              onTap: _shareQuickTextSummary,
+              color: Colors.purple,
+            ),
+            const SizedBox(height: 8),
+
             // Email Option
             _buildShareOption(
               icon: Icons.email,
@@ -243,7 +322,7 @@ class _ShareDialogState extends State<ShareDialog> {
             // Share to Apps Option
             _buildShareOption(
               icon: Icons.share,
-              title: 'Share to Apps',
+              title: 'Share PDF Report to Apps',
               subtitle: 'WhatsApp, Messages, and other apps',
               onTap: _isGeneratingPdf ? null : _shareToApps,
               color: Colors.green,
@@ -253,7 +332,7 @@ class _ShareDialogState extends State<ShareDialog> {
             // Save to Device Option
             _buildShareOption(
               icon: Icons.download,
-              title: 'Save to Device',
+              title: 'Save PDF to Device',
               subtitle: 'Save PDF to downloads folder',
               onTap: _isGeneratingPdf ? null : _savePdfToDevice,
               color: Colors.orange,

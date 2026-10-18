@@ -1,5 +1,6 @@
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
+import 'package:hockey_stats_app/services/background_sync_service.dart';
 import 'package:hive/hive.dart';
 
 /// Centralized data service that ensures Google Sheets is always the source of truth
@@ -174,6 +175,16 @@ class CentralizedDataService {
     _lastEventsFetch = null;
   }
 
+  /// Invalidates cache for a specific game event or game
+  void invalidateEvent(String? gameId) {
+    if (gameId != null && _cachedEvents != null) {
+      _cachedEvents!.remove(gameId);
+    } else {
+      _cachedEvents = null;
+    }
+    _lastEventsFetch = null;
+  }
+
   /// Gets game events from local Hive storage (fallback)
   List<GameEvent> _getLocalGameEvents(String gameId) {
     try {
@@ -204,35 +215,56 @@ class CentralizedDataService {
   Future<void> _updateLocalCache(List<GameEvent> freshEvents) async {
     try {
       final gameEventsBox = Hive.box<GameEvent>('gameEvents');
-      
-      // Get existing unsynced events to preserve them
-      final unsyncedEvents = gameEventsBox.values.where((event) => !event.isSynced).toList();
-      
+      Box<String>? pendingDeletionsBox;
+      if (Hive.isBoxOpen('pendingDeletions')) {
+        pendingDeletionsBox = Hive.box<String>('pendingDeletions');
+      }
+
+      final pendingDeleteIds = pendingDeletionsBox?.keys.cast<String>().toSet() ?? <String>{};
+
+      // Filter fresh events: exclude any event pending deletion
+      final filteredFreshEvents = freshEvents.where((e) => !pendingDeleteIds.contains(e.id)).toList();
+
+      // Get existing unsynced events to preserve local un-synced edits
+      final unsyncedEventsMap = <String, GameEvent>{};
+      for (final event in gameEventsBox.values) {
+        if (!event.isSynced && !pendingDeleteIds.contains(event.id)) {
+          unsyncedEventsMap[event.id] = event;
+        }
+      }
+
       // Create a set of fresh event IDs for quick lookup
-      final freshEventIds = freshEvents.map((e) => e.id).toSet();
-      
+      final freshEventIds = filteredFreshEvents.map((e) => e.id).toSet();
+
       // Remove synced events that are no longer in Google Sheets
       final syncedEventsToDelete = gameEventsBox.values
           .where((event) => event.isSynced && !freshEventIds.contains(event.id))
           .toList();
-      
+
       for (final event in syncedEventsToDelete) {
         await event.delete();
       }
-      
-      // Add/update fresh events from Google Sheets
-      for (final event in freshEvents) {
-        await gameEventsBox.put(event.id, event);
+
+      // Ensure any event in pendingDeletions is removed from Hive
+      for (final deleteId in pendingDeleteIds) {
+        if (gameEventsBox.containsKey(deleteId)) {
+          await gameEventsBox.delete(deleteId);
+        }
       }
-      
-      // Restore unsynced events
-      for (final event in unsyncedEvents) {
-        if (!freshEventIds.contains(event.id)) {
+
+      // Add/update fresh events from Google Sheets, PRESERVING unsynced local edits
+      for (final event in filteredFreshEvents) {
+        if (!unsyncedEventsMap.containsKey(event.id)) {
           await gameEventsBox.put(event.id, event);
         }
       }
-      
-      print('CentralizedDataService: Updated local cache with ${freshEvents.length} fresh events');
+
+      // Restore unsynced events (newly created or locally edited)
+      for (final unsyncedEvent in unsyncedEventsMap.values) {
+        await gameEventsBox.put(unsyncedEvent.id, unsyncedEvent);
+      }
+
+      print('CentralizedDataService: Updated local cache with ${filteredFreshEvents.length} fresh events');
     } catch (e) {
       print('CentralizedDataService: Error updating local cache: $e');
     }

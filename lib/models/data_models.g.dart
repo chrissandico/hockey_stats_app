@@ -129,13 +129,17 @@ class GameEventAdapter extends TypeAdapter<GameEvent> {
       version: fields[14] as int?,
       goalSituation: fields[15] as GoalSituation?,
       goalieOnIceId: fields[16] as String?,
+      gameClockTime: fields[17] as String?,
+      shiftDuration: fields[18] as int?,
+      shotX: fields[19] as double?,
+      shotY: fields[20] as double?,
     );
   }
 
   @override
   void write(BinaryWriter writer, GameEvent obj) {
     writer
-      ..writeByte(17)
+      ..writeByte(21)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -169,7 +173,15 @@ class GameEventAdapter extends TypeAdapter<GameEvent> {
       ..writeByte(15)
       ..write(obj.goalSituation)
       ..writeByte(16)
-      ..write(obj.goalieOnIceId);
+      ..write(obj.goalieOnIceId)
+      ..writeByte(17)
+      ..write(obj.gameClockTime)
+      ..writeByte(18)
+      ..write(obj.shiftDuration)
+      ..writeByte(19)
+      ..write(obj.shotX)
+      ..writeByte(20)
+      ..write(obj.shotY);
   }
 
   @override

@@ -1,7 +1,10 @@
-// Load key.properties file
 import java.util.Properties
 import java.io.FileInputStream
 
+// Fix AGP AndroidLocationsException when both ANDROID_PREFS_ROOT and ANDROID_USER_HOME are present
+System.getProperties().remove("ANDROID_PREFS_ROOT")
+
+// Load key.properties file
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 if (keystorePropertiesFile.exists()) {

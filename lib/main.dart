@@ -12,6 +12,7 @@ import 'package:hockey_stats_app/services/team_auth_service.dart'; // Import Tea
 import 'package:hockey_stats_app/services/connectivity_service.dart'; // Import ConnectivityService
 import 'package:hockey_stats_app/services/background_sync_service.dart'; // Import BackgroundSyncService
 import 'package:hockey_stats_app/services/memory_cache_service.dart'; // Import MemoryCacheService
+import 'package:hockey_stats_app/services/centralized_data_service.dart'; // Import CentralizedDataService
 // Removed imports for log_shot_screen and log_penalty_screen as we navigate via GameSelectionScreen now
 
 // Define the dummyGameId here to be used across files (still needed for dummy data creation)
@@ -95,7 +96,7 @@ Future<void> _safelyOpenHiveBoxes() async {
   print('Opening Hive boxes with error handling...');
   
   // List of box names to open
-  final boxNames = ['players', 'games', 'gameEvents', 'emailSettings', 'gameRoster', 'gameAttendance', 'syncPreferences'];
+  final boxNames = ['players', 'games', 'gameEvents', 'emailSettings', 'gameRoster', 'gameAttendance', 'syncPreferences', 'pendingDeletions'];
   
   for (final boxName in boxNames) {
     try {
@@ -116,6 +117,8 @@ Future<void> _safelyOpenHiveBoxes() async {
         await Hive.openBox<GameAttendance>(boxName);
       } else if (boxName == 'syncPreferences') {
         await Hive.openBox<SyncPreferences>(boxName);
+      } else if (boxName == 'pendingDeletions') {
+        await Hive.openBox<String>(boxName);
       }
       
       print('Successfully opened box: $boxName');
@@ -149,7 +152,7 @@ Future<void> _initializePerformanceServices() async {
     final backgroundSyncService = BackgroundSyncService();
     await backgroundSyncService.initialize();
     print('BackgroundSyncService initialized');
-    
+
     print('Performance services initialization completed');
   } catch (e) {
     print('Error initializing performance services: $e');

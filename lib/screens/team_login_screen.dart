@@ -146,6 +146,9 @@ class _TeamLoginScreenState extends State<TeamLoginScreen> {
                     // Password field
                     TextFormField(
                       controller: _passwordController,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      textCapitalization: TextCapitalization.none,
                       decoration: InputDecoration(
                         labelText: 'Team Password',
                         border: const OutlineInputBorder(),

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/services/line_configuration_service.dart';
+import 'package:hockey_stats_app/services/stats_service.dart';
 
 // Data class to represent a line position
 class LinePosition {
@@ -19,6 +21,8 @@ class LinePosition {
 class _DraggablePlayerButton extends StatelessWidget {
   final Player player;
   final bool isOnIce;
+  final bool isPowerPlay;
+  final bool isPenaltyKill;
   final bool isGoalScorer;
   final bool isAssist1;
   final bool isAssist2;
@@ -38,6 +42,8 @@ class _DraggablePlayerButton extends StatelessWidget {
   const _DraggablePlayerButton({
     required this.player,
     required this.isOnIce,
+    this.isPowerPlay = false,
+    this.isPenaltyKill = false,
     required this.isGoalScorer,
     required this.isAssist1,
     required this.isAssist2,
@@ -63,40 +69,52 @@ class _DraggablePlayerButton extends StatelessWidget {
   }
 
   Color get _backgroundColor {
-    final key = 'bg_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}_${isDragging}';
+    final key = 'bg_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}_${isPowerPlay}_${isPenaltyKill}_${isDragging}';
     return _getCachedColor(key, () {
       if (isDragging) return Colors.blue.withOpacity(0.1);
       if (isAbsent) return Colors.grey.withOpacity(0.3);
       if (isGoalScorer) return Colors.green.withOpacity(0.2);
       if (isAssist1 || isAssist2) return Colors.orange.withOpacity(0.2);
       if (isSelectedGoalie) return Colors.purple.withOpacity(0.2);
-      if (isOnIce) return Colors.blue.withOpacity(0.2);
+      if (isOnIce) {
+        if (isPowerPlay) return Colors.amber.withOpacity(0.3);
+        if (isPenaltyKill) return Colors.red.withOpacity(0.25);
+        return Colors.blue.withOpacity(0.2);
+      }
       return Colors.grey.withOpacity(0.1);
     });
   }
 
   Color get _borderColor {
-    final key = 'border_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}_${isDragging}';
+    final key = 'border_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}_${isPowerPlay}_${isPenaltyKill}_${isDragging}';
     return _getCachedColor(key, () {
       if (isDragging) return Colors.blue.withOpacity(0.3);
       if (isAbsent) return Colors.grey;
       if (isGoalScorer) return Colors.green;
       if (isAssist1 || isAssist2) return Colors.orange;
       if (isSelectedGoalie) return Colors.purple;
-      if (isOnIce) return Colors.blue;
+      if (isOnIce) {
+        if (isPowerPlay) return Colors.amber.shade800;
+        if (isPenaltyKill) return Colors.redAccent.shade700;
+        return Colors.blue;
+      }
       return Colors.grey.withOpacity(0.5);
     });
   }
 
   Color get _textColor {
-    final key = 'text_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}_${isDragging}';
+    final key = 'text_${isAbsent}_${isGoalScorer}_${isAssist1}_${isAssist2}_${isSelectedGoalie}_${isOnIce}_${isPowerPlay}_${isPenaltyKill}_${isDragging}';
     return _getCachedColor(key, () {
       if (isDragging) return Colors.blue.withOpacity(0.7);
       if (isAbsent) return Colors.grey;
       if (isGoalScorer) return Colors.green;
       if (isAssist1 || isAssist2) return Colors.orange;
       if (isSelectedGoalie) return Colors.purple;
-      if (isOnIce) return Colors.blue;
+      if (isOnIce) {
+        if (isPowerPlay) return Colors.amber.shade900;
+        if (isPenaltyKill) return Colors.red.shade900;
+        return Colors.blue.shade900;
+      }
       return Colors.black87;
     });
   }
@@ -138,13 +156,19 @@ class _DraggablePlayerButton extends StatelessWidget {
       child: Stack(
         children: [
           Center(
-            child: Text(
-              '#${player.jerseyNumber}',
-              style: TextStyle(
-                fontSize: jerseyFontSize,
-                fontWeight: FontWeight.bold,
-                color: _textColor,
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '#${player.jerseyNumber}',
+                  style: TextStyle(
+                    fontSize: jerseyFontSize,
+                    fontWeight: FontWeight.bold,
+                    color: _textColor,
+                  ),
+                ),
+              ],
             ),
           ),
           // Position indicator badge
@@ -167,10 +191,33 @@ class _DraggablePlayerButton extends StatelessWidget {
               ),
             ),
           ),
+          // Special Teams Situational Badge on On-Ice players
+          if (isOnIce && !isGoalie)
+            Positioned(
+              top: 2,
+              right: 2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                decoration: BoxDecoration(
+                  color: isPowerPlay
+                      ? Colors.amber.shade800
+                      : (isPenaltyKill ? Colors.redAccent.shade700 : Colors.blue.shade700),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  isPowerPlay ? 'PP' : (isPenaltyKill ? 'PK' : 'EV'),
+                  style: const TextStyle(
+                    fontSize: 7,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
           // Role indicators
           if (isGoalScorer)
             Positioned(
-              top: 2,
+              bottom: 2,
               right: 2,
               child: Icon(
                 Icons.sports_score,
@@ -278,9 +325,14 @@ class _PlayerButtonInDropTarget extends StatelessWidget {
     final isSelectedGoalie = parentState.widget.selectedGoalie == player;
     final isAbsent = parentState._isPlayerAbsent(player);
 
+    final isPowerPlay = parentState._isPowerPlay;
+    final isPenaltyKill = !isPowerPlay && parentState._isPenaltyKill;
+
     return _DraggablePlayerButton(
       player: player,
       isOnIce: isOnIce,
+      isPowerPlay: isPowerPlay,
+      isPenaltyKill: isPenaltyKill,
       isGoalScorer: isGoalScorer,
       isAssist1: isAssist1,
       isAssist2: isAssist2,
@@ -290,8 +342,6 @@ class _PlayerButtonInDropTarget extends StatelessWidget {
       height: parentState._playerBoxHeight,
       jerseyFontSize: parentState._jerseyFontSize,
       positionBadgeFontSize: parentState._positionBadgeFontSize,
-      iconSize: parentState._iconSize,
-      smallIconSize: parentState._smallIconSize,
       onTap: () => onPlayerTap(player),
       onLongPress: () => onPlayerLongPress(player),
       onDoubleTap: () => onPlayerLongPress(player),
@@ -447,6 +497,7 @@ class _LineHeader extends StatelessWidget {
 }
 
 class PlayerSelectionWidget extends StatefulWidget {
+  final String? gameId;
   final List<Player> players;
   final List<Player> goalies;
   final Set<String> absentPlayerIds;
@@ -460,9 +511,14 @@ class PlayerSelectionWidget extends StatefulWidget {
   final Function(Player?) onAssist1Changed;
   final Function(Player?)? onAssist2Changed;
   final Function(Player?) onGoalieChanged;
+  final bool initialIsPowerPlay;
+  final ValueChanged<bool>? onPowerPlayChanged;
+  final bool initialIsPenaltyKill;
+  final ValueChanged<bool>? onPenaltyKillChanged;
 
   const PlayerSelectionWidget({
     super.key,
+    this.gameId,
     required this.players,
     required this.goalies,
     required this.absentPlayerIds,
@@ -476,6 +532,10 @@ class PlayerSelectionWidget extends StatefulWidget {
     required this.onAssist1Changed,
     this.onAssist2Changed,
     required this.onGoalieChanged,
+    this.initialIsPowerPlay = false,
+    this.onPowerPlayChanged,
+    this.initialIsPenaltyKill = false,
+    this.onPenaltyKillChanged,
   });
 
   @override
@@ -485,6 +545,8 @@ class PlayerSelectionWidget extends StatefulWidget {
 class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
   final LineConfigurationService _lineService = LineConfigurationService.instance;
   String? _currentGameId;
+  bool _isPowerPlay = false;
+  bool _isPenaltyKill = false;
 
   // Compact mode detection - activate when team has >15 players
   bool get _isCompactMode {
@@ -498,35 +560,38 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
   double get _jerseyFontSize => _isCompactMode ? 14.0 : 16.0;
   double get _positionBadgeFontSize => _isCompactMode ? 7.0 : 8.0;
   double get _lineVerticalPadding => _isCompactMode ? 1.0 : 2.0;
-  double get _sectionSpacing => _isCompactMode ? 6.0 : 8.0;
-  double get _cardPadding => _isCompactMode ? 6.0 : 8.0;
-  double get _iconSize => _isCompactMode ? 10.0 : 12.0;
-  double get _smallIconSize => _isCompactMode ? 8.0 : 10.0;
 
   @override
   void initState() {
     super.initState();
+    _isPowerPlay = widget.initialIsPowerPlay;
+    _isPenaltyKill = widget.initialIsPenaltyKill;
     _initializeLines();
   }
 
   @override
   void didUpdateWidget(PlayerSelectionWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.players != widget.players) {
-      _initializeLines();
+    if (oldWidget.gameId != widget.gameId) {
+      _initializeLines(forceReload: true);
+    } else if (oldWidget.players != widget.players) {
+      if (oldWidget.players.isEmpty && widget.players.isNotEmpty) {
+        _initializeLines(forceReload: true);
+      } else {
+        _lineService.syncPlayerReferences(widget.players);
+      }
+    }
+    if (oldWidget.initialIsPowerPlay != widget.initialIsPowerPlay) {
+      _isPowerPlay = widget.initialIsPowerPlay;
+    }
+    if (oldWidget.initialIsPenaltyKill != widget.initialIsPenaltyKill) {
+      _isPenaltyKill = widget.initialIsPenaltyKill;
     }
   }
 
-  void _initializeLines() async {
-    // For now, use a default game ID. In a real implementation, this would come from the current game context
-    _currentGameId = 'current_game';
-    
-    // Initialize lines with current players
-    _lineService.initializeLines(widget.players);
-    
-    // Load saved configuration for this game
-    await _lineService.loadLineConfiguration(_currentGameId!, widget.players);
-    
+  void _initializeLines({bool forceReload = false}) async {
+    _currentGameId = widget.gameId ?? 'current_game';
+    await _lineService.loadLineConfiguration(_currentGameId!, widget.players, forceReload: forceReload);
     if (mounted) {
       setState(() {});
     }
@@ -537,6 +602,7 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
       try {
         await _lineService.saveLineConfiguration(_currentGameId!);
         if (mounted) {
+          setState(() {});
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Lineup saved successfully'),
@@ -556,19 +622,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
           );
         }
       }
-    }
-  }
-  
-  void _resetToSavedConfiguration() {
-    _lineService.resetToSavedConfiguration();
-    if (mounted) {
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Reset to last saved lineup'),
-          duration: Duration(seconds: 2),
-        ),
-      );
     }
   }
 
@@ -594,29 +647,19 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
   }
 
   void _handlePlayerDropped(Player player, LinePosition position) {
-    // Find the current position of the dragged player
     LinePosition? currentPosition = _findPlayerPosition(player);
-    
-    // Check if there's already a player in the target position
-    List<List<Player?>> targetLines = position.positionType == 'forward' 
+    List<List<Player?>> targetLines = position.positionType == 'forward'
         ? _lineService.forwardLines 
         : _lineService.defenseLines;
     Player? existingPlayer = targetLines[position.lineIndex][position.positionIndex];
     
-    // Remove the dragged player from their current position
     _lineService.removePlayerFromLines(player);
-    
-    // Place the dragged player in the target position
     _lineService.updatePosition(position.positionType, position.lineIndex, position.positionIndex, player);
     
-    // If there was a player in the target position, swap them to the dragged player's original position
     if (existingPlayer != null && currentPosition != null) {
-      // Place the displaced player in the dragged player's original position
       _lineService.updatePosition(currentPosition.positionType, currentPosition.lineIndex, currentPosition.positionIndex, existingPlayer);
     } else if (existingPlayer != null) {
-      // If we couldn't find the original position, find any empty spot for the displaced player
-      // Try to place in appropriate position type first (forward for forward, defense for defense)
-      final isForward = existingPlayer.position == 'C' || 
+      final isForward = existingPlayer.position == 'C' ||
                        existingPlayer.position == 'LW' || 
                        existingPlayer.position == 'RW' ||
                        existingPlayer.position == 'F';
@@ -624,28 +667,20 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
       
       _lineService.findEmptySpotForPlayer(existingPlayer, preferredPositionType);
       
-      // If no spot found in preferred type, try the other type (since we now allow flexibility)
       if (!_isPlayerInLines(existingPlayer)) {
         final alternatePositionType = isForward ? 'defense' : 'forward';
         _lineService.findEmptySpotForPlayer(existingPlayer, alternatePositionType);
       }
     }
+
+    if (_currentGameId != null) {
+      _lineService.saveWorkingLines(_currentGameId!);
+    }
     
-    // Trigger rebuild to update unsaved changes indicator
     setState(() {});
   }
 
-  void _removePlayerFromLines(Player player) {
-    _lineService.removePlayerFromLines(player);
-  }
-
-  void _findEmptySpotForPlayer(Player player, String positionType) {
-    _lineService.findEmptySpotForPlayer(player, positionType);
-  }
-
-  /// Find the current position of a player in the lines
   LinePosition? _findPlayerPosition(Player player) {
-    // Check forward lines
     for (int lineIndex = 0; lineIndex < _lineService.forwardLines.length; lineIndex++) {
       for (int posIndex = 0; posIndex < _lineService.forwardLines[lineIndex].length; posIndex++) {
         if (_lineService.forwardLines[lineIndex][posIndex] == player) {
@@ -658,7 +693,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
       }
     }
     
-    // Check defense lines
     for (int lineIndex = 0; lineIndex < _lineService.defenseLines.length; lineIndex++) {
       for (int posIndex = 0; posIndex < _lineService.defenseLines[lineIndex].length; posIndex++) {
         if (_lineService.defenseLines[lineIndex][posIndex] == player) {
@@ -674,55 +708,20 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     return null;
   }
 
-  /// Check if a player is currently placed in any line position
   bool _isPlayerInLines(Player player) {
     return _findPlayerPosition(player) != null;
-  }
-
-  /// Reset line configuration to default using Google Sheets as source of truth
-  Future<void> _resetLineConfiguration() async {
-    if (_currentGameId != null) {
-      try {
-        // Reset configuration using Google Sheets as source of truth
-        await _lineService.resetLineConfigurationFromSheets(_currentGameId!, widget.players);
-        
-        // Refresh UI
-        if (mounted) {
-          setState(() {});
-        }
-        
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Line configuration reset to default'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      } catch (e) {
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error resetting configuration: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
   }
 
   void _handlePlayerTap(Player player) {
     final isGoalie = _isGoalie(player);
     
     if (isGoalie) {
-      // Toggle goalie selection
       if (widget.selectedGoalie == player) {
         widget.onGoalieChanged(null);
       } else {
         widget.onGoalieChanged(player);
       }
     } else {
-      // Toggle skater on ice
       List<Player> newPlayersOnIce = List.from(widget.selectedPlayersOnIce);
       final currentGoalieCount = widget.selectedGoalie != null ? 1 : 0;
       
@@ -760,12 +759,10 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     final currentGoalieCount = widget.selectedGoalie != null ? 1 : 0;
     
     if (allSelected) {
-      // Deselect all players in the line
       for (final player in availablePlayers) {
         newPlayersOnIce.remove(player);
       }
     } else {
-      // Select all players in the line (up to the limit)
       final currentSelectionCount = newPlayersOnIce.length;
       final availableSlots = 6 - currentSelectionCount - currentGoalieCount;
       
@@ -795,7 +792,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     final isAbsent = _isPlayerAbsent(player);
     final isGoalie = _isGoalie(player);
     
-    // Only show dialog for selected players
     if (!isOnIce && !isSelectedGoalie) return;
     
     showDialog(
@@ -926,7 +922,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
             padding: EdgeInsets.symmetric(vertical: _lineVerticalPadding),
             child: Row(
               children: [
-                // Line selector on the left - flexible width
                 Flexible(
                   flex: 1,
                   child: _LineHeader(
@@ -937,7 +932,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                // Player positions on the right
                 Expanded(
                   flex: 6,
                   child: Row(
@@ -988,7 +982,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
             padding: EdgeInsets.symmetric(vertical: _lineVerticalPadding),
             child: Row(
               children: [
-                // Line selector on the left - flexible width
                 Flexible(
                   flex: 1,
                   child: _LineHeader(
@@ -999,7 +992,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                // Player positions on the right
                 Expanded(
                   flex: 6,
                   child: Row(
@@ -1051,7 +1043,7 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: goalies.map((goalie) {
-            final isOnIce = false; // Goalies don't use the on-ice selection
+            final isOnIce = false;
             final isGoalScorer = widget.selectedGoalScorer == goalie;
             final isAssist1 = widget.selectedAssist1 == goalie;
             final isAssist2 = widget.selectedAssist2 == goalie;
@@ -1070,8 +1062,8 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
               height: _playerBoxHeight,
               jerseyFontSize: _jerseyFontSize,
               positionBadgeFontSize: _positionBadgeFontSize,
-              iconSize: _iconSize,
-              smallIconSize: _smallIconSize,
+              iconSize: 12.0,
+              smallIconSize: 10.0,
               onTap: () => _handlePlayerTap(goalie),
               onLongPress: () => _showPlayerRoleDialog(goalie),
               onDoubleTap: () => _showPlayerRoleDialog(goalie),
@@ -1084,14 +1076,20 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
 
   @override
   Widget build(BuildContext context) {
-    // Count assists for status display
     int assistCount = 0;
     if (widget.selectedAssist1 != null) assistCount++;
     if (widget.selectedAssist2 != null) assistCount++;
     
-    // Check if there are unsaved changes
     final hasUnsavedChanges = _lineService.hasUnsavedChanges();
-    
+    final totalOnIce = widget.selectedPlayersOnIce.length + (widget.selectedGoalie != null ? 1 : 0);
+
+    final isPenaltyKill = !_isPowerPlay && _isPenaltyKill;
+
+    final situationTag = _isPowerPlay ? 'PP' : (isPenaltyKill ? 'PK' : 'EV');
+    final situationColor = _isPowerPlay
+        ? Colors.amber.shade800
+        : (isPenaltyKill ? Colors.redAccent : Colors.blue);
+
     return Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12.0),
@@ -1101,34 +1099,115 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Compact status bar
+            // Compact status bar with Special Teams Mode
             Container(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
               decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(0.1),
+                color: _isPowerPlay
+                    ? Colors.amber.withOpacity(0.12)
+                    : (isPenaltyKill ? Colors.red.withOpacity(0.12) : Colors.grey.withOpacity(0.1)),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                border: Border.all(
+                  color: _isPowerPlay
+                      ? Colors.amber.shade700
+                      : (isPenaltyKill ? Colors.redAccent.shade700 : Colors.grey.withOpacity(0.3)),
+                ),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.sports_hockey, 
-                        color: (widget.selectedPlayersOnIce.length + (widget.selectedGoalie != null ? 1 : 0)) >= 3 && 
-                               (widget.selectedPlayersOnIce.length + (widget.selectedGoalie != null ? 1 : 0)) <= 6 
-                            ? Colors.green : Colors.red, 
-                        size: 16),
+                      Icon(
+                        Icons.sports_hockey,
+                        color: situationColor,
+                        size: 16,
+                      ),
                       const SizedBox(width: 4),
                       Text(
-                        'On Ice: ${widget.selectedPlayersOnIce.length + (widget.selectedGoalie != null ? 1 : 0)}/6',
+                        'On Ice: $totalOnIce/6 ($situationTag)',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: (widget.selectedPlayersOnIce.length + (widget.selectedGoalie != null ? 1 : 0)) >= 3 && 
-                                 (widget.selectedPlayersOnIce.length + (widget.selectedGoalie != null ? 1 : 0)) <= 6 
-                              ? Colors.green : Colors.red,
+                          color: situationColor,
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      ValueListenableBuilder<Box<GameEvent>>(
+                        valueListenable: Hive.box<GameEvent>('gameEvents').listenable(),
+                        builder: (context, box, _) {
+                          String ppLabel = 'PP';
+                          String pkLabel = 'PK';
+
+                          if (widget.gameId != null && widget.players.isNotEmpty) {
+                            final teamId = widget.players.first.teamId ?? '';
+                            if (teamId.isNotEmpty) {
+                              final gameEvents = box.values
+                                  .where((event) => event.gameId == widget.gameId)
+                                  .toList();
+                              final stStats = StatsService.getSpecialTeamsStats(gameEvents, teamId);
+                              ppLabel = 'PP (${stStats.ppGoals}/${stStats.ppOpportunities})';
+                              pkLabel = 'PK (${stStats.pkSuccesses}/${stStats.pkOpportunities})';
+                            }
+                          }
+
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FilterChip(
+                                label: Text(
+                                  ppLabel,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: _isPowerPlay ? Colors.black : Colors.amber.shade900,
+                                  ),
+                                ),
+                                selected: _isPowerPlay,
+                                selectedColor: Colors.amber,
+                                backgroundColor: Colors.amber.shade50,
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 2),
+                                onSelected: (val) {
+                                  if (widget.onPowerPlayChanged != null) {
+                                    widget.onPowerPlayChanged!.call(val);
+                                  } else {
+                                    setState(() {
+                                      _isPowerPlay = val;
+                                      if (_isPowerPlay) _isPenaltyKill = false;
+                                    });
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 4),
+                              FilterChip(
+                                label: Text(
+                                  pkLabel,
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: isPenaltyKill ? Colors.white : Colors.red.shade900,
+                                  ),
+                                ),
+                                selected: isPenaltyKill,
+                                selectedColor: Colors.red.shade700,
+                                backgroundColor: Colors.red.shade50,
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.symmetric(horizontal: 2),
+                                onSelected: (val) {
+                                  if (widget.onPenaltyKillChanged != null) {
+                                    widget.onPenaltyKillChanged!.call(val);
+                                  } else {
+                                    setState(() {
+                                      _isPenaltyKill = val;
+                                      if (_isPenaltyKill) _isPowerPlay = false;
+                                    });
+                                  }
+                                },
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -1158,27 +1237,17 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
             ),
             
             const SizedBox(height: 8),
-            
-            // Forward lines
             _buildForwardLines(),
-            
             const SizedBox(height: 8),
-            
-            // Defense lines
             _buildDefenseLines(),
-            
             const SizedBox(height: 8),
-            
-            // Goalies section
             _buildGoalieSection(),
-            
             const SizedBox(height: 6),
             
             // Action buttons row
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                // Unsaved changes indicator
                 if (hasUnsavedChanges) ...[
                   const Icon(Icons.circle, size: 8, color: Colors.orange),
                   const SizedBox(width: 4),
@@ -1188,19 +1257,6 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
                   ),
                   const SizedBox(width: 12),
                 ],
-                // Reset button
-                IconButton(
-                  icon: const Icon(Icons.refresh, size: 18),
-                  tooltip: 'Reset to Last Saved Lineup',
-                  style: IconButton.styleFrom(
-                    padding: const EdgeInsets.all(4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  onPressed: _resetToSavedConfiguration,
-                ),
-                const SizedBox(width: 4),
-                // Save button
                 IconButton(
                   icon: Icon(
                     Icons.save,

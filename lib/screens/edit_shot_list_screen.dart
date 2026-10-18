@@ -4,6 +4,8 @@ import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/screens/log_shot_screen.dart';
 import 'package:hockey_stats_app/screens/log_penalty_screen.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
+import 'package:hockey_stats_app/services/centralized_data_service.dart';
+import 'package:hockey_stats_app/services/memory_cache_service.dart';
 import 'package:intl/intl.dart'; // For date formatting
 
 class EditShotListScreen extends StatefulWidget {
@@ -151,6 +153,9 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
             if (continueWithLocal != true) {
               return; // User cancelled, don't delete locally
             }
+
+            // Queue pending deletion for background sync when online
+            await sheetsService.queuePendingDeletion(event.id);
           }
         } else {
           // Event was not synced to Google Sheets, so we only need to delete locally
@@ -160,6 +165,11 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
         // Delete from local database
         await event.delete();
         
+        // Invalidate caches to trigger immediate score/stats recalculations
+        CentralizedDataService().invalidateEvent(widget.gameId);
+        CentralizedDataService().clearCache();
+        MemoryCacheService().removeEvent(event.id);
+
         // Refresh the list
         _loadGameEvents();
         
@@ -169,7 +179,7 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
           if (event.isSynced && deletedFromSheets) {
             message = '${event.eventType} deleted successfully from both local database and Google Sheets';
           } else if (event.isSynced && !deletedFromSheets) {
-            message = '${event.eventType} deleted locally (Google Sheets deletion failed)';
+            message = '${event.eventType} deleted locally (queued to sync deletion when online)';
           } else {
             message = '${event.eventType} deleted successfully';
           }
@@ -274,70 +284,110 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                       backgroundColor = Colors.red.withOpacity(0.7);
                     }
 
+                    final onIceIds = event.yourTeamPlayersOnIce ?? [];
+
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: backgroundColor,
-                          child: Icon(
-                            iconData,
-                            color: Colors.white,
-                          ),
-                        ),
-                        title: Text(
-                          '$eventTypeText by $playerText$detailText',
-                          style: TextStyle(
-                            fontWeight: (isGoal || isPenalty) ? FontWeight.bold : FontWeight.normal,
-                          ),
-                        ),
-                        subtitle: Text(
-                          '${_getPeriodText(event.period)} - ${_formatTimestamp(event.timestamp)}${isYourTeam ? '' : ' (Opponent)'}',
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit),
-                              tooltip: isShot ? 'Edit Shot' : 'Edit Penalty',
-                              onPressed: () {
-                                // Navigate to appropriate edit screen
-                                if (isShot) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => LogShotScreen(
-                                        gameId: widget.gameId,
-                                        period: event.period,
-                                        teamId: widget.teamId,
-                                        eventIdToEdit: event.id,
+                            ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: backgroundColor,
+                                child: Icon(
+                                  iconData,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              title: Text(
+                                '$eventTypeText by $playerText$detailText',
+                                style: TextStyle(
+                                  fontWeight: (isGoal || isPenalty) ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${_getPeriodText(event.period)} - ${_formatTimestamp(event.timestamp)}${isYourTeam ? '' : ' (Opponent)'}',
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit),
+                                    tooltip: isShot ? 'Edit Shot' : 'Edit Penalty',
+                                    onPressed: () {
+                                      // Navigate to appropriate edit screen
+                                      if (isShot) {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => LogShotScreen(
+                                              gameId: widget.gameId,
+                                              period: event.period,
+                                              teamId: widget.teamId,
+                                              eventIdToEdit: event.id,
+                                            ),
+                                          ),
+                                        ).then((_) {
+                                          _loadGameEvents();
+                                        });
+                                      } else if (isPenalty) {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => LogPenaltyScreen(
+                                              gameId: widget.gameId,
+                                              period: event.period,
+                                              teamId: widget.teamId,
+                                              eventIdToEdit: event.id,
+                                            ),
+                                          ),
+                                        ).then((_) {
+                                          _loadGameEvents();
+                                        });
+                                      }
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete),
+                                    tooltip: 'Delete Event',
+                                    color: Colors.red,
+                                    onPressed: () => _deleteEvent(event),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isShot && onIceIds.isNotEmpty) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(left: 72.0, right: 16.0, bottom: 8.0),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('On Ice: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
+                                    Expanded(
+                                      child: Wrap(
+                                        spacing: 4,
+                                        runSpacing: 4,
+                                        children: onIceIds.map((pId) {
+                                          return Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.shade200,
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              _getPlayerDisplayText(pId, true),
+                                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                                            ),
+                                          );
+                                        }).toList(),
                                       ),
                                     ),
-                                  ).then((_) {
-                                    _loadGameEvents();
-                                  });
-                                } else if (isPenalty) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => LogPenaltyScreen(
-                                        gameId: widget.gameId,
-                                        period: event.period,
-                                        teamId: widget.teamId,
-                                        eventIdToEdit: event.id,
-                                      ),
-                                    ),
-                                  ).then((_) {
-                                    _loadGameEvents();
-                                  });
-                                }
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete),
-                              tooltip: 'Delete Event',
-                              color: Colors.red,
-                              onPressed: () => _deleteEvent(event),
-                            ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),

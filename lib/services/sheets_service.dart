@@ -386,8 +386,8 @@ class SheetsService {
     // Find the game row
     final rowIndex = await _findGameRow(gameId);
     if (rowIndex == -1) {
-      print('Game $gameId not found in Google Sheets');
-      return false; // Game doesn't exist, consider it a success
+      print('Game $gameId not found in Google Sheets (already deleted or never synced)');
+      return true; // Game doesn't exist, consider it a success
     }
 
     try {
@@ -787,8 +787,8 @@ class SheetsService {
       }
 
       if (rowIndex == -1) {
-        print('Event ID $eventId not found in the sheet. Cannot delete.');
-        return false;
+        print('Event ID $eventId not found in the sheet (already deleted or never synced).');
+        return true;
       }
 
       print('Found event $eventId at row $rowIndex, attempting to delete from sheet ID $eventsSheetId');
@@ -858,6 +858,73 @@ class SheetsService {
     }
   }
 
+  /// Queues a pending deletion to be processed when online
+  Future<void> queuePendingDeletion(String id, {String type = 'event'}) async {
+    try {
+      Box<String> pendingDeletionsBox;
+      if (Hive.isBoxOpen('pendingDeletions')) {
+        pendingDeletionsBox = Hive.box<String>('pendingDeletions');
+      } else {
+        pendingDeletionsBox = await Hive.openBox<String>('pendingDeletions');
+      }
+      await pendingDeletionsBox.put(id, type);
+      print('Queued pending deletion for $type ID: $id');
+    } catch (e) {
+      print('Error queuing pending deletion for $id: $e');
+    }
+  }
+
+  /// Syncs pending deletions with Google Sheets
+  Future<Map<String, int>> syncPendingDeletions() async {
+    try {
+      Box<String> pendingDeletionsBox;
+      if (Hive.isBoxOpen('pendingDeletions')) {
+        pendingDeletionsBox = Hive.box<String>('pendingDeletions');
+      } else {
+        pendingDeletionsBox = await Hive.openBox<String>('pendingDeletions');
+      }
+
+      final keys = pendingDeletionsBox.keys.cast<String>().toList();
+      if (keys.isEmpty) {
+        return {'success': 0, 'failed': 0, 'pending': 0};
+      }
+
+      bool isAuthenticated = await ensureAuthenticated();
+      if (!isAuthenticated) {
+        print('Cannot sync pending deletions: Authentication failed.');
+        return {'success': 0, 'failed': 0, 'pending': keys.length};
+      }
+
+      print('Found ${keys.length} pending deletions to sync...');
+      int successCount = 0;
+      int failureCount = 0;
+
+      for (final id in keys) {
+        final type = pendingDeletionsBox.get(id) ?? 'event';
+        bool success = false;
+
+        if (type == 'game') {
+          success = await deleteGame(id);
+        } else {
+          success = await deleteEventFromSheet(id);
+        }
+
+        if (success) {
+          await pendingDeletionsBox.delete(id);
+          successCount++;
+        } else {
+          failureCount++;
+        }
+      }
+
+      print('Synced pending deletions: $successCount succeeded, $failureCount failed.');
+      return {'success': successCount, 'failed': failureCount, 'pending': failureCount};
+    } catch (e) {
+      print('Error syncing pending deletions: $e');
+      return {'success': 0, 'failed': 0, 'pending': -1};
+    }
+  }
+
   /// Gets the sheet ID for a given sheet name.
   ///
   /// @param sheetName The name of the sheet to get the ID for
@@ -908,7 +975,7 @@ class SheetsService {
       case GoalSituation.powerPlay:
         return 'Power Play';
       case GoalSituation.shortHanded:
-        return 'Short Handed';
+        return 'Penalty Kill';
     }
   }
 
@@ -920,6 +987,7 @@ class SheetsService {
       case 'power play':
         return GoalSituation.powerPlay;
       case 'short handed':
+      case 'penalty kill':
         return GoalSituation.shortHanded;
       default:
         return null;
@@ -1301,12 +1369,13 @@ class SheetsService {
     for (var row in values) {
       if (row.length >= 2) {
         try {
-          String id = row[0]?.toString() ?? '';
-          int jerseyNumber = int.tryParse(row[1]?.toString() ?? '') ?? 0;
-          String? teamId = row.length > 2 ? row[2]?.toString() : 'your_team';
-          String? position = row.length > 3 ? row[3]?.toString() : null;
+          String id = row[0]?.toString().trim() ?? '';
+          int jerseyNumber = int.tryParse(row[1]?.toString().trim() ?? '') ?? 0;
+          String? teamId = row.length > 2 ? row[2]?.toString().trim() : 'your_team';
+          if (teamId == null || teamId.isEmpty) teamId = 'your_team';
+          String? position = row.length > 3 ? row[3]?.toString().trim() : null;
           
-          if (position != null && position.trim().isEmpty) {
+          if (position != null && position.isEmpty) {
             position = null;
           }
           
@@ -1375,10 +1444,12 @@ class SheetsService {
             continue;
           }
           
-          String opponent = row[2]?.toString() ?? '';
-          String? location = row.length > 3 ? row[3]?.toString() : null;
-          String teamId = row.length > 4 ? row[4]?.toString() ?? 'your_team' : 'your_team'; // Default to 'your_team' if not specified
-          String gameType = row.length > 5 ? row[5]?.toString() ?? 'R' : 'R'; // Default to 'R' (Regular Season) if not specified
+          String opponent = row[2]?.toString().trim() ?? '';
+          String? location = row.length > 3 ? row[3]?.toString().trim() : null;
+          String teamId = row.length > 4 ? row[4]?.toString().trim() ?? 'your_team' : 'your_team'; // Default to 'your_team' if not specified
+          if (teamId.isEmpty) teamId = 'your_team';
+          String gameType = row.length > 5 ? row[5]?.toString().trim() ?? 'R' : 'R'; // Default to 'R' (Regular Season) if not specified
+          if (gameType.isEmpty) gameType = 'R';
           
           if (id.isNotEmpty && opponent.isNotEmpty) {
             games.add(Game(
@@ -1483,9 +1554,9 @@ class SheetsService {
           }
           
           int period = int.tryParse(row[3]?.toString() ?? '') ?? 1;
-          String eventType = row[4]?.toString() ?? '';
-          String team = row[5]?.toString() ?? '';
-          String primaryPlayerId = row[6]?.toString() ?? '';
+          String eventType = row[4]?.toString().trim() ?? '';
+          String team = row[5]?.toString().trim() ?? '';
+          String primaryPlayerId = row[6]?.toString().trim() ?? '';
           
           String? assistPlayer1Id = row.length > 7 ? row[7]?.toString() : null;
           if (assistPlayer1Id?.isEmpty ?? true) assistPlayer1Id = null;

@@ -5,6 +5,9 @@ import 'package:hockey_stats_app/screens/view_stats_screen.dart';
 import 'package:uuid/uuid.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart'; // Import the service
 import 'package:hockey_stats_app/services/background_sync_service.dart';
+import 'package:hockey_stats_app/services/line_configuration_service.dart';
+import 'package:hockey_stats_app/services/centralized_data_service.dart';
+import 'package:hockey_stats_app/services/memory_cache_service.dart';
 
 class LogPenaltyScreen extends StatefulWidget {
   final String gameId;
@@ -270,12 +273,16 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
           primaryPlayerId: _selectedPlayer!.id,
           penaltyType: finalPenaltyType,
           penaltyDuration: _penaltyDuration,
+          yourTeamPlayersOnIce: LineConfigurationService.instance.getActiveOnIcePlayerIds(),
           isSynced: false,
         );
       }
 
       // Save to Hive
       await gameEventsBox.put(penaltyEvent.id, penaltyEvent);
+      MemoryCacheService().cacheEvent(penaltyEvent);
+      CentralizedDataService().invalidateEvent(widget.gameId);
+      CentralizedDataService().clearCache();
 
       // Queue for background sync instead of immediate sync
       final backgroundSyncService = BackgroundSyncService();
@@ -321,8 +328,24 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: Text(widget.eventIdToEdit != null ? 'Edit Penalty' : 'Log Penalty'),
-          // The default back button in AppBar will trigger onWillPop.
-          actions: [ // Ensure actions is part of AppBar
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0, top: 8.0, bottom: 8.0),
+              child: ElevatedButton.icon(
+                onPressed: _isLogging ? null : _logPenalty,
+                icon: const Icon(Icons.check, size: 18),
+                label: Text(widget.eventIdToEdit != null ? 'Update' : 'Save'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF8F00),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.bar_chart),
               onPressed: () {

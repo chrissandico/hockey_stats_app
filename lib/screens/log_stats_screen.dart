@@ -10,9 +10,11 @@ import 'package:hockey_stats_app/models/data_models.dart';
 import 'package:hockey_stats_app/utils/team_utils.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:hockey_stats_app/services/centralized_data_service.dart';
+import 'package:hockey_stats_app/services/memory_cache_service.dart';
 import 'package:hockey_stats_app/services/background_sync_service.dart';
 import 'package:hockey_stats_app/widgets/share_dialog.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
+import 'package:hockey_stats_app/services/stats_service.dart';
 import 'package:hockey_stats_app/widgets/player_selection_widget.dart';
 import 'package:hockey_stats_app/services/wakelock_service.dart';
 import 'package:hockey_stats_app/screens/app_settings_screen.dart';
@@ -57,6 +59,9 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   // Attendance tracking
   Set<String> _absentPlayerIds = {}; // Track absent players
   bool _isLoadingAttendance = false;
+
+  // Game situation mode (Even Strength, Power Play, Penalty Kill)
+  GoalSituation _currentSituation = GoalSituation.evenStrength;
 
   // Quick shot logging
   bool _isLogging = false;
@@ -574,10 +579,174 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
      }
   }
 
+  Future<void> _changeGameSituation(GoalSituation newSituation) async {
+    // If tapping an already selected situation (other than Even Strength), toggle it off back to Even Strength
+    final targetSituation = (_currentSituation == newSituation && newSituation != GoalSituation.evenStrength)
+        ? GoalSituation.evenStrength
+        : newSituation;
+
+    if (_currentSituation == targetSituation) return;
+
+    // Confirmation dialog before activating Power Play or Penalty Kill mode
+    if (targetSituation == GoalSituation.powerPlay) {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: const [
+              Icon(Icons.bolt, color: Colors.orange, size: 28),
+              SizedBox(width: 8),
+              Text('Start Power Play?'),
+            ],
+          ),
+          content: const Text(
+            'This will log an opponent penalty (+1 PP Opportunity) and track all shots as Power Play shots until mode is turned off.',
+            style: TextStyle(fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade800,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Start Power Play'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    } else if (targetSituation == GoalSituation.shortHanded) {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: const [
+              Icon(Icons.shield, color: Colors.red, size: 28),
+              SizedBox(width: 8),
+              Text('Start Penalty Kill?'),
+            ],
+          ),
+          content: const Text(
+            'This will log a team penalty (+1 PK Opportunity) and track all shots as Penalty Kill shots until mode is turned off.',
+            style: TextStyle(fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade800,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Start Penalty Kill'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    setState(() {
+      _currentSituation = targetSituation;
+    });
+
+    try {
+      if (targetSituation == GoalSituation.powerPlay) {
+        // Log opponent penalty (gives your team a Power Play opportunity)
+        final ppPenaltyEvent = GameEvent(
+          id: uuid.v4(),
+          gameId: widget.gameId,
+          timestamp: DateTime.now(),
+          period: _selectedPeriod,
+          eventType: 'Penalty',
+          team: 'opponent',
+          primaryPlayerId: '',
+          penaltyType: 'Unspecified',
+          penaltyDuration: 2,
+          isSynced: false,
+        );
+        await gameEventsBox.put(ppPenaltyEvent.id, ppPenaltyEvent);
+        MemoryCacheService().cacheEvent(ppPenaltyEvent);
+        CentralizedDataService().invalidateEvent(widget.gameId);
+        BackgroundSyncService().queueEventForSync(ppPenaltyEvent);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚡ Power Play Mode Active (+1 PP Opportunity)'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else if (targetSituation == GoalSituation.shortHanded) {
+        // Log team penalty (puts your team on Penalty Kill opportunity)
+        final pkPenaltyEvent = GameEvent(
+          id: uuid.v4(),
+          gameId: widget.gameId,
+          timestamp: DateTime.now(),
+          period: _selectedPeriod,
+          eventType: 'Penalty',
+          team: widget.teamId,
+          primaryPlayerId: '',
+          penaltyType: 'Unspecified',
+          penaltyDuration: 2,
+          yourTeamPlayersOnIce: _getPlayersOnIceIds(),
+          isSynced: false,
+        );
+        await gameEventsBox.put(pkPenaltyEvent.id, pkPenaltyEvent);
+        MemoryCacheService().cacheEvent(pkPenaltyEvent);
+        CentralizedDataService().invalidateEvent(widget.gameId);
+        BackgroundSyncService().queueEventForSync(pkPenaltyEvent);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🛡️ Penalty Kill Mode Active (+1 PK Opportunity)'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🏒 Returned to Even Strength (5v5)'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error logging situation penalty: $e');
+    }
+  }
+
+
+
   Future<void> _logQuickShot(String team) async {
     setState(() { _isLogging = true; });
 
     try {
+      GoalSituation shotSituation = _currentSituation;
+
       final newShotEvent = GameEvent(
         id: uuid.v4(),
         gameId: widget.gameId,
@@ -590,9 +759,11 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
         assistPlayer2Id: null,
         isGoal: false,
         isSynced: false,
-        yourTeamPlayersOnIce: team == 'opponent' ? null : _getPlayersOnIceIds(),
-        goalSituation: null,
-        goalieOnIceId: (team == 'opponent' && _selectedGoalie != null) ? _selectedGoalie!.id : null,
+        yourTeamPlayersOnIce: _getPlayersOnIceIds(),
+        goalSituation: shotSituation,
+        goalieOnIceId: (team == 'opponent')
+            ? (_selectedGoalie?.id)
+            : 'opponent_g',
       );
 
       // Save to local storage immediately for instant UI update
@@ -686,6 +857,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 4.0,
         title: const Text('Track Stats'),
         actions: [
           if (_isLoadingInitialData)
@@ -916,7 +1088,8 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                 _buildPeriodSelector(),
-                
+                const SizedBox(height: 12),
+
                 // Use shared player selection widget
                 if (_isLoadingPlayers)
                   const Center(
@@ -927,6 +1100,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                   )
                 else
                 PlayerSelectionWidget(
+                  gameId: widget.gameId,
                   players: _yourTeamPlayers,
                   goalies: _goalies,
                   absentPlayerIds: _absentPlayerIds,
@@ -960,11 +1134,19 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                       _selectedGoalie = player;
                     });
                   },
+                  initialIsPowerPlay: _currentSituation == GoalSituation.powerPlay,
+                  onPowerPlayChanged: (val) {
+                    _changeGameSituation(val ? GoalSituation.powerPlay : GoalSituation.evenStrength);
+                  },
+                  initialIsPenaltyKill: _currentSituation == GoalSituation.shortHanded,
+                  onPenaltyKillChanged: (val) {
+                    _changeGameSituation(val ? GoalSituation.shortHanded : GoalSituation.evenStrength);
+                  },
                 ),
 
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
-                // NEW: 5-button layout for streamlined shot logging
+                // Streamlined shot and goal logging controls
                 Column(
                   children: [
                     // Top row: Team shot buttons with SOG counts
@@ -1096,28 +1278,24 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                               assist1: _selectedAssist,
                               assist2: _selectedAssist2,
                               selectedGoalie: _selectedGoalie,
+                              initialSituation: _currentSituation,
                             ),
                           ),
                         ).then((value) {
                             print('Returned from LogGoalScreen, refreshing score and attendance...');
                             _refreshScore().then((_) {
                               print('Score refresh complete');
-                              if (value != null && value is int) {
-                                setState(() {
+                              setState(() {
+                                // Automatically reset situation to Even Strength after a goal
+                                _currentSituation = GoalSituation.evenStrength;
+                                if (value != null && value is int) {
                                   _selectedPeriod = value;
-                                  // Clear goal scorer and assist selections after logging
-                                  _selectedGoalScorer = null;
-                                  _selectedAssist = null;
-                                  _selectedAssist2 = null;
-                                });
-                              } else {
-                                setState(() {
-                                  // Clear goal scorer and assist selections after logging
-                                  _selectedGoalScorer = null;
-                                  _selectedAssist = null;
-                                  _selectedAssist2 = null;
-                                });
-                              }
+                                }
+                                // Clear goal scorer and assist selections after logging
+                                _selectedGoalScorer = null;
+                                _selectedAssist = null;
+                                _selectedAssist2 = null;
+                              });
                             });
                             _refreshAttendanceData();
                           });
@@ -1171,24 +1349,17 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                             print('Returned from LogPenaltyScreen, refreshing score and attendance...');
                             _refreshScore().then((_) {
                               print('Score refresh complete');
-                              if (value != null && value is int) {
-                                setState(() {
+                              setState(() {
+                                // Switch mode to Penalty Kill when returning from logging a detailed team penalty
+                                _currentSituation = GoalSituation.shortHanded;
+                                if (value != null && value is int) {
                                   _selectedPeriod = value;
-                                  // Clear all player selections after logging penalty
-                                  _selectedGoalScorer = null;
-                                  _selectedAssist = null;
-                                  _selectedAssist2 = null;
-                                  _selectedPlayersOnIce.clear();
-                                });
-                              } else {
-                                setState(() {
-                                  // Clear all player selections after logging penalty
-                                  _selectedGoalScorer = null;
-                                  _selectedAssist = null;
-                                  _selectedAssist2 = null;
-                                  _selectedPlayersOnIce.clear();
-                                });
-                              }
+                                }
+                                // Clear goal scorer and assist selections after logging penalty
+                                _selectedGoalScorer = null;
+                                _selectedAssist = null;
+                                _selectedAssist2 = null;
+                              });
                             });
                             _refreshAttendanceData();
                           });

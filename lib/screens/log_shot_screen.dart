@@ -8,7 +8,9 @@ import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
 import 'package:hockey_stats_app/services/connectivity_service.dart';
 import 'package:hockey_stats_app/services/background_sync_service.dart';
+import 'package:hockey_stats_app/services/line_configuration_service.dart';
 import 'package:hockey_stats_app/services/memory_cache_service.dart';
+import 'package:hockey_stats_app/services/centralized_data_service.dart';
 import 'package:hockey_stats_app/widgets/goal_situation_dialog.dart';
 import 'package:hockey_stats_app/widgets/player_selection_widget.dart';
 
@@ -88,6 +90,8 @@ class _LogShotScreenState extends State<LogShotScreen> {
     // Initialize players on ice from the passed parameter if available
     if (widget.playersOnIce != null && widget.playersOnIce!.isNotEmpty) {
       _selectedYourTeamPlayersOnIce = List.from(widget.playersOnIce!);
+    } else {
+      _selectedYourTeamPlayersOnIce = LineConfigurationService.instance.getActiveOnIcePlayers();
     }
     
     if (widget.eventIdToEdit != null) {
@@ -264,7 +268,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
           }
           
           // Load goal situation state from existing event
-          if (_isGoal && _eventBeingEdited!.goalSituation != null) {
+          if (_eventBeingEdited!.goalSituation != null) {
             switch (_eventBeingEdited!.goalSituation!) {
               case GoalSituation.powerPlay:
                 _isPowerPlay = true;
@@ -312,13 +316,17 @@ class _LogShotScreenState extends State<LogShotScreen> {
     // Check for special situations and show confirmation dialog
     if (_isGoal && _selectedYourTeamPlayersOnIce.length < 5) {
       final detectedSituation = _detectGoalSituation();
-      
+      GoalSituation? chosenSituation;
+
       bool? confirmed = await showDialog<bool>(
         context: context,
         builder: (BuildContext context) {
           return GoalSituationDialog(
             playerCount: _selectedYourTeamPlayersOnIce.length,
             detectedSituation: detectedSituation,
+            onConfirmSituation: (situation) {
+              chosenSituation = situation;
+            },
             onConfirm: () => Navigator.of(context).pop(true),
             onCancel: () => Navigator.of(context).pop(false),
           );
@@ -327,6 +335,13 @@ class _LogShotScreenState extends State<LogShotScreen> {
       
       if (confirmed != true) {
         return;
+      }
+
+      if (chosenSituation != null) {
+        setState(() {
+          _isPowerPlay = (chosenSituation == GoalSituation.powerPlay);
+          _isPenaltyKill = (chosenSituation == GoalSituation.shortHanded);
+        });
       }
     }
 
@@ -347,9 +362,11 @@ class _LogShotScreenState extends State<LogShotScreen> {
         _eventBeingEdited!.assistPlayer1Id = _isGoal ? _selectedAssist1?.id : null;
         _eventBeingEdited!.isGoal = _isGoal;
         _eventBeingEdited!.isSynced = false;
-        _eventBeingEdited!.yourTeamPlayersOnIce = _isGoal ? _getPlayersOnIceIds() : null;
-        _eventBeingEdited!.goalSituation = _isGoal ? _detectGoalSituation() : null;
-        _eventBeingEdited!.goalieOnIceId = (_selectedTeam == 'opponent' && _selectedGoalie != null) ? _selectedGoalie!.id : null;
+        _eventBeingEdited!.yourTeamPlayersOnIce = _getPlayersOnIceIds();
+        _eventBeingEdited!.goalSituation = _detectGoalSituation();
+        _eventBeingEdited!.goalieOnIceId = (_selectedTeam == 'opponent')
+            ? (_selectedGoalie?.id)
+            : 'opponent_g';
         
         print('  IsGoal after: ${_eventBeingEdited!.isGoal}');
         
@@ -363,6 +380,10 @@ class _LogShotScreenState extends State<LogShotScreen> {
         final memoryCache = MemoryCacheService();
         memoryCache.cacheEvent(eventToProcess);
         
+        // Invalidate centralized cache
+        CentralizedDataService().invalidateEvent(widget.gameId);
+        CentralizedDataService().clearCache();
+
         print('Event updated in Hive and cached in memory');
 
         // Show success immediately and navigate back
@@ -392,9 +413,11 @@ class _LogShotScreenState extends State<LogShotScreen> {
           assistPlayer2Id: null, 
           isGoal: _isGoal,
           isSynced: false,
-          yourTeamPlayersOnIce: _isGoal ? _getPlayersOnIceIds() : null,
-          goalSituation: _isGoal ? _detectGoalSituation() : null,
-          goalieOnIceId: (_selectedTeam == 'opponent' && _selectedGoalie != null) ? _selectedGoalie!.id : null,
+          yourTeamPlayersOnIce: _getPlayersOnIceIds(),
+          goalSituation: _detectGoalSituation(),
+          goalieOnIceId: (_selectedTeam == 'opponent')
+              ? (_selectedGoalie?.id)
+              : 'opponent_g',
         );
         
         eventToProcess = newShotEvent;
@@ -410,7 +433,11 @@ class _LogShotScreenState extends State<LogShotScreen> {
         // Cache the event for faster future access
         final memoryCache = MemoryCacheService();
         memoryCache.cacheEvent(eventToProcess);
-        
+
+        // Invalidate centralized cache
+        CentralizedDataService().invalidateEvent(widget.gameId);
+        CentralizedDataService().clearCache();
+
         print('Event saved locally and cached in memory');
 
         // Show success immediately and navigate back
@@ -848,6 +875,23 @@ class _LogShotScreenState extends State<LogShotScreen> {
         appBar: AppBar(
           title: Text(_isEditMode ? 'Edit Shot' : 'Log Shot'),
           actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0, top: 8.0, bottom: 8.0),
+              child: ElevatedButton.icon(
+                onPressed: _isLogging ? null : _logShot,
+                icon: const Icon(Icons.check, size: 18),
+                label: Text(_isEditMode ? 'Update' : 'Save'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1976D2),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.bar_chart),
               onPressed: () {
@@ -866,7 +910,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildPeriodSelector(),
-                const SizedBox(height: 20.0),
+                const SizedBox(height: 16.0),
 
                 FutureBuilder<String>(
                   future: TeamContextService().getCurrentTeamName(),
@@ -904,8 +948,12 @@ class _LogShotScreenState extends State<LogShotScreen> {
                     );
                   },
                 ),
-                const SizedBox(height: 20.0),
+                const SizedBox(height: 16.0),
 
+                // Top Save/Update button for fast access without scrolling
+                _buildSaveShotButton(),
+
+                const SizedBox(height: 16.0),
 
                 // Shot Result Checkboxes
                 CheckboxListTile(
@@ -990,6 +1038,7 @@ class _LogShotScreenState extends State<LogShotScreen> {
                   
                   // Use shared player selection widget
                   PlayerSelectionWidget(
+                    gameId: widget.gameId,
                     players: _yourTeamPlayers,
                     goalies: _goalies,
                     absentPlayerIds: _absentPlayerIds,
@@ -1012,6 +1061,20 @@ class _LogShotScreenState extends State<LogShotScreen> {
                         _selectedAssist1 = player;
                       });
                     },
+                    initialIsPowerPlay: _isPowerPlay,
+                    onPowerPlayChanged: (val) {
+                      setState(() {
+                        _isPowerPlay = val;
+                        if (_isPowerPlay) _isPenaltyKill = false;
+                      });
+                    },
+                    initialIsPenaltyKill: _isPenaltyKill,
+                    onPenaltyKillChanged: (val) {
+                      setState(() {
+                        _isPenaltyKill = val;
+                        if (_isPenaltyKill) _isPowerPlay = false;
+                      });
+                    },
                     onGoalieChanged: (player) {
                       setState(() {
                         _selectedGoalie = player;
@@ -1022,30 +1085,56 @@ class _LogShotScreenState extends State<LogShotScreen> {
 
                 const SizedBox(height: 16.0),
 
-                ElevatedButton(
-                  onPressed: _isLogging ? null : _logShot,
-                  child: _isLogging
-                    ? const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          SizedBox(width: 10),
-                          Text('Logging...', style: TextStyle(fontSize: 16)),
-                        ],
-                      )
-                    : Text(
-                        _isEditMode ? 'Update Shot' : 'Log Shot',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                ),
+                // Bottom Save/Update button
+                _buildSaveShotButton(),
+
+                const SizedBox(height: 24.0),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSaveShotButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: _isLogging ? null : _logShot,
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 20.0),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14.0),
+          ),
+          backgroundColor: const Color(0xFF1976D2),
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+        child: _isLogging
+          ? const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                ),
+                SizedBox(width: 10),
+                Text('Saving...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+              ],
+            )
+          : Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.check, size: 22.0, color: Colors.white),
+                const SizedBox(width: 8.0),
+                Text(
+                  _isEditMode ? 'Update Shot' : 'Log Shot',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+              ],
+            ),
       ),
     );
   }

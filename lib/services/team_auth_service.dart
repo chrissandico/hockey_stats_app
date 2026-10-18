@@ -19,11 +19,15 @@ class Team {
   });
 
   factory Team.fromSheetRow(List<dynamic> row) {
+    final logo = (row.length > 3 && row[3] != null && row[3].toString().trim().isNotEmpty)
+        ? row[3].toString().trim()
+        : 'waxers_logo.png';
+
     return Team(
-      id: row[0]?.toString() ?? '',
-      name: row[1]?.toString() ?? '',
-      password: row[2]?.toString() ?? '',
-      logoFileName: row[3]?.toString() ?? 'waxers_logo.png', // Use PNG instead of corrupted SVG
+      id: row[0]?.toString().trim() ?? '',
+      name: row[1]?.toString().trim() ?? '',
+      password: row[2]?.toString().trim() ?? '',
+      logoFileName: logo,
     );
   }
 
@@ -41,10 +45,15 @@ class TeamAuthService {
   List<Team>? _cachedTeams;
   String? _currentTeamId;
 
+  /// Clear the in-memory cached teams list
+  void clearCachedTeams() {
+    _cachedTeams = null;
+  }
+
   /// Get a list of teams from the Google Sheets "Teams" sheet
-  Future<List<Team>> fetchTeams() async {
-    // Return cached teams if available
-    if (_cachedTeams != null) {
+  Future<List<Team>> fetchTeams({bool forceRefresh = false}) async {
+    // Return cached teams if available and not forcing refresh
+    if (!forceRefresh && _cachedTeams != null && _cachedTeams!.isNotEmpty) {
       return _cachedTeams!;
     }
 
@@ -57,7 +66,7 @@ class TeamAuthService {
         'https://sheets.googleapis.com/v4/spreadsheets/$_spreadsheetId/values/Teams!A2:D'
       );
       
-      // Make the authenticated request using the new method
+      // Make the authenticated request
       final response = await serviceAuth.makeAuthenticatedRequest(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -70,12 +79,14 @@ class TeamAuthService {
         
         if (values.isEmpty) {
           print('No teams found in the Teams sheet');
-          throw Exception('No teams found in the Teams sheet');
         } else {
           // Parse the teams from the sheet
           _cachedTeams = values.map((row) {
             if (row.length >= 3) {
-              return Team.fromSheetRow(row);
+              final team = Team.fromSheetRow(row);
+              if (team.id.isNotEmpty && team.password.isNotEmpty) {
+                return team;
+              }
             }
             return null;
           }).whereType<Team>().toList();
@@ -84,7 +95,6 @@ class TeamAuthService {
         }
       } else {
         print('Failed to fetch teams: ${response.statusCode} - ${response.body}');
-        throw Exception('Failed to fetch teams: ${response.statusCode}');
       }
     } catch (e) {
       print('Error fetching teams from Google Sheets: $e');
@@ -93,30 +103,33 @@ class TeamAuthService {
       print('2. Network connectivity problems');
       print('3. Google Sheets API access issues');
       print('4. Missing or incorrect spreadsheet permissions');
-      
-      // Don't rethrow - instead return empty list to allow offline operation
-      // The team password validation will still work with cached data or fallback
-      _cachedTeams = [];
-      return _cachedTeams!;
     }
     
-    return _cachedTeams!;
+    return _cachedTeams ?? [];
   }
 
   /// Validate team password and return team ID if valid
   Future<String?> validateTeamPassword(String password) async {
     try {
-      // Fetch teams
-      final teams = await fetchTeams();
+      final cleanPassword = password.trim();
+      if (cleanPassword.isEmpty) return null;
+
+      // Always force refresh teams from Google Sheets when validating password
+      final teams = await fetchTeams(forceRefresh: true);
       
-      // Find team with matching password
-      final team = teams.firstWhere(
-        (team) => team.password == password,
-        orElse: () => Team(id: '', name: '', password: '', logoFileName: 'waxers_logo.png'),
-      );
+      print('Validating password against ${teams.length} teams from Google Sheets');
+
+      // Find team with matching password (case-insensitive & trimmed)
+      for (final team in teams) {
+        final teamPassword = team.password.trim();
+        if (teamPassword.toLowerCase() == cleanPassword.toLowerCase()) {
+          print('Password match found for team ID: "${team.id}" (${team.name})');
+          return team.id;
+        }
+      }
       
-      // Return team ID if found, null otherwise
-      return team.id.isNotEmpty ? team.id : null;
+      print('No team password matched "$cleanPassword"');
+      return null;
     } catch (e) {
       print('Error validating team password: $e');
       return null;
@@ -167,6 +180,7 @@ class TeamAuthService {
     try {
       await _secureStorage.delete(key: _currentTeamKey);
       _currentTeamId = null;
+      clearCachedTeams();
     } catch (e) {
       print('Error clearing current team: $e');
     }
