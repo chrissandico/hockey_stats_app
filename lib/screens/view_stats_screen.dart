@@ -260,11 +260,11 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
           case 5: // +/-
             cmp = a.plusMinus.compareTo(b.plusMinus);
             break;
-          case 6: // PIM
-            cmp = a.pim.compareTo(b.pim);
+          case 6: // CORSI (Net On-Ice Shot Differential)
+            cmp = a.onIceShots.netShotsOnIce.compareTo(b.onIceShots.netShotsOnIce);
             break;
           case 7: // On-Ice SF/SA
-            cmp = a.onIceShots.netShotsOnIce.compareTo(b.onIceShots.netShotsOnIce);
+            cmp = a.onIceShots.shotsForOnIce.compareTo(b.onIceShots.shotsForOnIce);
             break;
         }
         return _sortAscending ? cmp : -cmp;
@@ -462,9 +462,9 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                           onSort: _onSort,
                         ),
                         DataColumn2(
-                          label: const Text('PIM'),
+                          label: const Text('CORSI'),
                           numeric: true,
-                          size: ColumnSize.M, // Sized M so PIM header isn't clipped
+                          size: ColumnSize.S,
                           onSort: _onSort,
                         ),
                         DataColumn2(
@@ -553,10 +553,11 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                                 ),
                               ),
                             ),
-                            DataCell(Text(r.pim.toString(), style: TextStyle(color: textColor))),
                             DataCell(
                               Text(
-                                '${r.onIceShots.shotsForOnIce}/${r.onIceShots.shotsAgainstOnIce}',
+                                r.onIceShots.netShotsOnIce > 0
+                                    ? '+${r.onIceShots.netShotsOnIce}'
+                                    : '${r.onIceShots.netShotsOnIce}',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: r.isAbsent
@@ -565,6 +566,12 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
                                           ? Colors.green.shade700
                                           : (r.onIceShots.netShotsOnIce < 0 ? Colors.red.shade700 : textColor)),
                                 ),
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                '${r.onIceShots.shotsForOnIce}/${r.onIceShots.shotsAgainstOnIce}',
+                                style: TextStyle(color: textColor),
                               ),
                             ),
                           ],

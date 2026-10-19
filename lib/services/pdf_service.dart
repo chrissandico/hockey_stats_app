@@ -696,8 +696,8 @@ class PdfService {
             3: pw.FlexColumnWidth(0.7), // A
             4: pw.FlexColumnWidth(0.8), // PTS
             5: pw.FlexColumnWidth(0.8), // +/-
-            6: pw.FlexColumnWidth(0.8), // PIM
-            7: pw.FlexColumnWidth(1.2), // SF/SA
+            6: pw.FlexColumnWidth(0.9), // CORSI
+            7: pw.FlexColumnWidth(1.1), // SF/SA
           },
           children: [
             // Header row
@@ -730,7 +730,7 @@ class PdfService {
                 ),
                 pw.Padding(
                   padding: pw.EdgeInsets.all(padding),
-                  child: pw.Center(child: pw.Text('PIM', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
+                  child: pw.Center(child: pw.Text('CORSI', style: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold))),
                 ),
                 pw.Padding(
                   padding: pw.EdgeInsets.all(padding),
@@ -746,10 +746,10 @@ class PdfService {
               final assists = StatsService.calculateAssists(player, gameEvents);
               final points = goals + assists;
               final plusMinus = StatsService.calculatePlusMinus(player, gameEvents, teamId);
-              final pim = StatsService.calculatePenaltyMinutes(player, gameEvents);
 
               final onIceStats = StatsService.getOnIceShotStats(player, gameEvents, teamId);
               final sfSaStr = '${onIceStats.shotsForOnIce}/${onIceStats.shotsAgainstOnIce}';
+              final corsiStr = onIceStats.netShotsOnIce > 0 ? '+${onIceStats.netShotsOnIce}' : '${onIceStats.netShotsOnIce}';
 
               final isGwg = gwgPlayerId != null && gwgPlayerId == player.id;
               final goalsStr = isGwg ? '$goals*' : goals.toString();
@@ -791,7 +791,7 @@ class PdfService {
                   ),
                   pw.Padding(
                     padding: pw.EdgeInsets.all(padding),
-                    child: pw.Center(child: pw.Text(pim.toString(), style: pw.TextStyle(fontSize: fontSize, color: cellTextColor, fontStyle: cellFontStyle))),
+                    child: pw.Center(child: pw.Text(corsiStr, style: pw.TextStyle(fontSize: fontSize, color: cellTextColor, fontStyle: cellFontStyle, fontWeight: pw.FontWeight.bold))),
                   ),
                   pw.Padding(
                     padding: pw.EdgeInsets.all(padding),
@@ -804,7 +804,7 @@ class PdfService {
         ),
         pw.SizedBox(height: 3),
         pw.Text(
-          '* GWG = Game Winning Goal Scorer  |  SF/SA = On-Ice Shots For / Shots Against  |  DNP = Did Not Play',
+          '* GWG = Game Winning Goal Scorer  |  CORSI = Net On-Ice Shot Differential (SF - SA)  |  SF/SA = Shots For / Shots Against  |  DNP = Did Not Play',
           style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
         ),
       ],
