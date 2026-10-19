@@ -188,17 +188,14 @@ class SheetsService {
     }
   }
   
+  SyncErrorInfo? lastSyncError;
+
   /// Store the last sync error for potential UI display (non-blocking)
   void _storeLastSyncError(SyncErrorInfo errorInfo) {
     try {
-      // Store error in a simple way that doesn't block the sync operation
-      // This could be expanded to use a proper error storage mechanism
+      lastSyncError = errorInfo;
       print('Storing sync error for UI: ${errorInfo.userMessage}');
-      
-      // For now, we'll just ensure the error is logged in a structured way
-      // Future enhancement: Store in Hive box for UI display
     } catch (e) {
-      // Don't let error storage block the main sync operation
       print('Failed to store sync error: $e');
     }
   }
@@ -1717,10 +1714,11 @@ class SheetsService {
 
     final players = await fetchPlayers();
     if (players == null) {
-      print('Failed to fetch players.');
+      final msg = lastSyncError?.userMessage ?? 'Failed to fetch players';
+      print('Failed to fetch players: $msg');
       return {
         'success': false,
-        'message': 'Failed to fetch players',
+        'message': msg,
         'players': null,
         'games': null
       };
@@ -1728,10 +1726,11 @@ class SheetsService {
     
     final games = await fetchGames();
     if (games == null) {
-      print('Failed to fetch games.');
+      final msg = lastSyncError?.userMessage ?? 'Failed to fetch games';
+      print('Failed to fetch games: $msg');
       return {
         'success': false,
-        'message': 'Failed to fetch games',
+        'message': msg,
         'players': players,
         'games': null
       };
@@ -1739,10 +1738,11 @@ class SheetsService {
     
     final events = await fetchEvents();
     if (events == null) {
-      print('Failed to fetch events.');
+      final msg = lastSyncError?.userMessage ?? 'Failed to fetch events';
+      print('Failed to fetch events: $msg');
       return {
         'success': false,
-        'message': 'Failed to fetch events',
+        'message': msg,
         'players': players,
         'games': games,
         'events': null

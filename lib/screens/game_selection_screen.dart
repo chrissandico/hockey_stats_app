@@ -53,6 +53,8 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
         return 'Regular Season';
       case 'T':
         return 'Tournament';
+      case 'P':
+        return 'Playoffs';
       default:
         return 'Regular Season'; // Default fallback
     }
@@ -67,6 +69,8 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
         return Colors.blue; // Regular Season
       case 'T':
         return Colors.purple; // Tournament
+      case 'P':
+        return Colors.green.shade700; // Playoffs
       default:
         return Colors.blue; // Default fallback
     }
