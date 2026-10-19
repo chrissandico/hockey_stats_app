@@ -69,6 +69,9 @@ class Game extends HiveObject {
   @HiveField(6)
   String gameType;
 
+  @HiveField(7)
+  bool isSynced;
+
   Game({
     required this.id,
     required this.date,
@@ -77,6 +80,7 @@ class Game extends HiveObject {
     this.teamId = 'your_team',
     this.version = 1,
     this.gameType = 'R', // Default to Regular Season
+    this.isSynced = false,
   });
   
   /// Factory constructor for migrating from older versions
@@ -94,6 +98,11 @@ class Game extends HiveObject {
       teamId: teamId,
       version: 1, // Set to current version
       gameType: gameType,
+      // Records written before field 7 existed have no sync state;
+      // default to unsynced so they are re-offered to the next sync
+      // (uploads are upserts, so this is safe) instead of being
+      // treated as cloud-owned and deleted by a full sync.
+      isSynced: fields[7] as bool? ?? false,
     );
   }
   
@@ -105,6 +114,7 @@ class Game extends HiveObject {
     String? teamId,
     int? version,
     String? gameType,
+    bool? isSynced,
   }) {
     return Game(
       id: id ?? this.id,
@@ -114,6 +124,7 @@ class Game extends HiveObject {
       teamId: teamId ?? this.teamId,
       version: version ?? this.version,
       gameType: gameType ?? this.gameType,
+      isSynced: isSynced ?? this.isSynced,
     );
   }
 }
