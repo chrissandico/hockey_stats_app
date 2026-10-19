@@ -132,6 +132,15 @@ Future<void> _initializePerformanceServices() async {
   }
 }
 
+/// Reset all Hive data from disk
+Future<void> _resetAllHiveData() async {
+  try {
+    await Hive.deleteFromDisk();
+  } catch (e) {
+    print('Error resetting Hive data: $e');
+  }
+}
+
 /// Error screen shown when app initialization fails
 class AppErrorScreen extends StatelessWidget {
   const AppErrorScreen({Key? key}) : super(key: key);
