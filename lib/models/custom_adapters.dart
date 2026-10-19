@@ -14,22 +14,21 @@ class CustomGameAdapter extends TypeAdapter<Game> {
         for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
       };
 
-      // Check if we have a version field (field 5)
-      if (fields.containsKey(5)) {
-        // This is a newer version with version field
-        return Game(
-          id: fields[0] as String,
-          date: fields[1] as DateTime,
-          opponent: fields[2] as String,
-          location: fields[3] as String?,
-          teamId: fields[4] as String,
-          version: fields[5] as int,
-        );
-      } else {
-        // This is an older version without version field and possibly without teamId
-        // Use the migration factory constructor
-        return Game.migrate(fields);
-      }
+      final String teamId = fields.containsKey(4) ? (fields[4] as String? ?? 'your_team') : 'your_team';
+      final int version = fields.containsKey(5) ? (fields[5] as int? ?? 1) : 1;
+      final String gameType = fields.containsKey(6) ? (fields[6] as String? ?? 'R') : 'R';
+      final bool isSynced = fields.containsKey(7) ? (fields[7] as bool? ?? false) : false;
+
+      return Game(
+        id: fields[0] as String,
+        date: fields[1] as DateTime,
+        opponent: fields[2] as String,
+        location: fields[3] as String?,
+        teamId: teamId,
+        version: version,
+        gameType: gameType,
+        isSynced: isSynced,
+      );
     } catch (e) {
       print('Error reading Game from Hive: $e');
       // Fallback to a default Game object to prevent app crashes
@@ -47,7 +46,7 @@ class CustomGameAdapter extends TypeAdapter<Game> {
   void write(BinaryWriter writer, Game obj) {
     try {
       writer
-        ..writeByte(6) // Now we have 6 fields including version
+        ..writeByte(8) // Write all 8 fields
         ..writeByte(0)
         ..write(obj.id)
         ..writeByte(1)
@@ -59,7 +58,11 @@ class CustomGameAdapter extends TypeAdapter<Game> {
         ..writeByte(4)
         ..write(obj.teamId)
         ..writeByte(5)
-        ..write(obj.version);
+        ..write(obj.version)
+        ..writeByte(6)
+        ..write(obj.gameType)
+        ..writeByte(7)
+        ..write(obj.isSynced);
     } catch (e) {
       print('Error writing Game to Hive: $e');
       // We can't recover from write errors, but at least we log them
