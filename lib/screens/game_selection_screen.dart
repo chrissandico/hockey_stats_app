@@ -802,18 +802,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     }
   }
 
-  // Build the sync status indicator / refresh button
-  Widget _buildSyncIndicator() {
-    return IconButton(
-      icon: _isPerformingAsyncOperation || _screenState == _ScreenState.initialLoading
-          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-          : _screenState == _ScreenState.syncFailed
-              ? const Icon(Icons.sync_problem, color: Colors.orange)
-              : const Icon(Icons.refresh),
-      tooltip: 'Refresh from Google Sheets',
-      onPressed: _isPerformingAsyncOperation ? null : _fullSyncFromSheets,
-    );
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -852,21 +841,17 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
               );
             },
           ),
-          // Add the sync status indicator
-          _buildSyncIndicator(),
+          // Unified Smart Sync & Refresh Button
           StreamBuilder<int>(
             stream: Stream.periodic(const Duration(seconds: 1)).asyncMap((_) async {
-              // Get user preferences
               final prefsBox = Hive.box<SyncPreferences>('syncPreferences');
               final prefs = prefsBox.get('user_prefs') ?? SyncPreferences();
               
-              // Count unsynced events that match preferences
               final gameEventsBox = Hive.box<GameEvent>('gameEvents');
               final unsyncedEvents = gameEventsBox.values
                   .where((event) => !event.isSynced && prefs.shouldSyncEvent(event))
                   .length;
               
-              // Count unsynced attendance if enabled
               int unsyncedAttendance = 0;
               if (prefs.shouldSyncAttendance()) {
                 final attendanceBox = Hive.box<GameAttendance>('gameAttendance');
@@ -878,37 +863,32 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
               return unsyncedEvents + unsyncedAttendance;
             }),
             builder: (context, snapshot) {
-              final count = snapshot.data ?? 0;
+              final unsyncedCount = snapshot.data ?? 0;
+
+              Widget iconWidget;
+              if (_isPerformingAsyncOperation || _screenState == _ScreenState.initialLoading) {
+                iconWidget = const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                );
+              } else if (_screenState == _ScreenState.syncFailed) {
+                iconWidget = const Icon(Icons.sync_problem, color: Colors.orange);
+              } else if (unsyncedCount > 0) {
+                iconWidget = const Icon(Icons.cloud_upload);
+              } else {
+                iconWidget = const Icon(Icons.refresh);
+              }
+
               return Badge(
-                label: Text(count.toString()),
-                isLabelVisible: count > 0,
+                label: Text(unsyncedCount.toString()),
+                isLabelVisible: unsyncedCount > 0 && !_isPerformingAsyncOperation,
                 child: IconButton(
-                  icon: Icon(Icons.cloud_sync),
-                  tooltip: 'Sync unsynced events',
-                  onPressed: () async {
-                    final result = await context.read<SheetsService>().syncPendingEventsInBackground();
-                    final attendanceResult = await context.read<SheetsService>().syncPendingAttendanceInBackground();
-                    
-                    final totalSuccess = (result['success'] ?? 0) + (attendanceResult['success'] ?? 0);
-                    final totalFailed = (result['failed'] ?? 0) + (attendanceResult['failed'] ?? 0);
-                    
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(totalFailed > 0 
-                            ? 'Synced $totalSuccess items ($totalFailed failed)'
-                            : 'Successfully synced $totalSuccess items'),
-                        action: totalFailed > 0
-                            ? SnackBarAction(
-                                label: 'Retry',
-                                onPressed: () async {
-                                  await context.read<SheetsService>().syncPendingEventsInBackground();
-                                  await context.read<SheetsService>().syncPendingAttendanceInBackground();
-                                },
-                              )
-                            : null,
-                      ),
-                    );
-                  },
+                  icon: iconWidget,
+                  tooltip: unsyncedCount > 0
+                      ? 'Sync $unsyncedCount pending item(s) & refresh from Google Sheets'
+                      : 'Refresh data from Google Sheets',
+                  onPressed: _isPerformingAsyncOperation ? null : _fullSyncFromSheets,
                 ),
               );
             },

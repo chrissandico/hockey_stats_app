@@ -1705,8 +1705,14 @@ class SheetsService {
     try {
       final pendingGameResults = await syncPendingGames();
       print('Pre-sync game upload: ${pendingGameResults['success']} uploaded, ${pendingGameResults['failed']} still pending');
+
+      final pendingEventResults = await syncPendingEventsInBackground();
+      print('Pre-sync event upload: ${pendingEventResults['success']} uploaded, ${pendingEventResults['failed']} failed');
+
+      final pendingAttendanceResults = await syncPendingAttendanceInBackground();
+      print('Pre-sync attendance upload: ${pendingAttendanceResults['success']} uploaded, ${pendingAttendanceResults['failed']} failed');
     } catch (e) {
-      print('Pre-sync game upload failed (continuing with download): $e');
+      print('Pre-sync uploads failed (continuing with download): $e');
     }
 
     final players = await fetchPlayers();
