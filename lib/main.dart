@@ -19,36 +19,8 @@ import 'package:hockey_stats_app/services/centralized_data_service.dart'; // Imp
 String dummyGameId = 'dummy_game_123';
 String dummyGameId2 = 'dummy_game_456'; // Add another dummy game ID
 
-// Function to reset all Hive data
-Future<void> _resetAllHiveData() async {
-  print('Resetting all Hive data...');
-  // Deletes all boxes from disk. This is a full reset.
-  await Hive.deleteFromDisk(); 
-  print('All Hive data has been reset.');
-}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // --- TEMPORARY RESET LOGIC ---
-  // STEP 1: Set performReset to true to reset data.
-  // STEP 2: Run the app once. You'll see a message in the console.
-  // STEP 3: Stop the app.
-  // STEP 4: Set performReset back to false.
-  // STEP 5: Restart the app for normal operation with fresh data.
-  const bool performReset = false; // CHANGE TO true TO RESET
-
-  if (performReset) {
-    await Hive.initFlutter(); // Initialize Hive to allow deleteFromDisk call
-    await _resetAllHiveData(); // This calls Hive.deleteFromDisk()
-    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    print("!!! HIVE DATA RESET COMPLETE.                                !!!");
-    print("!!! SET performReset back to false in lib/main.dart NOW,   !!!");
-    print("!!! AND THEN RESTART THE APP.                              !!!");
-    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    return; // Exit main early to prevent the rest of the app from running in this reset session.
-  }
-  // --- END TEMPORARY RESET LOGIC ---
 
   // Wrap the entire initialization in a try-catch for better error handling
   try {

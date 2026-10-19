@@ -87,6 +87,12 @@ class BackgroundSyncService {
       final deletionResults = await _sheetsService.syncPendingDeletions();
       print('BackgroundSyncService: Deletions sync - Success: ${deletionResults['success']}, Failed: ${deletionResults['failed']}');
 
+      // Sync pending games (e.g. created offline at an arena) so their
+      // rows reach the sheet; until this pass existed they were never
+      // retried after a failed create-time upload
+      final gameResults = await _sheetsService.syncPendingGames();
+      print('BackgroundSyncService: Games sync - Success: ${gameResults['success']}, Failed: ${gameResults['failed']}');
+
       // Sync pending events
       final eventResults = await _sheetsService.syncPendingEventsInBackground();
       print('BackgroundSyncService: Events sync - Success: ${eventResults['success']}, Failed: ${eventResults['failed']}');
@@ -99,8 +105,8 @@ class BackgroundSyncService {
       final attendanceResults = await _sheetsService.syncPendingAttendanceInBackground();
       print('BackgroundSyncService: Attendance sync - Success: ${attendanceResults['success']}, Failed: ${attendanceResults['failed']}');
       
-      final totalSuccess = (deletionResults['success'] ?? 0) + (eventResults['success'] ?? 0) + (rosterResults['success'] ?? 0) + (attendanceResults['success'] ?? 0);
-      final totalFailed = (deletionResults['failed'] ?? 0) + (eventResults['failed'] ?? 0) + (rosterResults['failed'] ?? 0) + (attendanceResults['failed'] ?? 0);
+      final totalSuccess = (deletionResults['success'] ?? 0) + (gameResults['success'] ?? 0) + (eventResults['success'] ?? 0) + (rosterResults['success'] ?? 0) + (attendanceResults['success'] ?? 0);
+      final totalFailed = (deletionResults['failed'] ?? 0) + (gameResults['failed'] ?? 0) + (eventResults['failed'] ?? 0) + (rosterResults['failed'] ?? 0) + (attendanceResults['failed'] ?? 0);
       
       if (totalFailed == 0 && totalSuccess > 0) {
         _syncStatusController.add(SyncStatus.success);

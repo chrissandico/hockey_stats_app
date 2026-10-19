@@ -340,11 +340,70 @@ class SheetsService {
 
     if (result != null) {
       print('Successfully synced game ${game.id} to Google Sheets');
+      // Record that this game now exists in the sheet, so full syncs
+      // treat it as cloud-owned (previously games had no sync state and
+      // a local-only game could be mistaken for stale data and deleted).
+      if (game.isInBox) {
+        game.isSynced = true;
+        await game.save();
+      }
       return true;
     } else {
       print('Failed to sync game ${game.id} to Google Sheets');
       return false;
     }
+  }
+
+  /// Syncs all locally stored games that have not reached Google Sheets yet.
+  ///
+  /// Games created offline (e.g. at an arena) exist only on the device;
+  /// without this pass they would never be uploaded, and a full sync would
+  /// delete them. Uploads are upserts keyed by game id, so retrying is safe.
+  Future<Map<String, int>> syncPendingGames() async {
+    final gamesBox = Hive.box<Game>('games');
+    final pendingGames = gamesBox.values.where((game) => !game.isSynced).toList();
+    print('Found ${pendingGames.length} unsynced games to sync');
+
+    int successCount = 0;
+    int failedCount = 0;
+
+    for (final game in pendingGames) {
+      try {
+        final success = await syncGame(game);
+        if (success) {
+          successCount++;
+        } else {
+          failedCount++;
+        }
+      } catch (e) {
+        print('Error syncing game ${game.id}: $e');
+        failedCount++;
+      }
+    }
+
+    print('Game sync complete: $successCount succeeded, $failedCount failed');
+    return {
+      'total': pendingGames.length,
+      'success': successCount,
+      'failed': failedCount,
+    };
+  }
+
+  /// Game IDs that a full sync must never delete locally: games that have
+  /// not been uploaded yet, and games carrying events that have not been
+  /// uploaded yet. Deleting either would silently discard the only copy of
+  /// a game (the merge preserves unsynced events; their game must survive
+  /// alongside them).
+  static Set<String> computeProtectedGameIds(
+      Iterable<Game> localGames, Iterable<GameEvent> localEvents) {
+    final protectedIds = <String>{};
+    for (final game in localGames) {
+      if (!game.isSynced) protectedIds.add(game.id);
+    }
+    for (final event in localEvents) {
+      if (!event.isSynced) protectedIds.add(event.gameId);
+    }
+    return protectedIds;
   }
 
   /// Helper method to find an existing game row in Google Sheets by game ID
@@ -1459,6 +1518,7 @@ class SheetsService {
               location: location,
               teamId: teamId,
               gameType: gameType,
+              isSynced: true, // Parsed from the sheet, so synced by definition
             ));
             print('Parsed game: $opponent on ${date.toIso8601String().split('T')[0]} (ID: $id, Type: $gameType)');
           }
@@ -1636,6 +1696,19 @@ class SheetsService {
       };
     }
     
+    // Push before pull: upload any games created offline (e.g. at an
+    // arena) so they exist in the sheet before the download merge below
+    // runs. That merge replaces local games with the sheet's games per
+    // team; without this step a never-uploaded game would be deleted
+    // there. Best effort: failures leave games flagged unsynced, and the
+    // merge preserves unsynced games explicitly.
+    try {
+      final pendingGameResults = await syncPendingGames();
+      print('Pre-sync game upload: ${pendingGameResults['success']} uploaded, ${pendingGameResults['failed']} still pending');
+    } catch (e) {
+      print('Pre-sync game upload failed (continuing with download): $e');
+    }
+
     final players = await fetchPlayers();
     if (players == null) {
       print('Failed to fetch players.');
@@ -1711,10 +1784,22 @@ class SheetsService {
     
     // Update games for each team
     final gamesBox = Hive.box<Game>('games');
+    // Never delete a local game that has not reached the sheet, or one
+    // carrying events that have not reached the sheet: for an offline
+    // game the local copy is the only copy in existence. (This is the
+    // protection events already had and games were missing.)
+    final protectedGameIds = computeProtectedGameIds(
+      gamesBox.values,
+      Hive.box<GameEvent>('gameEvents').values,
+    );
     for (final teamId in gamesByTeam.keys) {
-      // Delete existing games for this team
+      // Delete existing games for this team, except protected local games
       final existingGames = gamesBox.values.where((g) => g.teamId == teamId).toList();
       for (final game in existingGames) {
+        if (protectedGameIds.contains(game.id)) {
+          print('Preserving unsynced local game ${game.id} (${game.opponent}) during full sync');
+          continue;
+        }
         await game.delete();
       }
       

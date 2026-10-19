@@ -67,13 +67,14 @@ class GameAdapter extends TypeAdapter<Game> {
       teamId: fields[4] as String,
       version: fields[5] as int,
       gameType: fields[6] as String,
+      isSynced: fields[7] as bool? ?? false,
     );
   }
 
   @override
   void write(BinaryWriter writer, Game obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -87,7 +88,9 @@ class GameAdapter extends TypeAdapter<Game> {
       ..writeByte(5)
       ..write(obj.version)
       ..writeByte(6)
-      ..write(obj.gameType);
+      ..write(obj.gameType)
+      ..writeByte(7)
+      ..write(obj.isSynced);
   }
 
   @override
