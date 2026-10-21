@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:hockey_stats_app/services/service_account_auth.dart';
 import 'package:hockey_stats_app/services/connectivity_service.dart';
 import 'package:hockey_stats_app/utils/sync_error_utils.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Service for interacting with Google Sheets to sync hockey stats data.
 ///
@@ -37,6 +38,26 @@ class SheetsService {
   // paths effectively atomic per event ID.
   static final Set<String> _syncingEventIds = <String>{};
   final Set<String> _syncingGameIds = <String>{};
+
+  // Game-store heal gate (2026-10-21): builds before the
+  // CustomGameAdapter fix stored games WITHOUT the gameType and
+  // isSynced fields, so on those phones every game reads back as
+  // type 'R' and unsynced — and the push machinery then rewrites
+  // the sheet's game rows as 'R'. Until one full download merge
+  // has rewritten the local store from the sheet (healing types
+  // and sync flags), ALL game pushes are blocked. Events and other
+  // sync paths are unaffected.
+  static const String _gameStoreHealedKey = 'game_store_healed_v1';
+
+  static Future<bool> isGameStoreHealed() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_gameStoreHealedKey) ?? false;
+  }
+
+  static Future<void> markGameStoreHealed() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_gameStoreHealedKey, true);
+  }
 
   /// Initialize the service with service account authentication
   Future<void> _initialize() async {
@@ -301,6 +322,13 @@ class SheetsService {
   /// Syncs a single Game to Google Sheets
   /// Creates a new row if the game doesn't exist, updates if it does
   Future<bool> syncGame(Game game) async {
+    // Heal gate: never push a game until the local store has been
+    // healed from the sheet once (see _gameStoreHealedKey). A
+    // legacy local copy may carry a defaulted 'R' gameType.
+    if (!await isGameStoreHealed()) {
+      print('syncGame blocked: game store not healed yet (game ${game.id})');
+      return false;
+    }
     bool isAuthenticated = await ensureAuthenticated();
     if (!isAuthenticated) {
       print('Cannot sync game: Authentication failed.');
@@ -370,6 +398,11 @@ class SheetsService {
   /// without this pass they would never be uploaded, and a full sync would
   /// delete them. Uploads are upserts keyed by game id, so retrying is safe.
   Future<Map<String, int>> syncPendingGames() async {
+    if (!await isGameStoreHealed()) {
+      final blocked = Hive.box<Game>('games').values.where((game) => !game.isSynced).length;
+      print('syncPendingGames blocked: game store not healed yet ($blocked game(s) held)');
+      return {'total': blocked, 'success': 0, 'failed': 0};
+    }
     final gamesBox = Hive.box<Game>('games');
     final pendingGames = gamesBox.values.where((game) => !game.isSynced).toList();
     print('Found ${pendingGames.length} unsynced games to sync');
@@ -1865,6 +1898,10 @@ class SheetsService {
       
       print('Updated ${gamesByTeam[teamId]!.length} games for team $teamId');
     }
+    
+    // The download merge above has rewritten the local game store
+    // from the sheet: game pushes are safe from here on.
+    await markGameStoreHealed();
     
     final eventsBox = Hive.box<GameEvent>('gameEvents');
     final unsyncedEvents = eventsBox.values.where((event) => !event.isSynced).toList();
