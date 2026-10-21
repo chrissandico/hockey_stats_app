@@ -30,7 +30,12 @@ class SheetsService {
   static const Duration _authCacheValidDuration = Duration(minutes: 10);
   
   // Sync locks to prevent duplicate syncs
-  final Set<String> _syncingEventIds = <String>{};
+  // Static on purpose: SheetsService is constructed per screen and by
+  // the background sync, so an instance-level guard cannot stop two
+  // overlapping passes from syncing the same event. Shared by all
+  // instances, this set makes the check-then-write in the event sync
+  // paths effectively atomic per event ID.
+  static final Set<String> _syncingEventIds = <String>{};
   final Set<String> _syncingGameIds = <String>{};
 
   /// Initialize the service with service account authentication
@@ -217,8 +222,16 @@ class SheetsService {
         return false;
       }
 
-      // Check if event already exists in Google Sheets to prevent duplicates
+      // Check if event already exists in Google Sheets to prevent duplicates.
+      // A null result means the lookup itself failed (e.g. connectivity) —
+      // abort without writing: appending on an unknown state is how
+      // duplicate rows are born. The event stays unsynced and a later
+      // pass retries it.
       final existingRowIndex = await _findEventRow(event.id);
+      if (existingRowIndex == null) {
+        print('Aborting sync of event ${event.id}: existence check failed');
+        return false;
+      }
       
       // Format the timestamp in a more readable format: YYYY-MM-DD HH:MM:SS
       String formattedTimestamp = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}-${event.timestamp.day.toString().padLeft(2, '0')} ${event.timestamp.hour.toString().padLeft(2, '0')}:${event.timestamp.minute.toString().padLeft(2, '0')}:${event.timestamp.second.toString().padLeft(2, '0')}";
@@ -1054,31 +1067,35 @@ class SheetsService {
   /// 
   /// @param eventId The event ID to search for
   /// @return The row index (1-based) if found, -1 if not found
-  Future<int> _findEventRow(String eventId) async {
+  /// Finds the sheet row (1-based) holding [eventId] in the Events tab.
+  ///
+  /// Returns -1 when the ID is definitively absent, and null when the
+  /// lookup itself failed. Callers must treat null as "unknown" and
+  /// must NOT append in that state — appending on a failed lookup is
+  /// how duplicate event rows were created (Oct 2026).
+  Future<int?> _findEventRow(String eventId) async {
     try {
       final result = await _makeRequest('GET', 'values/Events!A:A');
-      if (result == null) return -1;
+      if (result == null) return null;
 
       final List<List<dynamic>> values = List<List<dynamic>>.from(result['values'] ?? []);
-      
-      // Search through all rows to find matching event ID
-      for (int i = 0; i < values.length; i++) {
-        final row = values[i];
-        if (row.isNotEmpty) {
-          final rowEventId = row[0]?.toString() ?? '';
-          
-          if (rowEventId == eventId) {
-            // Return 1-based row index for Google Sheets API
-            return i + 1;
-          }
-        }
-      }
-      
-      return -1; // Not found
+      return findRowInIdValues(values, eventId);
     } catch (e) {
       print('Error finding Event row: $e');
-      return -1;
+      return null;
     }
+  }
+
+  /// Pure row search over a single ID column (header row included):
+  /// the 1-based sheet row of the FIRST match, or -1 when absent.
+  static int findRowInIdValues(List<List<dynamic>> values, String eventId) {
+    for (int i = 0; i < values.length; i++) {
+      final row = values[i];
+      if (row.isNotEmpty && (row[0]?.toString() ?? '') == eventId) {
+        return i + 1;
+      }
+    }
+    return -1;
   }
 
   /// Helper method to find an existing row in the GameRoster sheet for a specific game + player combination.
@@ -1336,8 +1353,16 @@ class SheetsService {
     _syncingEventIds.add(event.id);
     
     try {
-      // Check if event already exists in Google Sheets to prevent duplicates
+      // Check if event already exists in Google Sheets to prevent duplicates.
+      // A null result means the lookup itself failed (e.g. connectivity) —
+      // abort without writing: appending on an unknown state is how
+      // duplicate rows are born. The event stays unsynced and a later
+      // pass retries it.
       final existingRowIndex = await _findEventRow(event.id);
+      if (existingRowIndex == null) {
+        print('Aborting sync of event ${event.id}: existence check failed');
+        return false;
+      }
       
       // Format the timestamp in a more readable format: YYYY-MM-DD HH:MM:SS
       String formattedTimestamp = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}-${event.timestamp.day.toString().padLeft(2, '0')} ${event.timestamp.hour.toString().padLeft(2, '0')}:${event.timestamp.minute.toString().padLeft(2, '0')}:${event.timestamp.second.toString().padLeft(2, '0')}";
