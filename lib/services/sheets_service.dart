@@ -1667,8 +1667,32 @@ class SheetsService {
       }
     }
 
+    final parsedCount = events.length;
+    events = dedupeEventsById(events);
+    if (events.length != parsedCount) {
+      print('fetchEvents: collapsed ${parsedCount - events.length} duplicate event row(s) by ID.');
+    }
     print('Successfully parsed ${events.length} events from the sheet.');
     return events;
+  }
+
+  /// Collapses duplicate sheet rows for the same event ID, keeping the
+  /// LAST occurrence. A retried upload can append a second copy of an
+  /// event instead of updating the original row, and every consumer of
+  /// [fetchEvents] counts list entries — so a duplicated row inflates
+  /// goals, shots, and on-ice stats (this produced a 0-5 PDF for a game
+  /// the app correctly showed as 0-4 in Oct 2026). Appends land below
+  /// earlier copies, so the last row is the newest version of the
+  /// event — the same version the ID-keyed local store keeps.
+  static List<GameEvent> dedupeEventsById(List<GameEvent> events) {
+    final byId = <String, GameEvent>{};
+    for (final event in events) {
+      // remove + reinsert so the kept copy also takes the position of
+      // its last occurrence in sheet order.
+      byId.remove(event.id);
+      byId[event.id] = event;
+    }
+    return byId.values.toList();
   }
 
   /// Synchronizes all data from Google Sheets to the local database.
