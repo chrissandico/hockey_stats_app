@@ -21,10 +21,52 @@ class ServiceAccountAuth {
   /// Get the singleton instance of ServiceAccountAuth
   static Future<ServiceAccountAuth> get instance async {
     if (_instance == null) {
-      _instance = ServiceAccountAuth._();
-      await _instance!._initialize();
+      // Only publish the singleton after a successful init: caching a
+      // half-initialized instance (e.g. the app was started offline and
+      // the first token fetch failed) would poison auth for the whole
+      // process and only an app restart would clear it.
+      final candidate = ServiceAccountAuth._();
+      await candidate._initialize();
+      _instance = candidate;
     }
     return _instance!;
+  }
+
+  /// How long before its expiry a token is treated as stale.
+  static const Duration tokenRefreshSkew = Duration(minutes: 5);
+
+  /// Whether a token should be (re)fetched: no token, no recorded
+  /// expiry, or expiry inside the skew window. Pure and static so the
+  /// policy is unit-testable without loading credentials.
+  static bool shouldRefreshToken({
+    required bool hasToken,
+    required DateTime? expiry,
+    required DateTime now,
+  }) {
+    if (!hasToken) return true;
+    if (expiry == null) return true;
+    return !now.isBefore(expiry.subtract(tokenRefreshSkew));
+  }
+
+  bool get _tokenNeedsRefresh => shouldRefreshToken(
+        hasToken: _accessToken != null,
+        expiry: _tokenExpiry,
+        now: DateTime.now(),
+      );
+
+  /// Ensures a usable access token exists, refreshing it when it is
+  /// missing or near expiry. Returns false instead of throwing so
+  /// callers can treat it as an authentication check.
+  Future<bool> ensureValidToken() async {
+    try {
+      if (_tokenNeedsRefresh) {
+        await _refreshAccessToken();
+      }
+      return _accessToken != null;
+    } catch (e) {
+      print('ServiceAccountAuth: ensureValidToken failed: $e');
+      return false;
+    }
   }
   
   /// Initialize the service account credentials
@@ -183,7 +225,7 @@ class ServiceAccountAuth {
   Future<http.Client> getClient() async {
     if (_client == null) {
       await _initialize();
-    } else if (_tokenExpiry != null && DateTime.now().isAfter(_tokenExpiry!.subtract(const Duration(minutes: 5)))) {
+    } else if (_tokenNeedsRefresh) {
       // Token is expired or will expire soon, refresh it
       print('Access token expired or will expire soon. Refreshing...');
       await _refreshAccessToken();
@@ -201,31 +243,53 @@ class ServiceAccountAuth {
   
   /// Make an authenticated request to the Google API
   Future<http.Response> makeAuthenticatedRequest(Uri url, {String method = 'GET', Map<String, String>? headers, Object? body}) async {
-    if (_accessToken == null) {
+    // Refresh BEFORE the request when the token is missing or near
+    // expiry. The previous behaviour — refreshing only when there was
+    // no token at all — kept sending an expired token for the rest of
+    // the process lifetime, so every Sheets request failed with 401
+    // until the app was restarted.
+    if (_tokenNeedsRefresh) {
       await _refreshAccessToken();
     }
-    
+
     if (_accessToken == null) {
       throw Exception('Failed to obtain access token');
     }
-    
-    // Add the authorization header with the access token
-    final Map<String, String> authHeaders = {
-      'Authorization': 'Bearer $_accessToken',
-      ...?headers,
-    };
-    
-    // Make the request with the authorization header
-    switch (method) {
-      case 'GET':
-        return await _client!.get(url, headers: authHeaders);
-      case 'POST':
-        return await _client!.post(url, headers: authHeaders, body: body);
-      case 'PUT':
-        return await _client!.put(url, headers: authHeaders, body: body);
-      default:
-        throw Exception('Unsupported method: $method');
+
+    Future<http.Response> send() {
+      // Add the authorization header with the access token
+      final Map<String, String> authHeaders = {
+        'Authorization': 'Bearer $_accessToken',
+        ...?headers,
+      };
+
+      // Make the request with the authorization header
+      switch (method) {
+        case 'GET':
+          return _client!.get(url, headers: authHeaders);
+        case 'POST':
+          return _client!.post(url, headers: authHeaders, body: body);
+        case 'PUT':
+          return _client!.put(url, headers: authHeaders, body: body);
+        default:
+          throw Exception('Unsupported method: $method');
+      }
     }
+
+    var response = await send();
+
+    if (response.statusCode == 401) {
+      // The token was rejected despite our records (revoked, invalidated
+      // server-side, clock skew): fetch a fresh one and retry once.
+      print('ServiceAccountAuth: Request rejected with 401, refreshing token and retrying once');
+      await _refreshAccessToken();
+      if (_accessToken == null) {
+        throw Exception('Failed to obtain access token');
+      }
+      response = await send();
+    }
+
+    return response;
   }
   
   /// Get the current access token

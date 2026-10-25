@@ -217,11 +217,6 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     }
   }
 
-  // Retry sync method for when sync fails
-  Future<void> _retrySync() async {
-    await _fullSyncFromSheets();
-  }
-
   // Helper method to sync a single game to Google Sheets when connected
   Future<bool> _syncGameToSheets(Game game) async {
     try {
