@@ -159,17 +159,21 @@ class _UnsyncedEventsScreenState extends State<UnsyncedEventsScreen> {
         ),
       );
 
-      // Use game-specific sync methods that respect preferences
+      // Use game-specific sync methods that respect preferences.
+      // This must cover everything this screen lists: events,
+      // attendance, AND the GameRoster entries shown above (previously
+      // Sync All skipped the roster entries it displayed).
       final eventResults = await _sheetsService.syncPendingEventsForGame(widget.gameId);
-      final rosterResults = await _sheetsService.syncPendingAttendanceForGame(widget.gameId);
+      final attendanceResults = await _sheetsService.syncPendingAttendanceForGame(widget.gameId);
+      final rosterResults = await _sheetsService.syncPendingRosterForGame(widget.gameId);
 
       // Close progress dialog
       if (mounted) {
         Navigator.of(context).pop();
       }
 
-      final totalSuccess = (eventResults['success'] ?? 0) + (rosterResults['success'] ?? 0);
-      final totalFailed = (eventResults['failed'] ?? 0) + (rosterResults['failed'] ?? 0);
+      final totalSuccess = (eventResults['success'] ?? 0) + (attendanceResults['success'] ?? 0) + (rosterResults['success'] ?? 0);
+      final totalFailed = (eventResults['failed'] ?? 0) + (attendanceResults['failed'] ?? 0) + (rosterResults['failed'] ?? 0);
 
       // Show results
       String message;
@@ -418,14 +422,8 @@ class _UnsyncedEventsScreenState extends State<UnsyncedEventsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Unsynced Events'),
-        actions: [
-          if (totalUnsyncedCount > 0)
-            IconButton(
-              icon: const Icon(Icons.cloud_sync),
-              tooltip: 'Sync All',
-              onPressed: isSyncing ? null : _syncAllEvents,
-            ),
-        ],
+        // No app-bar Sync All: it duplicated the large "Sync ... for
+        // This Game" button below. One sync control per screen.
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())

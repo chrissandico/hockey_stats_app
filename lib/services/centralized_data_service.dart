@@ -168,6 +168,50 @@ class CentralizedDataService {
     return false;
   }
 
+  /// Downloads the latest events from Google Sheets and merges them
+  /// into the local cache WITHOUT uploading anything.
+  ///
+  /// This is the View Stats refresh: looking at stats must never push
+  /// local data as a side effect (the full two-way sync lives on the
+  /// Game Selection screen and at app startup). Unsynced local events
+  /// are preserved by [_updateLocalCache].
+  ///
+  /// @return true when fresh data was downloaded, false when the Sheet
+  /// could not be reached (local data remains in place).
+  Future<bool> downloadLatestEvents() async {
+    print('CentralizedDataService: Downloading latest events from Google Sheets...');
+
+    try {
+      final isAuthenticated = await _sheetsService.ensureAuthenticated();
+      if (!isAuthenticated) {
+        print('CentralizedDataService: Not authenticated, cannot download');
+        return false;
+      }
+
+      final allEvents = await _sheetsService.fetchEvents();
+      if (allEvents == null) {
+        print('CentralizedDataService: Event download failed');
+        return false;
+      }
+
+      _cachedEvents = <String, List<GameEvent>>{};
+      for (final event in allEvents) {
+        if (!_cachedEvents!.containsKey(event.gameId)) {
+          _cachedEvents![event.gameId] = [];
+        }
+        _cachedEvents![event.gameId]!.add(event);
+      }
+      _lastEventsFetch = DateTime.now();
+
+      await _updateLocalCache(allEvents);
+      print('CentralizedDataService: Downloaded ${allEvents.length} events');
+      return true;
+    } catch (e) {
+      print('CentralizedDataService: Error downloading events: $e');
+      return false;
+    }
+  }
+
   /// Clears the cache to force fresh data fetch on next request
   void clearCache() {
     print('CentralizedDataService: Clearing cache');

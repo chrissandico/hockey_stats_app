@@ -435,73 +435,37 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     );
   }
 
-  Future<void> _handleSync() async {
-    if (!mounted) return;
-    setState(() { 
-      _isSigningIn = true;
-      _isLoadingScore = true;
-    });
+  /// Manual sync for THIS game only, triggered from the visible
+  /// "Sync This Game" menu item. (Replaces the hidden long-press on
+  /// the sync badge and the previously unwired _handleSync /
+  /// _handleSyncFromSheets methods.)
+  Future<void> _syncThisGame() async {
+    final result = await _sheetsService.syncPendingEventsForGame(widget.gameId);
+    final attendanceResult = await _sheetsService.syncPendingAttendanceForGame(widget.gameId);
 
-    final result = await _sheetsService.syncPendingEvents();
-
     if (!mounted) return;
+
+    final totalSuccess = (result['success'] ?? 0) + (attendanceResult['success'] ?? 0);
+    final totalFailed = (result['failed'] ?? 0) + (attendanceResult['failed'] ?? 0);
 
     String message;
-    if (result['pending'] == -1) {
-      message = 'Sync failed: Not authenticated.';
-    } else if (result['failed']! > 0) {
-      message = 'Sync complete with ${result['failed']} failures. ${result['success']} succeeded.';
-      await _refreshScore();
-    } else if (result['success']! > 0) {
-      message = 'Sync complete: ${result['success']} events synced.';
+    if (result['pending'] == -1 || attendanceResult['pending'] == -1) {
+      message = 'Sync failed: you appear to be offline. Changes are safely stored on this device.';
+    } else if (totalFailed > 0) {
+      message = 'Synced $totalSuccess items for this game ($totalFailed failed)';
+    } else if (totalSuccess > 0) {
+      message = 'Successfully synced $totalSuccess items for this game';
       await _refreshScore();
     } else {
-      message = 'No pending events to sync.';
+      message = 'No items to sync for this game based on your preferences.';
     }
 
     if (!mounted) return;
-    setState(() {
-      _isSigningIn = false;
-      _isLoadingScore = false;
-    });
-
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(content: Text(message), duration: const Duration(seconds: 3)),
     );
   }
 
-  Future<void> _handleSyncFromSheets() async {
-    if (!mounted) return;
-    setState(() { 
-      _isSigningIn = true;
-      _isLoadingScore = true;
-    });
-
-    final result = await _sheetsService.syncDataFromSheets();
-
-    if (!mounted) return;
-
-    String message;
-    if (result['success'] == true) {
-      message = 'Sync complete: ${result['players']} players, ${result['games']} games, and ${result['events']} events synced.';
-      
-      await _loadInitialData();
-      await _refreshScore();
-      
-    } else {
-      message = 'Sync failed: ${result['message']}';
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _isSigningIn = false;
-      _isLoadingScore = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
 
   Widget _buildPeriodSelector() {
     return Container(
@@ -897,106 +861,66 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 }),
                 builder: (context, snapshot) {
                   final count = snapshot.data ?? 0;
-                  return GestureDetector(
-                    onLongPress: () async {
-                      // Long press triggers sync
-                      final result = await _sheetsService.syncPendingEventsInBackground();
-                      final attendanceResult = await _sheetsService.syncPendingAttendanceInBackground();
-                      
-                      final totalSuccess = (result['success'] ?? 0) + (attendanceResult['success'] ?? 0);
-                      final totalFailed = (result['failed'] ?? 0) + (attendanceResult['failed'] ?? 0);
-                      
-                      if (!mounted) return;
-                      
-                      String message;
-                      SnackBarAction? action;
-                      
-                      if (result['pending'] == -1 || attendanceResult['pending'] == -1) {
-                        message = 'Your device appears to be offline. All changes are safely stored and will automatically sync when your connection is restored.';
-                      } else if (totalFailed > 0) {
-                        message = 'Synced $totalSuccess items ($totalFailed failed)';
-                        action = SnackBarAction(
-                          label: 'Retry',
-                          onPressed: () async {
-                            await _sheetsService.syncPendingEventsInBackground();
-                            await _sheetsService.syncPendingAttendanceInBackground();
-                          },
-                        );
-                      } else if (totalSuccess > 0) {
-                        message = 'Successfully synced $totalSuccess items';
-                        await _refreshScore();
-                      } else {
-                        message = 'No items to sync based on your preferences.';
-                      }
-                      
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Row(
-                            children: [
-                              if (result['pending'] == -1 || attendanceResult['pending'] == -1) 
-                                const Icon(Icons.info_outline, color: Colors.white, size: 20),
-                              if (result['pending'] == -1 || attendanceResult['pending'] == -1) 
-                                const SizedBox(width: 8),
-                              Expanded(child: Text(message)),
-                            ],
-                          ),
-                          backgroundColor: (result['pending'] == -1 || attendanceResult['pending'] == -1)
-                              ? Colors.blue 
-                              : null,
-                          action: action,
-                          duration: Duration(seconds: (result['pending'] == -1 || attendanceResult['pending'] == -1) ? 4 : 3),
-                        ),
-                      );
-                    },
-                    child: PopupMenuButton<String>(
-                      icon: Badge(
-                        label: Text(count.toString()),
-                        isLabelVisible: count > 0,
-                        child: const Icon(Icons.cloud_sync),
-                      ),
-                      tooltip: count > 0 
-                          ? 'View $count unsynced events\nLong press to sync'
-                          : 'All events synced',
-                      onSelected: (value) {
-                        if (value == 'view_unsynced') {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => UnsyncedEventsScreen(gameId: widget.gameId),
-                            ),
-                          );
-                        } else if (value == 'sync_settings') {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const SyncSettingsScreen(),
-                            ),
-                          );
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        PopupMenuItem(
-                          value: 'view_unsynced',
-                          child: Row(
-                            children: [
-                              const Icon(Icons.list, size: 20),
-                              const SizedBox(width: 8),
-                              Text('View Unsynced Events ($count)'),
-                            ],
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'sync_settings',
-                          child: Row(
-                            children: [
-                              Icon(Icons.settings, size: 20),
-                              SizedBox(width: 8),
-                              Text('Sync Settings'),
-                            ],
-                          ),
-                        ),
-                      ],
+                  return PopupMenuButton<String>(
+                    icon: Badge(
+                      label: Text(count.toString()),
+                      isLabelVisible: count > 0,
+                      child: const Icon(Icons.cloud_sync),
                     ),
+                    tooltip: count > 0
+                        ? '$count unsynced item(s) - tap for sync options'
+                        : 'Sync options',
+                    onSelected: (value) {
+                      if (value == 'sync_game') {
+                        _syncThisGame();
+                      } else if (value == 'view_unsynced') {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => UnsyncedEventsScreen(gameId: widget.gameId),
+                          ),
+                        );
+                      } else if (value == 'sync_settings') {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const SyncSettingsScreen(),
+                          ),
+                        );
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'sync_game',
+                        child: Row(
+                          children: [
+                            Icon(Icons.cloud_sync, size: 20),
+                            SizedBox(width: 8),
+                            Text('Sync This Game'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'view_unsynced',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.list, size: 20),
+                            const SizedBox(width: 8),
+                            Text('View Unsynced Events ($count)'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'sync_settings',
+                        child: Row(
+                          children: [
+                            Icon(Icons.settings, size: 20),
+                            SizedBox(width: 8),
+                            Text('Sync Settings'),
+                          ],
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),

@@ -91,9 +91,9 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
     setState(() { _isRefreshingNetwork = true; });
 
     try {
-      final success = await _centralizedDataService.forceRefreshFromSheets();
+      final success = await _centralizedDataService.downloadLatestEvents();
 
-      // Reload players & goalies in case roster/jersey numbers changed in Sheets
+      // Reload players & goalies from the local box for display
       final playersBox = Hive.box<Player>('players');
       final allPlayers = playersBox.values.where((player) => player.teamId == widget.teamId).toList();
 
@@ -107,7 +107,7 @@ class _ViewStatsScreenState extends State<ViewStatsScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(success ? 'Stats refreshed from Google Sheets' : 'Sync completed with local data'),
+            content: Text(success ? 'Stats refreshed from Google Sheets' : 'Could not refresh - showing local data'),
             backgroundColor: success ? Colors.green : Colors.orange,
             duration: const Duration(seconds: 2),
           ),

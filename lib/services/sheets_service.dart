@@ -654,6 +654,51 @@ class SheetsService {
     }
   }
 
+  /// Sync pending roster entries for a specific game.
+  ///
+  /// Mirrors [syncPendingAttendanceForGame]. The Unsynced Events screen
+  /// lists GameRoster entries, so its Sync All must sync those too —
+  /// previously it only synced events and GameAttendance, leaving the
+  /// listed roster entries untouched.
+  Future<Map<String, int>> syncPendingRosterForGame(String? gameId) async {
+    print('SheetsService: Starting game-specific roster sync for game: $gameId');
+
+    try {
+      bool isAuthenticated = await ensureAuthenticated();
+      if (!isAuthenticated) {
+        print('Game-specific roster sync: Authentication failed.');
+        return {'success': 0, 'failed': 0, 'pending': -1};
+      }
+
+      // Roster entries are gated by the same preference the Unsynced
+      // Events screen uses to decide whether to list them.
+      final prefsBox = Hive.box<SyncPreferences>('syncPreferences');
+      final prefs = prefsBox.get('user_prefs') ?? SyncPreferences();
+      if (!prefs.shouldSyncAttendance()) {
+        print('SheetsService: Roster sync disabled by user preferences');
+        return {'success': 0, 'failed': 0, 'pending': 0};
+      }
+
+      final gameRosterBox = Hive.box<GameRoster>('gameRoster');
+      var rosterRecords = gameRosterBox.values.where((roster) => !roster.isSynced);
+      if (gameId != null) {
+        rosterRecords = rosterRecords.where((roster) => roster.gameId == gameId);
+      }
+      final pendingRoster = rosterRecords.toList();
+
+      if (pendingRoster.isEmpty) {
+        print('SheetsService: No pending roster entries to sync for game $gameId');
+        return {'success': 0, 'failed': 0, 'pending': 0};
+      }
+
+      print('SheetsService: Syncing ${pendingRoster.length} roster entries for game $gameId');
+      return await _syncRosterBatch(pendingRoster);
+    } catch (e) {
+      print('Game-specific roster sync error: $e');
+      return {'success': 0, 'failed': 0, 'pending': -1};
+    }
+  }
+
   /// Syncs a batch of roster entries with retry logic and better error handling.
   Future<Map<String, int>> _syncRosterBatch(List<GameRoster> rosterEntries) async {
     int successCount = 0;
@@ -1211,10 +1256,13 @@ class SheetsService {
       }
     }
     
-    // Perform actual authentication check
+    // Perform actual authentication check. This must ensure a VALID
+    // token (refreshing when missing or near expiry), not merely that
+    // some token exists: an expired token passes a presence check and
+    // then fails every request.
     try {
       final serviceAuth = await ServiceAccountAuth.instance;
-      _isAuthenticated = serviceAuth.isAuthenticated;
+      _isAuthenticated = await serviceAuth.ensureValidToken();
       _lastAuthCheck = DateTime.now();
       return _isAuthenticated;
     } catch (e) {
@@ -1935,6 +1983,7 @@ class SheetsService {
     
     if (unsyncedEvents.isNotEmpty) {
       print('Attempting to sync ${unsyncedEvents.length} unsynced events...');
+      final syncPrefs = Hive.box<SyncPreferences>('syncPreferences').get('user_prefs') ?? SyncPreferences();
       for (final event in unsyncedEvents) {
         try {
           // Check if event already exists in Google Sheets
@@ -1943,6 +1992,10 @@ class SheetsService {
             print('Event ${event.id} already exists in Google Sheets, marking as synced');
             event.isSynced = true;
             await event.save();
+          } else if (!syncPrefs.shouldSyncEvent(event)) {
+            // Respect the user's sync preferences, as the pre-sync
+            // upload pass does; this pass used to upload everything.
+            print('Event ${event.id} left unsynced: excluded by sync preferences');
           } else {
             // Event doesn't exist in Google Sheets, sync it
             bool syncSuccess = await syncGameEvent(event);
