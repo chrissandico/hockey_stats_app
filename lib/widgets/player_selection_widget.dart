@@ -357,6 +357,7 @@ class _LinePositionDropTarget extends StatelessWidget {
   final Function(Player) onPlayerTap;
   final Function(Player) onPlayerLongPress;
   final bool isHighlighted;
+  final VoidCallback? onEmptySlotTap;
 
   const _LinePositionDropTarget({
     this.player,
@@ -365,6 +366,7 @@ class _LinePositionDropTarget extends StatelessWidget {
     required this.onPlayerTap,
     required this.onPlayerLongPress,
     this.isHighlighted = false,
+    this.onEmptySlotTap,
   });
 
   bool _canAcceptPlayer(Player? draggedPlayer) {
@@ -426,11 +428,19 @@ class _LinePositionDropTarget extends StatelessWidget {
                   onPlayerTap: onPlayerTap,
                   onPlayerLongPress: onPlayerLongPress,
                 )
-              : Center(
-                  child: Icon(
-                    Icons.add,
-                    color: Colors.grey.withOpacity(0.5),
-                    size: 20,
+              : GestureDetector(
+                  // The "+" placeholder: tapping opens the player picker.
+                  // It used to be drag-only, which made a screen of
+                  // empty slots impossible to fill - there was nothing
+                  // on screen to drag.
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onEmptySlotTap,
+                  child: Center(
+                    child: Icon(
+                      Icons.add,
+                      color: Colors.grey.withOpacity(0.5),
+                      size: 20,
+                    ),
                   ),
                 ),
         );
@@ -678,6 +688,68 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
     }
     
     setState(() {});
+  }
+
+  /// Tap-to-fill for an empty line slot: show the eligible skaters and
+  /// route the chosen one through the same drop path a drag takes, so
+  /// move/swap behaviour and auto-save stay identical.
+  Future<void> _showSlotPlayerPicker(LinePosition position) async {
+    // Same eligibility as drag-and-drop (_canAcceptPlayer): any skater,
+    // never a goalie, in a forward or a defense slot alike.
+    final candidates = widget.players.where((p) => p.position != 'G').toList()
+      ..sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+
+    if (candidates.isEmpty) return;
+
+    final picked = await showModalBottomSheet<Player>(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: SizedBox(
+            height: 420,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'Choose a player for this spot',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: candidates.length,
+                    itemBuilder: (context, index) {
+                      final player = candidates[index];
+                      final currentSpot = _findPlayerPosition(player);
+                      final details = <String>[
+                        if (player.position != null) player.position!,
+                        if (currentSpot != null)
+                          'currently in ${currentSpot.positionType} line ${currentSpot.lineIndex + 1}',
+                        if (_isPlayerAbsent(player)) 'absent',
+                      ].join(' - ');
+                      return ListTile(
+                        leading: CircleAvatar(
+                          child: Text('${player.jerseyNumber}'),
+                        ),
+                        title: Text('#${player.jerseyNumber}'),
+                        subtitle: details.isEmpty ? null : Text(details),
+                        onTap: () => Navigator.of(sheetContext).pop(player),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (picked != null && mounted) {
+      _handlePlayerDropped(picked, position);
+    }
   }
 
   LinePosition? _findPlayerPosition(Player player) {
@@ -950,6 +1022,7 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
                         onPlayerDropped: _handlePlayerDropped,
                         onPlayerTap: _handlePlayerTap,
                         onPlayerLongPress: _showPlayerRoleDialog,
+                        onEmptySlotTap: () => _showSlotPlayerPicker(position),
                       );
                     }),
                   ),
@@ -1010,6 +1083,7 @@ class _PlayerSelectionWidgetState extends State<PlayerSelectionWidget> {
                         onPlayerDropped: _handlePlayerDropped,
                         onPlayerTap: _handlePlayerTap,
                         onPlayerLongPress: _showPlayerRoleDialog,
+                        onEmptySlotTap: () => _showSlotPlayerPicker(position),
                       );
                     }),
                   ),
