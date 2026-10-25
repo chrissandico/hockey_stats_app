@@ -162,6 +162,29 @@ class LineConfigurationService {
     }
   }
 
+  /// Whether a decoded saved line config can belong to the roster
+  /// identified by [rosterIds]: true when the config references no
+  /// players at all (an intentionally emptied setup) or at least one
+  /// player who is on the current roster. A config whose every
+  /// referenced player is missing belongs to a different team or
+  /// season and must never be applied: _applyConfigList resolves
+  /// missing IDs to empty slots, so applying a foreign config wipes
+  /// the auto-dealt lines and leaves every slot blank.
+  static bool configBelongsToRoster(List<dynamic> config, Set<String> rosterIds) {
+    var referencedAny = false;
+    for (final line in config) {
+      if (line is List) {
+        for (final id in line) {
+          if (id != null) {
+            referencedAny = true;
+            if (rosterIds.contains(id.toString())) return true;
+          }
+        }
+      }
+    }
+    return !referencedAny;
+  }
+
   /// Load line configuration from persistent storage
   Future<void> loadLineConfiguration(String gameId, List<Player> players, {bool forceReload = false}) async {
     try {
@@ -197,8 +220,24 @@ class LineConfigurationService {
       }
 
       if (fConfigStr != null && dConfigStr != null) {
-        _applyConfigList(json.decode(fConfigStr), _forwardLines, players, 3);
-        _applyConfigList(json.decode(dConfigStr), _defenseLines, players, 2);
+        // Never apply a saved setup that belongs to another team or
+        // season. This matters because the fallback chain can surface
+        // the device-wide 'current_game' config, which on a phone used
+        // for more than one team holds a DIFFERENT team's player IDs;
+        // applying it nulled every slot (Oct 2026, Stars U15 BB setup).
+        final rosterIds = players.map((p) => p.id).toSet();
+        final fConfig = json.decode(fConfigStr) as List<dynamic>;
+        final dConfig = json.decode(dConfigStr) as List<dynamic>;
+        if (configBelongsToRoster(fConfig, rosterIds)) {
+          _applyConfigList(fConfig, _forwardLines, players, 3);
+        } else {
+          print('Saved forward lines do not match this roster - keeping the auto-dealt lines');
+        }
+        if (configBelongsToRoster(dConfig, rosterIds)) {
+          _applyConfigList(dConfig, _defenseLines, players, 2);
+        } else {
+          print('Saved defense lines do not match this roster - keeping the auto-dealt lines');
+        }
         _copyWorkingToSaved();
       } else {
         // Default saved is initial default
