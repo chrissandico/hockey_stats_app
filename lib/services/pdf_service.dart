@@ -228,25 +228,27 @@ class PdfService {
     return playerStats.where((p) => p['points'] == maxPoints).toList();
   }
 
-  // Get all defensemen tied for highest plus/minus
-  List<Map<String, dynamic>> _getTopDefensemen(List<Player> players, List<GameEvent> gameEvents, String teamId) {
+  // Get all defensemen tied for highest Corsi (net shots on ice —
+  // the same figure the player table's CORSI column shows). Ranked by
+  // Corsi since Oct 2026; this list used to rank by plus/minus.
+  List<Map<String, dynamic>> getTopDefensemen(List<Player> players, List<GameEvent> gameEvents, String teamId) {
     final defensemanStats = <Map<String, dynamic>>[];
 
     for (final player in players) {
       final pos = player.position?.trim().toUpperCase() ?? '';
       if (pos == 'D' || pos == 'LD' || pos == 'RD' || pos == 'DEFENSE') {
-        final plusMinus = StatsService.calculatePlusMinus(player, gameEvents, teamId);
+        final corsi = StatsService.getOnIceShotStats(player, gameEvents, teamId).netShotsOnIce;
         defensemanStats.add({
           'player': player,
-          'plusminus': plusMinus,
+          'corsi': corsi,
         });
       }
     }
 
     if (defensemanStats.isEmpty) return [];
 
-    final maxPlusMinus = defensemanStats.map((p) => p['plusminus'] as int).reduce((a, b) => a > b ? a : b);
-    return defensemanStats.where((p) => p['plusminus'] == maxPlusMinus).toList();
+    final maxCorsi = defensemanStats.map((p) => p['corsi'] as int).reduce((a, b) => a > b ? a : b);
+    return defensemanStats.where((p) => p['corsi'] == maxCorsi).toList();
   }
 
   String _formatPlayerList(List<Map<String, dynamic>> playerStats, String statType) {
@@ -256,7 +258,7 @@ class PdfService {
       
       if (statType == 'points') {
         return '#${player.jerseyNumber} (${value}pts)';
-      } else if (statType == 'plusminus') {
+      } else if (statType == 'corsi') {
         return '#${player.jerseyNumber} (${value >= 0 ? '+' : ''}$value)';
       }
       return '#${player.jerseyNumber}';
@@ -351,7 +353,7 @@ class PdfService {
     final opponentGoals = gameEvents.where((event) => event.eventType == 'Shot' && event.isGoal == true && event.team == 'opponent').length;
 
     final topScorers = _getTopScorers(players, gameEvents);
-    final topDefensemen = _getTopDefensemen(players, gameEvents, teamId);
+    final topDefensemen = getTopDefensemen(players, gameEvents, teamId);
     final teamEff = _getTeamShootingAndSavePct(gameEvents, teamId);
 
     // Load attendance to flag scratches/DNP
@@ -438,8 +440,8 @@ class PdfService {
                 pw.SizedBox(height: 2),
                 pw.Text(
                   topDefensemen.isNotEmpty
-                      ? 'Top Defensemen: ${_formatPlayerList(topDefensemen, 'plusminus')}'
-                      : 'Top Defensemen: None',
+                      ? 'Top Defensemen (Corsi): ${_formatPlayerList(topDefensemen, 'corsi')}'
+                      : 'Top Defensemen (Corsi): None',
                   style: const pw.TextStyle(fontSize: 8),
                 ),
                 pw.SizedBox(height: 4),
@@ -634,6 +636,24 @@ class PdfService {
     );
   }
 
+  /// Order for the PDF player listing: by position group (forwards,
+  /// then defensemen, then goalies — the app's usual section order),
+  /// then by jersey number ascending within the group. Static and
+  /// public so the order is unit-testable.
+  static int comparePlayersForListing(Player a, Player b) {
+    final byPosition = _positionGroupRank(a.position).compareTo(_positionGroupRank(b.position));
+    if (byPosition != 0) return byPosition;
+    return a.jerseyNumber.compareTo(b.jerseyNumber);
+  }
+
+  static int _positionGroupRank(String? position) {
+    final pos = position?.trim().toUpperCase() ?? '';
+    if (pos == 'G' || pos == 'GOALIE') return 2;
+    if (pos == 'D' || pos == 'LD' || pos == 'RD' || pos == 'DEFENSE') return 1;
+    if (pos == 'F' || pos == 'C' || pos == 'LW' || pos == 'RW' || pos == 'FORWARD') return 0;
+    return 3; // unrecorded position lists last
+  }
+
   // Build compact player stats table with dynamic sizing
   pw.Widget _buildCompactPlayerStatsTable(List<Player> players, List<GameEvent> gameEvents, String teamId) {
     if (players.isEmpty) {
@@ -669,7 +689,7 @@ class PdfService {
     final gwgPlayerId = _getGameWinningGoalPlayerId(gameEvents, teamId);
 
     final sortedPlayers = List<Player>.from(players);
-    sortedPlayers.sort((a, b) => a.jerseyNumber.compareTo(b.jerseyNumber));
+    sortedPlayers.sort(comparePlayersForListing);
 
     double fontSize;
     double padding;
