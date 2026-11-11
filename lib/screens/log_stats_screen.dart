@@ -12,6 +12,11 @@ import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:hockey_stats_app/services/centralized_data_service.dart';
 import 'package:hockey_stats_app/services/memory_cache_service.dart';
 import 'package:hockey_stats_app/services/background_sync_service.dart';
+import 'package:hockey_stats_app/screens/log_shot_screen.dart';
+import 'package:hockey_stats_app/services/voice_command_parser.dart';
+import 'package:hockey_stats_app/services/voice_input_service.dart';
+import 'package:hockey_stats_app/widgets/voice_verify_sheet.dart';
+import 'package:hockey_stats_app/services/line_configuration_service.dart';
 import 'package:hockey_stats_app/widgets/share_dialog.dart';
 import 'package:hockey_stats_app/services/team_context_service.dart';
 import 'package:hockey_stats_app/services/stats_service.dart';
@@ -65,6 +70,9 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
 
   // Quick shot logging
   bool _isLogging = false;
+  final VoiceInputService _voiceService = VoiceInputService();
+  bool _isListening = false;
+  String _heardSoFar = '';
   final uuid = Uuid();
   late Box<GameEvent> gameEventsBox;
   
@@ -756,6 +764,389 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Voice control (Phase 1): push-to-talk capture -> parse -> VERIFY -> log.
+  // Nothing is logged from recognition alone: every parsed command is shown
+  // on the verify card first and only the keeper's Confirm writes an event
+  // (Prof's rule). Confirmed commands log through the same GameEvent
+  // construction the buttons and log screens use.
+  // ---------------------------------------------------------------------------
+
+  Future<void> _toggleVoiceInput() async {
+    if (_isListening) {
+      await _voiceService.stopListening();
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+        });
+      }
+      return;
+    }
+    await _startVoiceListening();
+  }
+
+  Future<void> _startVoiceListening() async {
+    final available = await _voiceService.ensureInitialized(
+      onListeningChanged: (listening) {
+        if (mounted && _isListening != listening) {
+          setState(() {
+            _isListening = listening;
+          });
+        }
+      },
+    );
+    if (!mounted) return;
+    if (!available) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Voice recognition is not available on this device.'),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _isListening = true;
+      _heardSoFar = '';
+    });
+    await _voiceService.startListening(
+      onTranscript: (transcript, isFinal) {
+        if (!mounted) return;
+        setState(() {
+          _heardSoFar = transcript;
+        });
+        if (isFinal) {
+          setState(() {
+            _isListening = false;
+          });
+          _handleVoiceTranscript(transcript);
+        }
+      },
+    );
+  }
+
+  Future<void> _handleVoiceTranscript(String transcript) async {
+    final roster = Hive.box<Player>('players')
+        .values
+        .where((player) => player.teamId == widget.teamId)
+        .toList();
+    final result = VoiceCommandParser(roster).parse(transcript);
+    if (!mounted) return;
+
+    if (!result.isSuccess) {
+      final retry = await showVoiceRejectionSheet(
+        context,
+        reason: result.rejectionReason!,
+        heardText: transcript,
+      );
+      if (retry && mounted) {
+        await _startVoiceListening();
+      }
+      return;
+    }
+
+    final command = result.command!;
+    if (command.kind == VoiceCommandKind.undo) {
+      await _verifyAndUndo(transcript);
+      return;
+    }
+
+    final canEdit = command.kind == VoiceCommandKind.playerShot ||
+        command.kind == VoiceCommandKind.goal ||
+        command.kind == VoiceCommandKind.penalty;
+    final decision = await showVoiceVerifySheet(
+      context,
+      description: command.describe(),
+      heardText: transcript,
+      showEdit: canEdit,
+    );
+    if (!mounted) return;
+    switch (decision) {
+      case VoiceVerifyDecision.confirm:
+        await _executeVoiceCommand(command);
+        break;
+      case VoiceVerifyDecision.edit:
+        await _editVoiceCommand(command);
+        break;
+      case VoiceVerifyDecision.discard:
+        break;
+    }
+  }
+
+  Future<void> _executeVoiceCommand(VoiceCommand command) async {
+    switch (command.kind) {
+      case VoiceCommandKind.teamShot:
+        await _logQuickShot(widget.teamId);
+        break;
+      case VoiceCommandKind.opponentShot:
+        await _logQuickShot('opponent');
+        break;
+      case VoiceCommandKind.playerShot:
+        await _logVoicePlayerEvent(command, isGoal: false);
+        break;
+      case VoiceCommandKind.goal:
+        await _logVoicePlayerEvent(command, isGoal: true);
+        setState(() {
+          _selectedGoalScorer = null;
+          _selectedAssist = null;
+          _selectedAssist2 = null;
+        });
+        break;
+      case VoiceCommandKind.penalty:
+        final saved = await _logVoicePenalty(command);
+        if (saved) {
+          // Mirror the Log Penalty button: our penalty puts us short handed.
+          setState(() {
+            _currentSituation = GoalSituation.shortHanded;
+          });
+        }
+        break;
+      case VoiceCommandKind.undo:
+        break; // Handled by _verifyAndUndo.
+    }
+    await _refreshScore();
+    _refreshAttendanceData();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  /// Logs a shot or goal for a spoken player, mirroring the event the
+  /// Log Shot / Log Goal screens construct (same fields, same sync queue).
+  Future<void> _logVoicePlayerEvent(VoiceCommand command,
+      {required bool isGoal}) async {
+    setState(() {
+      _isLogging = true;
+    });
+    try {
+      final event = GameEvent(
+        id: uuid.v4(),
+        gameId: widget.gameId,
+        timestamp: DateTime.now(),
+        period: _selectedPeriod,
+        eventType: 'Shot',
+        team: widget.teamId,
+        primaryPlayerId: command.player!.id,
+        assistPlayer1Id: isGoal ? command.assist1?.id : null,
+        assistPlayer2Id: isGoal ? command.assist2?.id : null,
+        isGoal: isGoal,
+        isSynced: false,
+        yourTeamPlayersOnIce: _getPlayersOnIceIds(),
+        goalSituation:
+            isGoal ? (command.situation ?? _currentSituation) : _currentSituation,
+        goalieOnIceId: 'opponent_g',
+      );
+      await gameEventsBox.put(event.id, event);
+      BackgroundSyncService().queueEventForSync(event);
+    } catch (e) {
+      print('Error in _logVoicePlayerEvent: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error logging event: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLogging = false;
+        });
+      }
+    }
+  }
+
+  /// Logs a spoken penalty, mirroring Log Penalty's save (Hive put, cache
+  /// updates, sync queue). Returns whether the event was written.
+  Future<bool> _logVoicePenalty(VoiceCommand command) async {
+    try {
+      final event = GameEvent(
+        id: uuid.v4(),
+        gameId: widget.gameId,
+        timestamp: DateTime.now(),
+        period: _selectedPeriod,
+        eventType: 'Penalty',
+        team: widget.teamId,
+        primaryPlayerId: command.player!.id,
+        penaltyType: command.penaltyType,
+        penaltyDuration: command.penaltyMinutes,
+        yourTeamPlayersOnIce:
+            LineConfigurationService.instance.getActiveOnIcePlayerIds(),
+        isSynced: false,
+      );
+      await gameEventsBox.put(event.id, event);
+      MemoryCacheService().cacheEvent(event);
+      CentralizedDataService().invalidateEvent(widget.gameId);
+      CentralizedDataService().clearCache();
+      BackgroundSyncService().queueEventForSync(event);
+      return true;
+    } catch (e) {
+      print('Error in _logVoicePenalty: $e');
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error logging penalty: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return false;
+    }
+  }
+
+  /// Opens the matching log screen pre-filled with the parsed command, so
+  /// the keeper can correct it by hand instead of confirming or discarding.
+  Future<void> _editVoiceCommand(VoiceCommand command) async {
+    switch (command.kind) {
+      case VoiceCommandKind.playerShot:
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => LogShotScreen(
+              gameId: widget.gameId,
+              period: _selectedPeriod,
+              teamId: widget.teamId,
+              playersOnIce: _selectedPlayersOnIce,
+              initialShooter: command.player,
+            ),
+          ),
+        );
+        break;
+      case VoiceCommandKind.goal:
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => LogGoalScreen(
+              gameId: widget.gameId,
+              period: _selectedPeriod,
+              teamId: widget.teamId,
+              playersOnIce: _selectedPlayersOnIce,
+              goalScorer: command.player,
+              assist1: command.assist1,
+              assist2: command.assist2,
+              selectedGoalie: _selectedGoalie,
+              initialSituation: command.situation ?? _currentSituation,
+            ),
+          ),
+        );
+        break;
+      case VoiceCommandKind.penalty:
+        final value = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => LogPenaltyScreen(
+              gameId: widget.gameId,
+              period: _selectedPeriod,
+              teamId: widget.teamId,
+              initialPlayer: command.player,
+              initialPenaltyType: command.penaltyType,
+              initialDuration: command.penaltyMinutes,
+            ),
+          ),
+        );
+        final bool penaltySaved = value is Map && value['saved'] == true;
+        if (penaltySaved && mounted) {
+          setState(() {
+            _currentSituation = GoalSituation.shortHanded;
+          });
+        }
+        break;
+      case VoiceCommandKind.teamShot:
+      case VoiceCommandKind.opponentShot:
+      case VoiceCommandKind.undo:
+        break; // These commands have no pre-filled edit screen.
+    }
+    await _refreshScore();
+    _refreshAttendanceData();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  /// Voice Undo: the verify card names the exact event that would be
+  /// deleted; only a Confirm deletes it (locally and from the Sheet, the
+  /// same order Edit Logged Shots uses).
+  Future<void> _verifyAndUndo(String heardText) async {
+    final events = gameEventsBox.values
+        .where((event) => event.gameId == widget.gameId)
+        .toList()
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    if (events.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nothing to undo — no events logged for this game yet.'),
+        ),
+      );
+      return;
+    }
+    final last = events.last;
+    final decision = await showVoiceVerifySheet(
+      context,
+      description: 'Undo — delete: ${_describeEvent(last)}',
+      heardText: heardText,
+    );
+    if (decision != VoiceVerifyDecision.confirm || !mounted) return;
+
+    if (last.isSynced) {
+      final deletedFromSheet =
+          await _sheetsService.deleteEventFromSheet(last.id);
+      if (!deletedFromSheet) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Could not delete that event from Google Sheets — it was not removed.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+    }
+    await last.delete();
+    CentralizedDataService().invalidateEvent(widget.gameId);
+    CentralizedDataService().clearCache();
+    await _refreshScore();
+    _refreshAttendanceData();
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Last event deleted.')),
+      );
+    }
+  }
+
+  String _describeEvent(GameEvent event) {
+    final jersey = _jerseyForPlayerId(event.primaryPlayerId);
+    final who = jersey != null ? ' #$jersey' : '';
+    switch (event.eventType) {
+      case 'Shot':
+        if (event.isGoal == true) {
+          return 'Goal by$who · Period ${event.period}';
+        }
+        if (event.team == 'opponent') {
+          return 'Opponent shot · Period ${event.period}';
+        }
+        return jersey != null
+            ? 'Shot by$who · Period ${event.period}'
+            : 'Team shot · Period ${event.period}';
+      case 'Penalty':
+        return 'Penalty${event.penaltyType != null ? ' (${event.penaltyType})' : ''} on$who · Period ${event.period}';
+      default:
+        return '${event.eventType} · Period ${event.period}';
+    }
+  }
+
+  String? _jerseyForPlayerId(String playerId) {
+    if (playerId.isEmpty) return null;
+    for (final player in Hive.box<Player>('players').values) {
+      if (player.id == playerId) {
+        return '${player.jerseyNumber}';
+      }
+    }
+    return null;
+  }
+
   List<String> _getPlayersOnIceIds() {
     return _selectedPlayersOnIce.map((player) => player.id).toList();
   }
@@ -764,6 +1155,7 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   void dispose() {
     // Disable wake lock when leaving stats screen
     WakelockService.disableWakelock();
+    _voiceService.cancel();
     super.dispose();
   }
 
@@ -1073,6 +1465,31 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
                 // Streamlined shot and goal logging controls
                 Column(
                   children: [
+                    // Voice command button: tap to talk; the parsed
+                    // command is always verified before it is logged.
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isLogging ? null : _toggleVoiceInput,
+                        icon: Icon(_isListening ? Icons.mic : Icons.mic_none),
+                        label: Text(_isListening
+                            ? (_heardSoFar.isEmpty
+                                ? 'Listening… tap to stop'
+                                : 'Heard: $_heardSoFar')
+                            : 'Voice Command'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14.0, horizontal: 16.0),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16.0),
+                          ),
+                          elevation: 0,
+                          backgroundColor: _isListening ? Colors.red.shade700 : const Color(0xFF1565C0),
+                          foregroundColor: Colors.white,
+                          surfaceTintColor: Colors.transparent,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     // Top row: Team shot buttons with SOG counts
                     ValueListenableBuilder(
                       valueListenable: Hive.box<GameEvent>('gameEvents').listenable(),

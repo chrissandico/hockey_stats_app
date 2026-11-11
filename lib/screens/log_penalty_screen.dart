@@ -14,6 +14,9 @@ class LogPenaltyScreen extends StatefulWidget {
   final int period; // Add period parameter
   final String teamId;
   final String? eventIdToEdit; // Add optional parameter for editing
+  final Player? initialPlayer;
+  final String? initialPenaltyType;
+  final int? initialDuration;
 
   const LogPenaltyScreen({
     super.key, 
@@ -21,6 +24,9 @@ class LogPenaltyScreen extends StatefulWidget {
     required this.period,
     required this.teamId,
     this.eventIdToEdit, // Optional parameter for editing existing penalty
+    this.initialPlayer,
+    this.initialPenaltyType,
+    this.initialDuration,
   });
 
   @override
@@ -81,6 +87,24 @@ class _LogPenaltyScreenState extends State<LogPenaltyScreen> {
     _sheetsService = SheetsService(); // Initialize service
     _loadPlayers();
     
+    // Voice-control prefill (new penalties only, never when editing).
+    if (widget.eventIdToEdit == null) {
+      if (widget.initialPlayer != null) {
+        for (final player in _yourTeamPlayers) {
+          if (player.id == widget.initialPlayer!.id) {
+            _selectedPlayer = player;
+            break;
+          }
+        }
+      }
+      if (widget.initialPenaltyType != null) {
+        _penaltyType = widget.initialPenaltyType;
+      }
+      if (widget.initialDuration != null) {
+        _penaltyDuration = widget.initialDuration;
+      }
+    }
+
     // If editing an existing penalty, load its data
     if (widget.eventIdToEdit != null) {
       _loadExistingPenaltyData();
