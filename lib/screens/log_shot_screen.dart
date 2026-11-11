@@ -20,6 +20,7 @@ class LogShotScreen extends StatefulWidget {
   final String teamId;
   final String? eventIdToEdit;
   final List<Player>? playersOnIce;
+  final Player? initialShooter;
 
   const LogShotScreen({
     super.key, 
@@ -28,6 +29,7 @@ class LogShotScreen extends StatefulWidget {
     required this.teamId,
     this.eventIdToEdit,
     this.playersOnIce,
+    this.initialShooter,
   });
 
   @override
@@ -86,6 +88,16 @@ class _LogShotScreenState extends State<LogShotScreen> {
     _removeOpponentPlayers();
     _filterPlayersByTeam();
     _loadAttendanceData();
+
+    // Voice-control prefill: open with the spoken shooter selected.
+    if (widget.initialShooter != null) {
+      for (final player in _yourTeamPlayers) {
+        if (player.id == widget.initialShooter!.id) {
+          _selectedShooter = player;
+          break;
+        }
+      }
+    }
     
     // Initialize players on ice from the passed parameter if available
     if (widget.playersOnIce != null && widget.playersOnIce!.isNotEmpty) {
