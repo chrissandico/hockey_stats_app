@@ -103,9 +103,6 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
   void _loadBackgroundData() {
     // Use microtasks to ensure UI renders first
     Future.microtask(() async {
-      // Pre-initialize voice service in background so mic taps are instant
-      _voiceService.ensureInitialized();
-
       // Load data in parallel but don't block UI
       final futures = [
         _checkSignInStatus(),
@@ -807,56 +804,32 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
       );
       return;
     }
-
-    final roster = Hive.box<Player>('players')
-        .values
-        .where((player) => player.teamId == widget.teamId)
-        .toList();
-    final parser = VoiceCommandParser(roster);
-    bool commandHandled = false;
-
     setState(() {
       _isListening = true;
       _heardSoFar = '';
     });
-
     await _voiceService.startListening(
-      pauseFor: const Duration(milliseconds: 1200),
-      onTranscript: (transcript, isFinal) async {
-        if (!mounted || commandHandled) return;
+      onTranscript: (transcript, isFinal) {
+        if (!mounted) return;
         setState(() {
           _heardSoFar = transcript;
         });
-
-        // Fast path: Attempt early parse on partial transcript for instant response
-        final result = parser.parse(transcript);
-        if (result.isSuccess) {
-          commandHandled = true;
-          await _voiceService.stopListening();
-          if (mounted) {
-            setState(() {
-              _isListening = false;
-            });
-            _processVoiceResult(transcript, result);
-          }
-          return;
-        }
-
-        // On final result, if early parse didn't match, handle result/rejection
-        if (isFinal && !commandHandled) {
-          commandHandled = true;
-          if (mounted) {
-            setState(() {
-              _isListening = false;
-            });
-            _processVoiceResult(transcript, result);
-          }
+        if (isFinal) {
+          setState(() {
+            _isListening = false;
+          });
+          _handleVoiceTranscript(transcript);
         }
       },
     );
   }
 
-  Future<void> _processVoiceResult(String transcript, VoiceParseResult result) async {
+  Future<void> _handleVoiceTranscript(String transcript) async {
+    final roster = Hive.box<Player>('players')
+        .values
+        .where((player) => player.teamId == widget.teamId)
+        .toList();
+    final result = VoiceCommandParser(roster).parse(transcript);
     if (!mounted) return;
 
     if (!result.isSuccess) {

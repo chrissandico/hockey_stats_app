@@ -50,15 +50,9 @@ class VoiceInputService {
 
   /// Starts a single listen window. [onTranscript] fires with partial
   /// results as the keeper speaks and once more with the final transcript
-  /// (isFinal = true).
-  ///
-  /// Uses ListenMode.confirmation and reduced pauseFor (1.2s) for fast,
-  /// low-latency command recognition.
+  /// (isFinal = true), which is the one callers should act on.
   Future<void> startListening({
     required void Function(String transcript, bool isFinal) onTranscript,
-    Duration listenFor = const Duration(seconds: 8),
-    Duration pauseFor = const Duration(milliseconds: 1200),
-    ListenMode listenMode = ListenMode.confirmation,
   }) async {
     if (!_initialized || _listening) return;
     _listening = true;
@@ -66,10 +60,10 @@ class VoiceInputService {
       onResult: (result) {
         onTranscript(result.recognizedWords, result.finalResult);
       },
-      listenFor: listenFor,
-      pauseFor: pauseFor,
+      listenFor: const Duration(seconds: 8),
+      pauseFor: const Duration(seconds: 3),
       partialResults: true,
-      listenMode: listenMode,
+      listenMode: ListenMode.dictation,
       cancelOnError: true,
     );
   }
