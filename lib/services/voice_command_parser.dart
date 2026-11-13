@@ -265,16 +265,23 @@ class VoiceCommandParser {
         .where((n) => !consumed.contains(n.start))
         .toList();
 
-    // Numbers after the word "assist(s)" are assists; the first number
-    // before it is the scorer.
-    final assistIndex =
-        tokens.indexWhere((t) => t == 'assist' || t == 'assists');
-    final scorerNumbers = assistIndex == -1
-        ? numbers
-        : numbers.where((n) => n.start < assistIndex).toList();
-    final assistNumbers = assistIndex == -1
-        ? const <_HeardNumber>[]
-        : numbers.where((n) => n.start > assistIndex).toList();
+    // Numbers after an assist marker ("assist", "assists", "assisted by")
+    // are assists; the first number before it is the scorer. With no marker
+    // at all ("goal 25 88"), numbers after the scorer are still read as
+    // assists — silently dropping them cost a keeper an assist in the field
+    // (2026-11-13: "assisted" wasn't a recognized marker, so the scorer
+    // logged and every assist vanished).
+    const assistMarkers = {'assist', 'assists', 'assisted', 'assisting'};
+    final assistIndex = tokens.indexWhere(assistMarkers.contains);
+    final List<_HeardNumber> scorerNumbers;
+    final List<_HeardNumber> assistNumbers;
+    if (assistIndex == -1) {
+      scorerNumbers = numbers.take(1).toList();
+      assistNumbers = numbers.skip(1).toList();
+    } else {
+      scorerNumbers = numbers.where((n) => n.start < assistIndex).toList();
+      assistNumbers = numbers.where((n) => n.start > assistIndex).toList();
+    }
 
     if (scorerNumbers.isEmpty) {
       return VoiceParseResult.rejected(
