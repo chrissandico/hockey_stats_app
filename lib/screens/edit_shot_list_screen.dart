@@ -6,6 +6,8 @@ import 'package:hockey_stats_app/screens/log_penalty_screen.dart';
 import 'package:hockey_stats_app/services/sheets_service.dart';
 import 'package:hockey_stats_app/services/centralized_data_service.dart';
 import 'package:hockey_stats_app/services/memory_cache_service.dart';
+import 'package:hockey_stats_app/services/background_sync_service.dart';
+import 'package:hockey_stats_app/services/situation_marker.dart';
 import 'package:intl/intl.dart'; // For date formatting
 
 class EditShotListScreen extends StatefulWidget {
@@ -81,6 +83,107 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
     return period == 4 ? 'OT' : 'P$period';
   }
 
+  // ---------------------------------------------------------------------------
+  // PP/PK situation markers: the synthetic penalty events the mode toggle
+  // creates. They are not called penalties, so they get their own actions —
+  // convert PP <-> PK, move period, or delete (below) — and are never sent
+  // to the penalty edit screen, whose save hard-codes our team and requires
+  // a player (it would silently flip a PP marker into a PK marker).
+  // ---------------------------------------------------------------------------
+
+  Future<void> _showMarkerActions(GameEvent event) async {
+    final isPP = isPowerPlayMarker(event);
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text(
+                situationMarkerLabel(event),
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                'Created by the PP/PK toggle — not a called penalty. '
+                'It carries the ${isPP ? 'power play' : 'penalty kill'} opportunity count.',
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.swap_horiz),
+              title: Text(isPP
+                  ? 'Change to Penalty Kill marker'
+                  : 'Change to Power Play marker'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _convertMarker(event);
+              },
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: Row(
+                children: [
+                  const Text('Period: '),
+                  const SizedBox(width: 8),
+                  ...[1, 2, 3, 4].map(
+                    (period) => Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        label: Text(period == 4 ? 'OT' : '$period'),
+                        selected: event.period == period,
+                        onSelected: (_) {
+                          Navigator.of(sheetContext).pop();
+                          if (period != event.period) {
+                            _setMarkerPeriod(event, period);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _convertMarker(GameEvent event) async {
+    convertSituationMarker(event, teamId: widget.teamId);
+    await _saveMarkerChange(
+        event, 'Changed to a ${situationMarkerLabel(event).toLowerCase()}');
+  }
+
+  Future<void> _setMarkerPeriod(GameEvent event, int period) async {
+    event.period = period;
+    event.version = event.version + 1;
+    event.isSynced = false;
+    await _saveMarkerChange(event, 'Marker moved to ${_getPeriodText(period)}');
+  }
+
+  /// Persists a marker change the way a penalty edit is saved: box put,
+  /// cache refresh, and the sync queue, so the Sheet row updates in place.
+  Future<void> _saveMarkerChange(GameEvent event, String message) async {
+    await gameEventsBox.put(event.id, event);
+    MemoryCacheService().cacheEvent(event);
+    CentralizedDataService().invalidateEvent(widget.gameId);
+    CentralizedDataService().clearCache();
+    BackgroundSyncService().queueEventForSync(event);
+    _loadGameEvents();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   // Delete event with confirmation
   Future<void> _deleteEvent(GameEvent event) async {
     final confirmed = await showDialog<bool>(
@@ -90,9 +193,7 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
         content: Text(
           // Synthetic penalties (blank player + 'Unspecified') are created by the
           // PP/PK mode toggle and carry the PP/PK opportunity count with them.
-          event.eventType == 'Penalty' &&
-                  event.primaryPlayerId.isEmpty &&
-                  (event.penaltyType == null || event.penaltyType == 'Unspecified')
+          isSituationMarker(event)
               ? 'This entry marks a power play / penalty kill (it was created by the PP/PK mode toggle, not a called penalty). Deleting it changes the PP/PK opportunity count. Delete it?'
               : 'Are you sure you want to delete this ${event.eventType.toLowerCase()}?',
         ),
@@ -231,6 +332,8 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                     final isPenalty = event.eventType == 'Penalty';
                     final isGoal = event.isGoal ?? false;
                     final isYourTeam = event.team == widget.teamId;
+                    final isMarker = isSituationMarker(event);
+                    final isPowerPlay = isPowerPlayMarker(event);
                     
                     // Determine event display text
                     String eventTypeText = '';
@@ -292,7 +395,18 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                       backgroundColor = Colors.red.withOpacity(0.7);
                     }
 
+                    // Situation markers get their own icon and colour —
+                    // they are not called penalties.
+                    if (isMarker) {
+                      iconData = isPowerPlay ? Icons.bolt : Icons.shield;
+                      backgroundColor =
+                          isPowerPlay ? Colors.orange.shade800 : Colors.red.shade700;
+                    }
+
                     final onIceIds = event.yourTeamPlayersOnIce ?? [];
+                    final titleText = isMarker
+                        ? situationMarkerLabel(event)
+                        : '$eventTypeText by $playerText$detailText';
 
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -310,7 +424,7 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                                 ),
                               ),
                               title: Text(
-                                '$eventTypeText by $playerText$detailText',
+                                titleText,
                                 style: TextStyle(
                                   fontWeight: (isGoal || isPenalty) ? FontWeight.bold : FontWeight.normal,
                                 ),
@@ -321,6 +435,15 @@ class _EditShotListScreenState extends State<EditShotListScreen> {
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  if (isMarker)
+                                    // Markers never go to the penalty edit
+                                    // screen — they get marker actions.
+                                    IconButton(
+                                      icon: const Icon(Icons.tune),
+                                      tooltip: 'Change PP/PK marker',
+                                      onPressed: () => _showMarkerActions(event),
+                                    )
+                                  else
                                   IconButton(
                                     icon: const Icon(Icons.edit),
                                     tooltip: isShot ? 'Edit Shot' : 'Edit Penalty',
