@@ -243,4 +243,34 @@ void main() {
       expect(result.rejectionReason, contains('Nothing was heard'));
     });
   });
+
+  group('partial-transcript safety (perf regression, 2026-11-13)', () {
+    // The perf commit acted on the FIRST partial transcript that parsed.
+    // These tests pin why only two kinds may be acted on early: every
+    // other command can still grow, so its partial parse is a truncation.
+    test('only undo and opponent shot are partial-safe', () {
+      expect(voiceCommandIsPartialSafe(VoiceCommandKind.undo), isTrue);
+      expect(voiceCommandIsPartialSafe(VoiceCommandKind.opponentShot), isTrue);
+      expect(voiceCommandIsPartialSafe(VoiceCommandKind.teamShot), isFalse);
+      expect(voiceCommandIsPartialSafe(VoiceCommandKind.playerShot), isFalse);
+      expect(voiceCommandIsPartialSafe(VoiceCommandKind.goal), isFalse);
+      expect(voiceCommandIsPartialSafe(VoiceCommandKind.penalty), isFalse);
+    });
+
+    test('the dangerous prefixes really do parse — that is the hazard', () {
+      // A partial "shot" is already a complete team shot, and a partial
+      // "goal 25" is already a complete unassisted goal. If the screen
+      // acted on them, the shooter's number and the assists still being
+      // spoken would be cut off — the PR #12 assist bug, by design.
+      expect(parser.parse('shot').command!.kind, VoiceCommandKind.teamShot);
+      final partialGoal = parser.parse('goal 25').command!;
+      expect(partialGoal.kind, VoiceCommandKind.goal);
+      expect(partialGoal.assist1, isNull);
+      // …while the finished sentences parse differently:
+      expect(parser.parse('shot 25').command!.kind,
+          VoiceCommandKind.playerShot);
+      expect(
+          parser.parse('goal 25 assisted by 88').command!.assist1, isNotNull);
+    });
+  });
 }

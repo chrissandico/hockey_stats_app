@@ -821,37 +821,35 @@ class _LogStatsScreenState extends State<LogStatsScreen> {
     });
 
     await _voiceService.startListening(
-      pauseFor: const Duration(milliseconds: 1200),
       onTranscript: (transcript, isFinal) async {
         if (!mounted || commandHandled) return;
         setState(() {
           _heardSoFar = transcript;
         });
 
-        // Fast path: Attempt early parse on partial transcript for instant response
         final result = parser.parse(transcript);
-        if (result.isSuccess) {
-          commandHandled = true;
-          await _voiceService.stopListening();
-          if (mounted) {
-            setState(() {
-              _isListening = false;
-            });
-            _processVoiceResult(transcript, result);
-          }
-          return;
-        }
 
-        // On final result, if early parse didn't match, handle result/rejection
-        if (isFinal && !commandHandled) {
-          commandHandled = true;
-          if (mounted) {
-            setState(() {
-              _isListening = false;
-            });
-            _processVoiceResult(transcript, result);
-          }
+        // Partial transcripts drive the live display ONLY, except for
+        // commands no continuation can change (undo, opponent shot —
+        // see voiceCommandIsPartialSafe). Acting on any other partial
+        // stops the mic mid-sentence and verifies a truncated command:
+        // "goal 25" locks in before "assisted by 88" is spoken. That was
+        // the perf commit's regression; everything else waits for the
+        // final transcript, which the shorter pauseFor still delivers
+        // quickly.
+        final earlyOk = result.isSuccess &&
+            voiceCommandIsPartialSafe(result.command!.kind);
+        if (!isFinal && !earlyOk) return;
+
+        commandHandled = true;
+        if (earlyOk && !isFinal) {
+          await _voiceService.stopListening();
         }
+        if (!mounted) return;
+        setState(() {
+          _isListening = false;
+        });
+        _processVoiceResult(transcript, result);
       },
     );
   }

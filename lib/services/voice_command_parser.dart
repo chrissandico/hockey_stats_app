@@ -124,6 +124,21 @@ class VoiceParseResult {
   bool get isSuccess => command != null;
 }
 
+/// Whether a command of this kind means the same thing no matter what the
+/// keeper says next, so a PARTIAL transcript that parses to it may be acted
+/// on immediately instead of waiting for the final transcript.
+///
+/// Deliberately tiny. Every other kind can be extended by the next word:
+/// "shot" can grow a shooter, "goal 25" can grow assists or a situation,
+/// and a penalty parses only once it is complete anyway. Acting on those
+/// partials stops the microphone mid-sentence and presents a truncated
+/// command — "goal 25" heard before "assisted by 88" is the exact
+/// assist-loss field bug PR #12 fixed, reintroduced (perf commit 0b0cc89).
+/// Kinds with numbers are also excluded because recognizers can deliver
+/// progressive number partials ("shot 2" on the way to "shot 25").
+bool voiceCommandIsPartialSafe(VoiceCommandKind kind) =>
+    kind == VoiceCommandKind.undo || kind == VoiceCommandKind.opponentShot;
+
 class _HeardNumber {
   final int value;
   final int start; // first token index

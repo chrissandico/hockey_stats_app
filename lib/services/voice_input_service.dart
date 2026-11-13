@@ -13,14 +13,26 @@ class VoiceInputService {
   bool _initialized = false;
   bool _listening = false;
 
+  /// The current listening-state listener. Stored rather than captured by
+  /// the one initialize() call, because the screen now pre-initializes in
+  /// the background (no listener) and registers its listener on the first
+  /// mic tap: the earlier shape made that later registration a no-op, so
+  /// the button state desynced from the recognizer whenever the engine
+  /// stopped on its own (timeout, error, interruption).
+  void Function(bool isListening)? _onListeningChanged;
+
   bool get isListening => _listening;
 
   /// Initializes the recognizer (requests microphone permission on first
   /// use). Returns false when speech recognition is unavailable on this
-  /// device or permission was denied.
+  /// device or permission was denied. Safe to call repeatedly: a later
+  /// call with a listener (re)registers it even when already initialized.
   Future<bool> ensureInitialized({
     void Function(bool isListening)? onListeningChanged,
   }) async {
+    if (onListeningChanged != null) {
+      _onListeningChanged = onListeningChanged;
+    }
     if (_initialized) return true;
     try {
       _initialized = await _speech.initialize(
@@ -28,13 +40,13 @@ class VoiceInputService {
           final listening = status == 'listening';
           if (listening != _listening) {
             _listening = listening;
-            onListeningChanged?.call(listening);
+            _onListeningChanged?.call(listening);
           }
         },
         onError: (error) {
           if (_listening) {
             _listening = false;
-            onListeningChanged?.call(false);
+            _onListeningChanged?.call(false);
           }
           // ignore: avoid_print
           print('VoiceInputService error: ${error.errorMsg}');
@@ -52,12 +64,14 @@ class VoiceInputService {
   /// results as the keeper speaks and once more with the final transcript
   /// (isFinal = true).
   ///
-  /// Uses ListenMode.confirmation and reduced pauseFor (1.2s) for fast,
-  /// low-latency command recognition.
+  /// ListenMode.confirmation suits short commands. [pauseFor] is 2s: the
+  /// perf change's 1.2s finalized mid-command pauses ("Penalty 12 …
+  /// tripping … 2 minutes") at the rink, while the original 3s made every
+  /// command feel slow — 2s is the middle that holds both.
   Future<void> startListening({
     required void Function(String transcript, bool isFinal) onTranscript,
     Duration listenFor = const Duration(seconds: 8),
-    Duration pauseFor = const Duration(milliseconds: 1200),
+    Duration pauseFor = const Duration(seconds: 2),
     ListenMode listenMode = ListenMode.confirmation,
   }) async {
     if (!_initialized || _listening) return;
