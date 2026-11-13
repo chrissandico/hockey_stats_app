@@ -128,6 +128,42 @@ void main() {
       expect(result.isSuccess, isFalse);
       expect(result.rejectionReason, contains('at most two'));
     });
+
+    // Regression (field report 2026-11-13): the keeper said "assisted",
+    // which was not a recognized marker — the scorer logged and the
+    // assist silently vanished.
+    test('"assisted by" phrasing captures the assist', () {
+      final result = parser.parse('Goal 25 assisted by 88');
+      final cmd = result.command!;
+      expect(cmd.player!.jerseyNumber, 25);
+      expect(cmd.assist1!.jerseyNumber, 88);
+      expect(cmd.assist2, isNull);
+      expect(cmd.describe(), 'Goal — #25 · Assists #88');
+    });
+
+    test('"assisted by" with two assists, spoken numbers', () {
+      final result =
+          parser.parse('goal twenty five assisted by eighty eight and forty nine');
+      final cmd = result.command!;
+      expect(cmd.player!.jerseyNumber, 25);
+      expect(cmd.assist1!.jerseyNumber, 88);
+      expect(cmd.assist2!.jerseyNumber, 49);
+    });
+
+    test('numbers after the scorer are assists even without a marker word',
+        () {
+      final result = parser.parse('goal 25 88');
+      final cmd = result.command!;
+      expect(cmd.player!.jerseyNumber, 25);
+      expect(cmd.assist1!.jerseyNumber, 88);
+    });
+
+    test('no marker word and three extra numbers are rejected, not dropped',
+        () {
+      final result = parser.parse('goal 25 88 49 91');
+      expect(result.isSuccess, isFalse);
+      expect(result.rejectionReason, contains('at most two'));
+    });
   });
 
   group('penalties', () {
