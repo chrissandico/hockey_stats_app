@@ -8,6 +8,7 @@ import 'package:hockey_stats_app/services/sheets_service.dart'; // Import Sheets
 import 'package:hockey_stats_app/services/connectivity_service.dart'; // Import ConnectivityService for checking connectivity
 import 'package:hockey_stats_app/services/centralized_data_service.dart';
 import 'package:hockey_stats_app/services/memory_cache_service.dart';
+import 'package:hockey_stats_app/services/game_score.dart';
 import 'package:uuid/uuid.dart'; // Import for generating UUIDs
 import 'package:hockey_stats_app/main.dart' as main_logic; // To access functions from main.dart
 import 'package:hockey_stats_app/screens/attendance_dialog.dart'; // Import attendance dialog
@@ -33,6 +34,7 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
   // Hive Box for Games
   late Box<Game> gamesBox;
   List<Game> availableGames = [];
+  Map<String, GameScore> _gameScores = {};
   Game? _selectedGame;
   
   // Service for syncing with Google Sheets
@@ -45,6 +47,12 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
   bool _isPerformingAsyncOperation = false; // General loading flag for buttons etc.
 
   // Helper method to convert game type codes to readable text
+  Color _getResultColor(GameScore score) {
+    if (score.isWin) return const Color(0xFF2E7D32); // green
+    if (score.isLoss) return const Color(0xFFC62828); // red
+    return const Color(0xFF616161); // grey for a tie
+  }
+
   String _getGameTypeText(String gameType) {
     switch (gameType.toUpperCase()) {
       case 'E':
@@ -154,6 +162,13 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
     if (_selectedGame != null && !availableGames.any((game) => game.id == _selectedGame!.id)) {
         _selectedGame = availableGames.isNotEmpty ? availableGames.first : null;
     }
+
+    // Result-chip scores, from the events already on this device. Games
+    // with no logged events are absent from the map, so they get no chip.
+    _gameScores = Hive.isBoxOpen('gameEvents')
+        ? gameScoresByGameId(
+            Hive.box<GameEvent>('gameEvents').values, widget.teamId)
+        : {};
   }
 
   /// Full manual refresh from Google Sheets
@@ -1028,6 +1043,24 @@ class _GameSelectionScreenState extends State<GameSelectionScreen> {
                                   ),
                                 ),
                               ),
+                              if (_gameScores[game.id] != null) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: _getResultColor(_gameScores[game.id]!),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    _gameScores[game.id]!.label,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
